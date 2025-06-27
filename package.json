@@ -3,7 +3,7 @@
   "private": true,
   "devDependencies": {
     "pnpm": "^9.0.0",
-    "turbo": "^1.13.0",
+    "turbo": "^2.5.4",
     "prettier": "^3.6.2"
   },
   "scripts": {
@@ -13,5 +13,6 @@
     "test": "turbo run test",
     "format": "prettier --write .",
     "check-format": "prettier --check ."
-  }
+  },
+  "packageManager": "pnpm@9.0.0"
 }

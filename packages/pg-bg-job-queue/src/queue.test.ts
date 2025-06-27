@@ -187,4 +187,17 @@ describe('queue integration', () => {
     const completedJob = await queue.getJob(pool, jobId4);
     expect(completedJob?.status).toBe('completed');
   });
+
+  it('should store and retrieve run_at in UTC without timezone shift', async () => {
+    const utcDate = new Date(Date.UTC(2030, 0, 1, 12, 0, 0, 0)); // 2030-01-01T12:00:00.000Z
+    const jobId = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'utc@example.com' },
+      run_at: utcDate,
+    });
+    const job = await queue.getJob(pool, jobId);
+    expect(job).not.toBeNull();
+    // The run_at value should match exactly (toISOString) what we inserted
+    expect(job?.run_at.toISOString()).toBe(utcDate.toISOString());
+  });
 });

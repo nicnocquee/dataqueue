@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { JobQueueConfig } from './types.js';
+import { log, setLogContext } from './log-context.js';
 
 // Create a database connection pool
 export const createPool = (config: JobQueueConfig['databaseConfig']): Pool => {
@@ -18,15 +19,15 @@ export const initializeJobQueue = async (pool: Pool): Promise<void> => {
         job_type VARCHAR(255) NOT NULL,
         payload JSONB NOT NULL,
         status VARCHAR(50) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        locked_at TIMESTAMP,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        locked_at TIMESTAMPTZ,
         locked_by VARCHAR(255),
         attempts INT DEFAULT 0,
         max_attempts INT DEFAULT 3,
-        next_attempt_at TIMESTAMP,
+        next_attempt_at TIMESTAMPTZ,
         priority INT DEFAULT 0,
-        run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX IF NOT EXISTS idx_job_queue_status ON job_queue(status);
@@ -34,9 +35,9 @@ export const initializeJobQueue = async (pool: Pool): Promise<void> => {
       CREATE INDEX IF NOT EXISTS idx_job_queue_run_at ON job_queue(run_at);
       CREATE INDEX IF NOT EXISTS idx_job_queue_priority ON job_queue(priority);
     `);
-    console.log('Job queue table initialized');
+    log('Job queue table initialized');
   } catch (error) {
-    console.error('Error initializing job queue table:', error);
+    log(`Error initializing job queue table: ${error}`);
     throw error;
   } finally {
     client.release();
@@ -65,7 +66,7 @@ export const runMigrations = async (pool: Pool): Promise<void> => {
         ALTER TABLE job_queue ADD COLUMN priority INT DEFAULT 0;
         CREATE INDEX idx_job_queue_priority ON job_queue(priority);
       `);
-      console.log('Migration: Added priority column');
+      log('Migration: Added priority column');
     }
 
     // Check for run_at column
@@ -81,10 +82,10 @@ export const runMigrations = async (pool: Pool): Promise<void> => {
     if (!hasRunAtColumn) {
       // Add run_at column if it doesn't exist
       await client.query(`
-        ALTER TABLE job_queue ADD COLUMN run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+        ALTER TABLE job_queue ADD COLUMN run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
         CREATE INDEX idx_job_queue_run_at ON job_queue(run_at);
       `);
-      console.log('Migration: Added run_at column');
+      log('Migration: Added run_at column');
     }
 
     // Add more migrations as needed

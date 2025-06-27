@@ -1,11 +1,12 @@
 import { Pool } from 'pg';
 import { JobRecord, JobHandler, ProcessorOptions, Processor } from './types.js';
 import { getNextBatch, completeJob, failJob } from './queue.js';
+import { log, setLogContext } from './log-context.js';
 
 /**
  * Map of job types to handlers
  */
-const jobHandlers: Record<string, JobHandler> = {};
+const jobHandlers: Record<string, JobHandler<any>> = {};
 
 /**
  * Register a job handler
@@ -20,7 +21,10 @@ export const registerJobHandler = (
 /**
  * Process a single job
  */
-export const processJob = async (pool: Pool, job: JobRecord): Promise<void> => {
+export const processJob = async <T>(
+  pool: Pool,
+  job: JobRecord<T>,
+): Promise<void> => {
   const handler = jobHandlers[job.job_type];
 
   if (!handler) {
@@ -52,12 +56,9 @@ export const processBatch = async (
   pool: Pool,
   workerId: string,
   batchSize = 10,
+  verbose = false,
 ): Promise<number> => {
   const jobs = await getNextBatch(pool, workerId, batchSize);
-
-  if (jobs.length === 0) {
-    return 0;
-  }
 
   await Promise.all(jobs.map((job) => processJob(pool, job)));
 
@@ -74,23 +75,40 @@ export const createProcessor = (
   const {
     workerId = `worker-${Math.random().toString(36).substring(2, 9)}`,
     batchSize = 10,
-    pollInterval = 5000,
+    pollInterval,
     onError = (error: Error) => console.error('Job processor error:', error),
   } = options;
 
   let running = false;
   let intervalId: NodeJS.Timeout | null = null;
 
+  setLogContext(options.verbose ?? false);
+
   const processJobs = async (): Promise<void> => {
     if (!running) return;
 
+    log(`Processing jobs with workerId: ${workerId}`);
+
     try {
-      const processed = await processBatch(pool, workerId, batchSize);
+      const processed = await processBatch(
+        pool,
+        workerId,
+        batchSize,
+        options.verbose,
+      );
 
       // If we processed a full batch, there might be more jobs ready
       if (processed === batchSize) {
         // Process next batch immediately
         setImmediate(processJobs);
+      }
+
+      if (processed === 0) {
+        running = false;
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
       }
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
@@ -101,11 +119,15 @@ export const createProcessor = (
     start: () => {
       if (running) return;
 
+      log(`Starting job processor with workerId: ${workerId}`);
       running = true;
       processJobs(); // Process immediately on start
-      intervalId = setInterval(processJobs, pollInterval);
+      if (pollInterval) {
+        intervalId = setInterval(processJobs, pollInterval);
+      }
     },
     stop: () => {
+      log(`Stopping job processor with workerId: ${workerId}`);
       running = false;
       if (intervalId) {
         clearInterval(intervalId);

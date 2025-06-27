@@ -1,10 +1,11 @@
 import { Pool } from 'pg';
 import { JobOptions, JobRecord } from './types.js';
+import { log } from './log-context.js';
 
 /**
  * Add a job to the queue
  */
-export const addJob = async (
+export const addJob = async <T>(
   pool: Pool,
   {
     job_type,
@@ -12,7 +13,7 @@ export const addJob = async (
     max_attempts = 3,
     priority = 0,
     run_at = null,
-  }: JobOptions,
+  }: JobOptions<T>,
 ): Promise<number> => {
   const client = await pool.connect();
   try {
@@ -25,6 +26,9 @@ export const addJob = async (
          RETURNING id`,
         [job_type, payload, max_attempts, priority, run_at],
       );
+      log(
+        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, run_at ${run_at.toISOString()}, priority ${priority}, max_attempts ${max_attempts} job_type ${job_type}`,
+      );
     } else {
       result = await client.query(
         `INSERT INTO job_queue 
@@ -33,8 +37,14 @@ export const addJob = async (
          RETURNING id`,
         [job_type, payload, max_attempts, priority],
       );
+      log(
+        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, max_attempts ${max_attempts} job_type ${job_type}`,
+      );
     }
     return result.rows[0].id;
+  } catch (error) {
+    log(`Error adding job: ${error}`);
+    throw error;
   } finally {
     client.release();
   }
@@ -43,10 +53,10 @@ export const addJob = async (
 /**
  * Get a job by ID
  */
-export const getJob = async (
+export const getJob = async <T>(
   pool: Pool,
   id: number,
-): Promise<JobRecord | null> => {
+): Promise<JobRecord<T> | null> => {
   const client = await pool.connect();
   try {
     const result = await client.query('SELECT * FROM job_queue WHERE id = $1', [
@@ -54,13 +64,19 @@ export const getJob = async (
     ]);
 
     if (result.rows.length === 0) {
+      log(`Job ${id} not found`);
       return null;
     }
+
+    log(`Found job ${id}`);
 
     return {
       ...result.rows[0],
       payload: result.rows[0].payload,
     };
+  } catch (error) {
+    log(`Error getting job ${id}: ${error}`);
+    throw error;
   } finally {
     client.release();
   }
@@ -69,12 +85,12 @@ export const getJob = async (
 /**
  * Get jobs by status
  */
-export const getJobsByStatus = async (
+export const getJobsByStatus = async <T>(
   pool: Pool,
   status: string,
   limit = 100,
   offset = 0,
-): Promise<JobRecord[]> => {
+): Promise<JobRecord<T>[]> => {
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -82,10 +98,15 @@ export const getJobsByStatus = async (
       [status, limit, offset],
     );
 
+    log(`Found ${result.rows.length} jobs by status ${status}`);
+
     return result.rows.map((row) => ({
       ...row,
       payload: row.payload,
     }));
+  } catch (error) {
+    log(`Error getting jobs by status ${status}: ${error}`);
+    throw error;
   } finally {
     client.release();
   }
@@ -94,11 +115,11 @@ export const getJobsByStatus = async (
 /**
  * Get the next batch of jobs to process
  */
-export const getNextBatch = async (
+export const getNextBatch = async <T>(
   pool: Pool,
   workerId: string,
   batchSize = 10,
-): Promise<JobRecord[]> => {
+): Promise<JobRecord<T>[]> => {
   const client = await pool.connect();
   try {
     // Begin transaction
@@ -127,6 +148,8 @@ export const getNextBatch = async (
       [workerId, batchSize],
     );
 
+    log(`Found ${result.rows.length} jobs to process`);
+
     // Commit transaction
     await client.query('COMMIT');
 
@@ -135,6 +158,7 @@ export const getNextBatch = async (
       payload: row.payload,
     }));
   } catch (error) {
+    log(`Error getting next batch: ${error}`);
     await client.query('ROLLBACK');
     throw error;
   } finally {
@@ -156,7 +180,11 @@ export const completeJob = async (pool: Pool, jobId: number): Promise<void> => {
     `,
       [jobId],
     );
+  } catch (error) {
+    log(`Error completing job ${jobId}: ${error}`);
+    throw error;
   } finally {
+    log(`Completed job ${jobId}`);
     client.release();
   }
 };
@@ -185,7 +213,11 @@ export const failJob = async (
     `,
       [jobId, JSON.stringify(error.message || String(error))],
     );
+  } catch (error) {
+    log(`Error failing job ${jobId}: ${error}`);
+    throw error;
   } finally {
+    log(`Failed job ${jobId}`);
     client.release();
   }
 };
@@ -208,7 +240,11 @@ export const retryJob = async (pool: Pool, jobId: number): Promise<void> => {
     `,
       [jobId],
     );
+  } catch (error) {
+    log(`Error retrying job ${jobId}: ${error}`);
+    throw error;
   } finally {
+    log(`Retried job ${jobId}`);
     client.release();
   }
 };
@@ -228,7 +264,11 @@ export const cleanupOldJobs = async (
       AND updated_at < NOW() - INTERVAL '${daysToKeep} days'
       RETURNING id
     `);
+    log(`Deleted ${result.rowCount} old jobs`);
     return result.rowCount || 0;
+  } catch (error) {
+    log(`Error cleaning up old jobs: ${error}`);
+    throw error;
   } finally {
     client.release();
   }
@@ -248,7 +288,11 @@ export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
     `,
       [jobId],
     );
+  } catch (error) {
+    log(`Error cancelling job ${jobId}: ${error}`);
+    throw error;
   } finally {
+    log(`Cancelled job ${jobId}`);
     client.release();
   }
 };
@@ -284,7 +328,11 @@ export const cancelAllUpcomingJobs = async (
     }
     query += '\nRETURNING id';
     const result = await client.query(query, params);
+    log(`Cancelled ${result.rowCount} jobs`);
     return result.rowCount || 0;
+  } catch (error) {
+    log(`Error cancelling upcoming jobs: ${error}`);
+    throw error;
   } finally {
     client.release();
   }

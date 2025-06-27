@@ -1,0 +1,53 @@
+'use client';
+
+import { Button } from '@/components/ui/button';
+import { sendEmail } from './jobs/email';
+import { generateReport } from './jobs/report';
+import { processJobs } from './jobs/process-jobs';
+import { useTransition } from 'react';
+import { refresh } from './queue/refresh';
+
+export default function Buttons() {
+  const [isPending] = useTransition();
+  return (
+    <div className="flex flex-row gap-2">
+      <Button
+        disabled={isPending}
+        onClick={async () => {
+          const job = await sendEmail({
+            name: `John Doe ${Date.now()}`,
+            email: `john.doe${Date.now()}@example.com`,
+          });
+          console.log(job);
+        }}
+      >
+        Send E-mail
+      </Button>
+      <Button
+        disabled={isPending}
+        onClick={async () => {
+          const job = await generateReport({
+            name: `John Doe ${Date.now()}`,
+            email: `john.doe${Date.now()}@example.com`,
+            reportId: `report-${Date.now()}`,
+          });
+          console.log(job);
+        }}
+      >
+        Generate Report
+      </Button>
+      <Button
+        disabled={isPending}
+        onClick={async () => {
+          const job = await processJobs();
+          console.log(job);
+        }}
+      >
+        Process Jobs
+      </Button>
+      <Button onClick={refresh} disabled={isPending}>
+        Refresh Jobs
+      </Button>
+    </div>
+  );
+}
