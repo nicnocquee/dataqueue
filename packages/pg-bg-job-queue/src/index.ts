@@ -7,6 +7,7 @@ import {
   cleanupOldJobs,
   cancelJob,
   cancelAllUpcomingJobs,
+  getAllJobs,
 } from './queue.js';
 import { registerJobHandler, createProcessor } from './processor.js';
 import {
@@ -50,6 +51,10 @@ export const initJobQueue = async (
     getJobsByStatus: withLogContext(
       (status: string, limit?: number, offset?: number) =>
         getJobsByStatus(pool, status, limit, offset),
+      config.verbose ?? false,
+    ),
+    getAllJobs: withLogContext(
+      (limit?: number, offset?: number) => getAllJobs(pool, limit, offset),
       config.verbose ?? false,
     ),
     retryJob: withLogContext(

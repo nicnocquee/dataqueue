@@ -19,9 +19,9 @@ npm install pg-bg-job-queue
 
 ### 1. Initialize the Job Queue
 
-Create a file (e.g., `lib/job-queue.ts`) to initialize and reuse the job queue instance:
+Create a file (e.g., `lib/queue.ts`) to initialize and reuse the job queue instance:
 
-```typescript
+```typescript:lib/queue.ts
 import { initJobQueue, JobQueue } from 'pg-bg-job-queue';
 
 let jobQueuePromise: Promise<JobQueue> | null = null;
@@ -36,6 +36,7 @@ export const getJobQueue = async (): Promise<JobQueue> => {
             ? { rejectUnauthorized: false }
             : undefined,
       },
+      verbose: process.env.NODE_ENV === 'development',
     });
   }
   return jobQueuePromise;
@@ -44,12 +45,12 @@ export const getJobQueue = async (): Promise<JobQueue> => {
 
 ### 2. Register Job Handlers
 
-Define your job handlers (e.g., in `lib/job-handlers.ts`). Handlers process jobs by type:
+Define your job handlers (e.g., in `lib/job-handler.ts`). Handlers process jobs by type:
 
-```typescript
-import { getJobQueue } from './job-queue';
-import { sendEmail } from './email-service';
-import { generateReport } from './report-service';
+```typescript:lib/job-handler.ts
+import { getJobQueue } from './queue';
+import { sendEmail } from './services/email';
+import { generateReport } from './services/generate-report';
 
 export const registerJobHandlers = async (): Promise<void> => {
   const jobQueue = await getJobQueue();
@@ -68,23 +69,28 @@ export const registerJobHandlers = async (): Promise<void> => {
 };
 ```
 
-### 3. Add a Job (e.g., in an API Route)
+### 3. Add a Job (e.g., in an API Route or Server Function)
 
-Add jobs to the queue from your application logic:
+Add jobs to the queue from your application logic, for example in a server function:
 
-```typescript
-import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/job-queue';
-import { createUser } from '@/lib/user-service';
+```typescript:app/jobs/email.ts
+'use server';
 
-export async function POST(request: NextRequest) {
+import { getJobQueue } from '@/lib/queue';
+import { revalidatePath } from 'next/cache';
+
+export const sendEmail = async ({
+  name,
+  email,
+}: {
+  name: string;
+  email: string;
+}) => {
+  // Add a welcome email job
+  const jobQueue = await getJobQueue();
   try {
-    const { name, email } = await request.json();
-    const userId = await createUser(name, email);
-
-    // Add a welcome email job
-    const jobQueue = await getJobQueue();
-    await jobQueue.addJob({
+    const runAt = new Date(Date.now() + 5 * 1000); // Run 5 seconds from now
+    const job = await jobQueue.addJob({
       job_type: 'send_email',
       payload: {
         to: email,
@@ -92,28 +98,27 @@ export async function POST(request: NextRequest) {
         body: `Hi ${name}, welcome to our platform!`,
       },
       priority: 10, // Higher number = higher priority
-      run_at: new Date(Date.now() + 5 * 60 * 1000), // Run 5 minutes from now
+      run_at: runAt,
     });
 
-    return NextResponse.json({ userId }, { status: 201 });
+    revalidatePath('/');
+    return { job };
   } catch (error) {
-    console.error('Error creating user:', error);
-    return NextResponse.json(
-      { message: 'Failed to create user' },
-      { status: 500 },
-    );
+    console.error('Error adding job:', error);
+    throw error;
   }
-}
+};
+
 ```
 
 ### 4. Process Jobs (e.g., with a Cron Job)
 
-Set up a route to process jobs in batches. This example is for a Next.js API route triggered by a cron job:
+Set up a route to process jobs in batches. This example is for a server function which can be triggered by a cron job:
 
-```typescript
+```typescript:app/api/cron/route.ts
+import { registerJobHandlers } from '@/lib/job-handler';
+import { getJobQueue } from '@/lib/queue';
 import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/job-queue';
-import { registerJobHandlers } from '@/lib/job-handlers';
 
 export async function GET(request: NextRequest) {
   // Optional: Authenticate the request (e.g., with a secret)
@@ -123,19 +128,21 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Initialize the job queue
     const jobQueue = await getJobQueue();
+
+    // Register job handlers
     await registerJobHandlers();
 
     // Create a processor instance
     const processor = jobQueue.createProcessor({
       workerId: `cron-${Date.now()}`,
       batchSize: 20,
+      verbose: true,
     });
 
+    // Start the processor
     processor.start();
-    // Process for up to 50 seconds (Vercel has a 60s limit)
-    await new Promise((resolve) => setTimeout(resolve, 50000));
-    processor.stop();
 
     // Clean up old jobs (keep for 30 days)
     const deleted = await jobQueue.cleanupOldJobs(30);
@@ -154,11 +161,26 @@ export async function GET(request: NextRequest) {
 }
 ```
 
+#### Example: Vercel Cron Configuration
+
+Add to your `vercel.json` to call the cron route every 5 minutes:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
+```
+
 ### 5. Cancel a Job
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/job-queue';
+import { getJobQueue } from '@/lib/queue';
 
 export async function POST(request: NextRequest) {
   try {
@@ -182,7 +204,7 @@ Cancel all jobs that are still pending (not yet started or scheduled for the fut
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/job-queue';
+import { getJobQueue } from '@/lib/queue';
 
 export async function POST(request: NextRequest) {
   try {
@@ -221,64 +243,22 @@ await jobQueue.cancelAllUpcomingJobs({ job_type: 'email', priority: 2 });
 
 This will set the status of all jobs that are still pending (not yet started or scheduled for the future) to `cancelled`.
 
-#### Example: Vercel Cron Configuration
+### 7. Get Job(s)
 
-Add to your `vercel.json`:
-
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/process-jobs",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
-```
-
-## Advanced Usage
-
-### 1. Job Dashboard API (List Jobs)
+To get a job by id:
 
 ```typescript
-import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/job-queue';
-
-export async function GET(request: NextRequest) {
-  // Add authentication as needed
-  try {
-    const jobQueue = await getJobQueue();
-    const searchParams = request.nextUrl.searchParams;
-    const status = searchParams.get('status');
-    const limit = parseInt(searchParams.get('limit') || '100', 10);
-    const offset = parseInt(searchParams.get('offset') || '0', 10);
-    let jobs;
-    if (status) {
-      jobs = await jobQueue.getJobsByStatus(status, limit, offset);
-    } else {
-      jobs = await jobQueue.getAllJobs(limit, offset);
-    }
-    return NextResponse.json(jobs);
-  } catch (error) {
-    console.error('Error fetching jobs:', error);
-    return NextResponse.json(
-      { message: 'Failed to fetch jobs' },
-      { status: 500 },
-    );
-  }
-}
+const job = await jobQueue.getJob(pool, jobId);
 ```
 
-#### List all jobs (not just by status)
-
-You can use `getAllJobs` to retrieve all jobs in the queue, regardless of status. This is useful for dashboards or admin panels:
+To get all jobs:
 
 ```typescript
-const jobs = await jobQueue.getAllJobs(100, 0); // Get first 100 jobs
+const jobs = await jobQueue.getAllJobs(pool, limit, offset);
 ```
 
-### 2. Retry Failed Job API
+To get jobs by status:
 
-```
-
+```typescript
+const jobs = await jobQueue.getJobsByStatus(pool, status, limit, offset);
 ```

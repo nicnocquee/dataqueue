@@ -1,6 +1,6 @@
 {
   "name": "pg-bg-job-queue",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "PostgreSQL-based job queue for Node.js applications with support for serverless environments",
   "type": "module",
   "main": "dist/index.js",
@@ -22,7 +22,8 @@
     "format": "prettier --write .",
     "check-format": "prettier --check .",
     "check-exports": "attw --pack .",
-    "local-release": "changeset version && changeset publish"
+    "local-release": "changeset version && changeset publish",
+    "dev": "tsup --watch"
   },
   "keywords": [
     "nextjs",

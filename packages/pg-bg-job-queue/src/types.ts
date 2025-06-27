@@ -63,6 +63,7 @@ export interface JobQueue {
     limit?: number,
     offset?: number,
   ) => Promise<JobRecord<T>[]>;
+  getAllJobs: <T>(limit?: number, offset?: number) => Promise<JobRecord<T>[]>;
   retryJob: (jobId: number) => Promise<void>;
   cleanupOldJobs: (daysToKeep?: number) => Promise<number>;
   cancelJob: (jobId: number) => Promise<void>;

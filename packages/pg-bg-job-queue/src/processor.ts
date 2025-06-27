@@ -56,7 +56,6 @@ export const processBatch = async (
   pool: Pool,
   workerId: string,
   batchSize = 10,
-  verbose = false,
 ): Promise<number> => {
   const jobs = await getNextBatch(pool, workerId, batchSize);
 
@@ -67,6 +66,9 @@ export const processBatch = async (
 
 /**
  * Start a job processor that continuously processes jobs
+ * @param pool - The database pool
+ * @param options - The processor options. Leave pollInterval empty to run only once.
+ * @returns The processor instance
  */
 export const createProcessor = (
   pool: Pool,
@@ -90,12 +92,7 @@ export const createProcessor = (
     log(`Processing jobs with workerId: ${workerId}`);
 
     try {
-      const processed = await processBatch(
-        pool,
-        workerId,
-        batchSize,
-        options.verbose,
-      );
+      const processed = await processBatch(pool, workerId, batchSize);
 
       // If we processed a full batch, there might be more jobs ready
       if (processed === batchSize) {
