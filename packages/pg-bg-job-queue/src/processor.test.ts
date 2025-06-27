@@ -56,7 +56,9 @@ describe('processor integration', () => {
     await processJob(pool, job!);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
-    expect(failed?.payload.last_error).toBe('fail!');
+    expect((failed?.payload as { last_error: string }).last_error).toBe(
+      'fail!',
+    );
   });
 
   it('should mark job as failed if no handler registered', async () => {
@@ -69,7 +71,9 @@ describe('processor integration', () => {
     await processJob(pool, job!);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
-    expect(failed?.payload.last_error).toContain('No handler registered');
+    expect((failed?.payload as { last_error: string }).last_error).toContain(
+      'No handler registered',
+    );
   });
 
   it('should process a batch of jobs', async () => {
