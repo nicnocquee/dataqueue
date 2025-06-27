@@ -9,3 +9,4 @@ data
 .env.test.local
 .env.production.local
 pnpm-lock.yaml
+.next
