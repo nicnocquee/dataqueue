@@ -64,7 +64,11 @@ export interface JobQueue {
   retryJob: (jobId: number) => Promise<void>;
   cleanupOldJobs: (daysToKeep?: number) => Promise<number>;
   cancelJob: (jobId: number) => Promise<void>;
-  cancelAllUpcomingJobs: () => Promise<number>;
+  cancelAllUpcomingJobs: (filters?: {
+    job_type?: string;
+    priority?: number;
+    run_at?: Date;
+  }) => Promise<number>;
   registerJobHandler: (
     jobType: string,
     handler: (payload: Record<string, any>) => Promise<void>,

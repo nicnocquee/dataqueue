@@ -43,7 +43,11 @@ export const initJobQueue = async (
     retryJob: (jobId: number) => retryJob(pool, jobId),
     cleanupOldJobs: (daysToKeep?: number) => cleanupOldJobs(pool, daysToKeep),
     cancelJob: (jobId: number) => cancelJob(pool, jobId),
-    cancelAllUpcomingJobs: () => cancelAllUpcomingJobs(pool),
+    cancelAllUpcomingJobs: (filters?: {
+      job_type?: string;
+      priority?: number;
+      run_at?: Date;
+    }) => cancelAllUpcomingJobs(pool, filters),
 
     // Job processing
     registerJobHandler,

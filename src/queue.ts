@@ -254,19 +254,36 @@ export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
 };
 
 /**
- * Cancel all upcoming jobs (pending and scheduled in the future)
+ * Cancel all upcoming jobs (pending and scheduled in the future) with optional filters
  */
-export const cancelAllUpcomingJobs = async (pool: Pool): Promise<number> => {
+export const cancelAllUpcomingJobs = async (
+  pool: Pool,
+  filters?: { job_type?: string; priority?: number; run_at?: Date },
+): Promise<number> => {
   const client = await pool.connect();
   try {
-    const result = await client.query(
-      `
+    let query = `
       UPDATE job_queue
       SET status = 'cancelled', updated_at = NOW()
-      WHERE status = 'pending'
-      RETURNING id
-    `,
-    );
+      WHERE status = 'pending'`;
+    const params: any[] = [];
+    let paramIdx = 1;
+    if (filters) {
+      if (filters.job_type) {
+        query += ` AND job_type = $${paramIdx++}`;
+        params.push(filters.job_type);
+      }
+      if (filters.priority !== undefined) {
+        query += ` AND priority = $${paramIdx++}`;
+        params.push(filters.priority);
+      }
+      if (filters.run_at) {
+        query += ` AND run_at = $${paramIdx++}`;
+        params.push(filters.run_at);
+      }
+    }
+    query += '\nRETURNING id';
+    const result = await client.query(query, params);
     return result.rowCount || 0;
   } finally {
     client.release();

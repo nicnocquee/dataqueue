@@ -187,6 +187,7 @@ import { getJobQueue } from '@/lib/job-queue';
 export async function POST(request: NextRequest) {
   try {
     const jobQueue = await getJobQueue();
+    // Cancel all pending jobs
     const cancelledCount = await jobQueue.cancelAllUpcomingJobs();
     return NextResponse.json({ message: `Cancelled ${cancelledCount} jobs` });
   } catch (error) {
@@ -197,6 +198,25 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+```
+
+#### Cancel jobs by filter
+
+You can also cancel only jobs matching certain criteria:
+
+```typescript
+// Cancel only email jobs
+await jobQueue.cancelAllUpcomingJobs({ job_type: 'email' });
+
+// Cancel only jobs with priority 2
+await jobQueue.cancelAllUpcomingJobs({ priority: 2 });
+
+// Cancel only jobs scheduled for a specific time
+const runAt = new Date('2024-06-01T12:00:00Z');
+await jobQueue.cancelAllUpcomingJobs({ run_at: runAt });
+
+// Combine filters
+await jobQueue.cancelAllUpcomingJobs({ job_type: 'email', priority: 2 });
 ```
 
 This will set the status of all jobs that are still pending (not yet started or scheduled for the future) to `cancelled`.

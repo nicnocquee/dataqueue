@@ -176,4 +176,98 @@ describe('index integration', () => {
     const completedJob = await jobQueue.getJob(jobId4);
     expect(completedJob?.status).toBe('completed');
   });
+
+  it('should cancel all upcoming jobs by job_type', async () => {
+    const jobId1 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'a@example.com' },
+    });
+    const jobId2 = await jobQueue.addJob({
+      job_type: 'sms',
+      payload: { to: 'b@example.com' },
+    });
+    // Cancel only email jobs
+    const cancelledCount = await jobQueue.cancelAllUpcomingJobs({
+      job_type: 'email',
+    });
+    expect(cancelledCount).toBeGreaterThanOrEqual(1);
+    const job1 = await jobQueue.getJob(jobId1);
+    const job2 = await jobQueue.getJob(jobId2);
+    expect(job1?.status).toBe('cancelled');
+    expect(job2?.status).toBe('pending');
+  });
+
+  it('should cancel all upcoming jobs by priority', async () => {
+    const jobId1 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'a@example.com' },
+      priority: 1,
+    });
+    const jobId2 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'b@example.com' },
+      priority: 2,
+    });
+    // Cancel only priority 2 jobs
+    const cancelledCount = await jobQueue.cancelAllUpcomingJobs({
+      priority: 2,
+    });
+    expect(cancelledCount).toBeGreaterThanOrEqual(1);
+    const job1 = await jobQueue.getJob(jobId1);
+    const job2 = await jobQueue.getJob(jobId2);
+    expect(job1?.status).toBe('pending');
+    expect(job2?.status).toBe('cancelled');
+  });
+
+  it('should cancel all upcoming jobs by run_at', async () => {
+    const runAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour in future
+    const jobId1 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'a@example.com' },
+      run_at: runAt,
+    });
+    const jobId2 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'b@example.com' },
+    });
+    // Cancel only jobs with run_at = runAt
+    const cancelledCount = await jobQueue.cancelAllUpcomingJobs({
+      run_at: runAt,
+    });
+    expect(cancelledCount).toBeGreaterThanOrEqual(1);
+    const job1 = await jobQueue.getJob(jobId1);
+    const job2 = await jobQueue.getJob(jobId2);
+    expect(job1?.status).toBe('cancelled');
+    expect(job2?.status).toBe('pending');
+  });
+
+  it('should cancel all upcoming jobs by job_type and priority', async () => {
+    const jobId1 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'a@example.com' },
+      priority: 1,
+    });
+    const jobId2 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'b@example.com' },
+      priority: 2,
+    });
+    const jobId3 = await jobQueue.addJob({
+      job_type: 'sms',
+      payload: { to: 'c@example.com' },
+      priority: 2,
+    });
+    // Cancel only email jobs with priority 2
+    const cancelledCount = await jobQueue.cancelAllUpcomingJobs({
+      job_type: 'email',
+      priority: 2,
+    });
+    expect(cancelledCount).toBeGreaterThanOrEqual(1);
+    const job1 = await jobQueue.getJob(jobId1);
+    const job2 = await jobQueue.getJob(jobId2);
+    const job3 = await jobQueue.getJob(jobId3);
+    expect(job1?.status).toBe('pending');
+    expect(job2?.status).toBe('cancelled');
+    expect(job3?.status).toBe('pending');
+  });
 });
