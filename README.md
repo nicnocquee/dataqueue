@@ -262,3 +262,15 @@ To get jobs by status:
 ```typescript
 const jobs = await jobQueue.getJobsByStatus(pool, status, limit, offset);
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## License
+
+MIT
+
+## Author
+
+[Nico Prananta](https://nico.fyi)
