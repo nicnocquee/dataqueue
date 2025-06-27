@@ -154,6 +154,28 @@ export async function GET(request: NextRequest) {
 }
 ```
 
+### 5. Cancel a Job
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { getJobQueue } from '@/lib/job-queue';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { jobId } = await request.json();
+    const jobQueue = await getJobQueue();
+    await jobQueue.cancelJob(jobId);
+    return NextResponse.json({ message: 'Job cancelled' });
+  } catch (error) {
+    console.error('Error cancelling job:', error);
+    return NextResponse.json(
+      { message: 'Failed to cancel job' },
+      { status: 500 },
+    );
+  }
+}
+```
+
 #### Example: Vercel Cron Configuration
 
 Add to your `vercel.json`:

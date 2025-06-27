@@ -12,7 +12,7 @@ export interface JobRecord {
   id: number;
   job_type: string;
   payload: Record<string, any>;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   created_at: Date;
   updated_at: Date;
   locked_at: Date | null;
@@ -63,6 +63,7 @@ export interface JobQueue {
   ) => Promise<JobRecord[]>;
   retryJob: (jobId: number) => Promise<void>;
   cleanupOldJobs: (daysToKeep?: number) => Promise<number>;
+  cancelJob: (jobId: number) => Promise<void>;
   registerJobHandler: (
     jobType: string,
     handler: (payload: Record<string, any>) => Promise<void>,

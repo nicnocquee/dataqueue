@@ -111,4 +111,28 @@ describe('index integration', () => {
   it('getPool should return the underlying pool', () => {
     expect(jobQueue.getPool()).toBeInstanceOf(Pool);
   });
+
+  it('should cancel a scheduled job', async () => {
+    const jobId = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'cancelme@example.com' },
+    });
+    // Cancel the job
+    await jobQueue.cancelJob(jobId);
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('cancelled');
+
+    // Try to cancel a completed job (should not change status)
+    const jobId2 = await jobQueue.addJob({
+      job_type: 'email',
+      payload: { to: 'done@example.com' },
+    });
+    await pool.query(
+      `UPDATE job_queue SET status = 'completed' WHERE id = $1`,
+      [jobId2],
+    );
+    await jobQueue.cancelJob(jobId2);
+    const completedJob = await jobQueue.getJob(jobId2);
+    expect(completedJob?.status).toBe('completed');
+  });
 });

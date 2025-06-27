@@ -41,7 +41,7 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - Add or update tests as needed.
 - Run the test suite to ensure everything works:
   ```bash
-  npm test
+  npm run test
   ```
 - Commit your changes with a clear, descriptive message.
 - Push your branch and open a pull request (PR) against the `main` branch.

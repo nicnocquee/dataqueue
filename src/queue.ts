@@ -233,3 +233,22 @@ export const cleanupOldJobs = async (
     client.release();
   }
 };
+
+/**
+ * Cancel a scheduled job (only if still pending)
+ */
+export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `
+      UPDATE job_queue
+      SET status = 'cancelled', updated_at = NOW()
+      WHERE id = $1 AND status = 'pending'
+    `,
+      [jobId],
+    );
+  } finally {
+    client.release();
+  }
+};

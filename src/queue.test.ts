@@ -129,4 +129,24 @@ describe('queue integration', () => {
     const job = await queue.getJob(pool, jobId);
     expect(job).toBeNull();
   });
+
+  it('should cancel a scheduled job', async () => {
+    const jobId = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'cancelme@example.com' },
+    });
+    await queue.cancelJob(pool, jobId);
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('cancelled');
+
+    // Try to cancel a job that is already completed
+    const jobId2 = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'done@example.com' },
+    });
+    await queue.completeJob(pool, jobId2);
+    await queue.cancelJob(pool, jobId2);
+    const completedJob = await queue.getJob(pool, jobId2);
+    expect(completedJob?.status).toBe('completed');
+  });
 });

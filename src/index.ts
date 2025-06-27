@@ -5,6 +5,7 @@ import {
   getJobsByStatus,
   retryJob,
   cleanupOldJobs,
+  cancelJob,
 } from './queue.js';
 import { registerJobHandler, createProcessor } from './processor.js';
 import {
@@ -40,6 +41,7 @@ export const initJobQueue = async (
       getJobsByStatus(pool, status, limit, offset),
     retryJob: (jobId: number) => retryJob(pool, jobId),
     cleanupOldJobs: (daysToKeep?: number) => cleanupOldJobs(pool, daysToKeep),
+    cancelJob: (jobId: number) => cancelJob(pool, jobId),
 
     // Job processing
     registerJobHandler,
