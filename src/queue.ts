@@ -252,3 +252,23 @@ export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
     client.release();
   }
 };
+
+/**
+ * Cancel all upcoming jobs (pending and scheduled in the future)
+ */
+export const cancelAllUpcomingJobs = async (pool: Pool): Promise<number> => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `
+      UPDATE job_queue
+      SET status = 'cancelled', updated_at = NOW()
+      WHERE status = 'pending'
+      RETURNING id
+    `,
+    );
+    return result.rowCount || 0;
+  } finally {
+    client.release();
+  }
+};

@@ -176,6 +176,31 @@ export async function POST(request: NextRequest) {
 }
 ```
 
+### 6. Cancel All Upcoming Jobs
+
+Cancel all jobs that are still pending (not yet started or scheduled for the future):
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { getJobQueue } from '@/lib/job-queue';
+
+export async function POST(request: NextRequest) {
+  try {
+    const jobQueue = await getJobQueue();
+    const cancelledCount = await jobQueue.cancelAllUpcomingJobs();
+    return NextResponse.json({ message: `Cancelled ${cancelledCount} jobs` });
+  } catch (error) {
+    console.error('Error cancelling jobs:', error);
+    return NextResponse.json(
+      { message: 'Failed to cancel jobs' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+This will set the status of all jobs that are still pending (not yet started or scheduled for the future) to `cancelled`.
+
 #### Example: Vercel Cron Configuration
 
 Add to your `vercel.json`:

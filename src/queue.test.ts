@@ -149,4 +149,42 @@ describe('queue integration', () => {
     const completedJob = await queue.getJob(pool, jobId2);
     expect(completedJob?.status).toBe('completed');
   });
+
+  it('should cancel all upcoming jobs', async () => {
+    // Add three pending jobs
+    const jobId1 = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'cancelall1@example.com' },
+    });
+    const jobId2 = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'cancelall2@example.com' },
+    });
+    const jobId3 = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'cancelall3@example.com' },
+    });
+    // Add a completed job
+    const jobId4 = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'done@example.com' },
+    });
+    await queue.completeJob(pool, jobId4);
+
+    // Cancel all upcoming jobs
+    const cancelledCount = await queue.cancelAllUpcomingJobs(pool);
+    expect(cancelledCount).toBeGreaterThanOrEqual(3);
+
+    // Check that all pending jobs are now cancelled
+    const job1 = await queue.getJob(pool, jobId1);
+    const job2 = await queue.getJob(pool, jobId2);
+    const job3 = await queue.getJob(pool, jobId3);
+    expect(job1?.status).toBe('cancelled');
+    expect(job2?.status).toBe('cancelled');
+    expect(job3?.status).toBe('cancelled');
+
+    // Completed job should remain completed
+    const completedJob = await queue.getJob(pool, jobId4);
+    expect(completedJob?.status).toBe('completed');
+  });
 });
