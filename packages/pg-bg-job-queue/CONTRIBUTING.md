@@ -1,9 +1,10 @@
-# Contributing to pg-bg-job-queue
+# Contributing to pg-bg-job-queue (Monorepo)
 
-Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is greatly appreciated. This guide will help you get started with contributing, from setting up your environment to submitting your first pull request.
+Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is greatly appreciated. This guide will help you get started with contributing to the monorepo, from setting up your environment to submitting your first pull request.
 
 ## Table of Contents
 
+- [Monorepo Structure](#monorepo-structure)
 - [Getting Started](#getting-started)
 - [Development Workflow](#development-workflow)
 - [Coding Standards](#coding-standards)
@@ -14,6 +15,11 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 
 ---
 
+## Monorepo Structure
+
+- `packages/pg-bg-job-queue`: The main library package.
+- `apps/demo-nextjs`: Example Next.js app using the library.
+
 ## Getting Started
 
 1. **Fork the repository** on GitHub and clone your fork locally:
@@ -21,9 +27,9 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
    git clone https://github.com/your-username/pg-bg-job-queue.git
    cd pg-bg-job-queue
    ```
-2. **Install dependencies**:
+2. **Install dependencies** (using pnpm):
    ```bash
-   npm install
+   pnpm install
    ```
 3. **Set up your environment**:
    - Copy `.env.example` to `.env` and update the variables as needed (e.g., `DATABASE_URL`).
@@ -41,7 +47,15 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - Add or update tests as needed.
 - Run the test suite to ensure everything works:
   ```bash
-  npm run test
+  pnpm test --filter pg-bg-job-queue
+  ```
+- To build the library:
+  ```bash
+  pnpm build --filter pg-bg-job-queue
+  ```
+- To run the demo app:
+  ```bash
+  pnpm dev --filter demo-nextjs
   ```
 - Commit your changes with a clear, descriptive message.
 - Push your branch and open a pull request (PR) against the `main` branch.
@@ -50,7 +64,7 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 
 - Use **TypeScript** for all code.
 - Follow the existing code style. We use [Prettier](https://prettier.io/) for formatting.
-- Run `npm run format` before submitting your PR.
+- Run `pnpm format` before submitting your PR.
 - Write clear, concise comments and documentation.
 - Avoid using the `any` type; prefer strict typing.
 - Group related code (components, hooks, utils) together for easier maintenance.
@@ -61,9 +75,9 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - First run `docker-compose up` to start the PostgreSQL container which will be used for testing.
 - Run the test suite with:
   ```bash
-  npm run test
+  pnpm test --filter pg-bg-job-queue
   ```
-- Add tests in the `src/` directory, following the existing test structure.
+- Add tests in the `src/` directory of the package, following the existing test structure.
 - Tests should be deterministic and not depend on external state.
 
 ## Submitting Changes
@@ -73,6 +87,7 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - Reference any related issues (e.g., `Closes #123`).
 - Be responsive to feedback and make requested changes promptly.
 - PRs should pass all CI checks before merging.
+- **Publishing:** The library is published to npm automatically by CI using Changesets when changes are merged to `main` and a version bump is present.
 
 ## Reporting Issues
 
