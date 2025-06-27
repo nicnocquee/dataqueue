@@ -337,3 +337,30 @@ export const cancelAllUpcomingJobs = async (
     client.release();
   }
 };
+
+/**
+ * Get all jobs with optional pagination
+ */
+export const getAllJobs = async <T>(
+  pool: Pool,
+  limit = 100,
+  offset = 0,
+): Promise<JobRecord<T>[]> => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      'SELECT * FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+      [limit, offset],
+    );
+    log(`Found ${result.rows.length} jobs (all)`);
+    return result.rows.map((row) => ({
+      ...row,
+      payload: row.payload,
+    }));
+  } catch (error) {
+    log(`Error getting all jobs: ${error}`);
+    throw error;
+  } finally {
+    client.release();
+  }
+};

@@ -7,10 +7,27 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getJobQueue } from '@/lib/queue';
+import { JobRecord } from 'pg-bg-job-queue';
 
 export const PendingJobs = async () => {
   const jobQueue = await getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('pending');
+  return <JobTable jobs={jobs} />;
+};
+
+export const ProcessingJobs = async () => {
+  const jobQueue = await getJobQueue();
+  const jobs = await jobQueue.getJobsByStatus('processing');
+  return <JobTable jobs={jobs} />;
+};
+
+export const CompletedJobs = async () => {
+  const jobQueue = await getJobQueue();
+  const jobs = await jobQueue.getJobsByStatus('completed');
+  return <JobTable jobs={jobs} />;
+};
+
+const JobTable = ({ jobs }: { jobs: JobRecord<unknown>[] }) => {
   return (
     <Table>
       <TableHeader>

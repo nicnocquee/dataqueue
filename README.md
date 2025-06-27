@@ -249,10 +249,15 @@ export async function GET(request: NextRequest) {
   try {
     const jobQueue = await getJobQueue();
     const searchParams = request.nextUrl.searchParams;
-    const status = searchParams.get('status') || 'pending';
+    const status = searchParams.get('status');
     const limit = parseInt(searchParams.get('limit') || '100', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
-    const jobs = await jobQueue.getJobsByStatus(status, limit, offset);
+    let jobs;
+    if (status) {
+      jobs = await jobQueue.getJobsByStatus(status, limit, offset);
+    } else {
+      jobs = await jobQueue.getAllJobs(limit, offset);
+    }
     return NextResponse.json(jobs);
   } catch (error) {
     console.error('Error fetching jobs:', error);
@@ -264,45 +269,16 @@ export async function GET(request: NextRequest) {
 }
 ```
 
-### 2. Retry Failed Job API
+#### List all jobs (not just by status)
+
+You can use `getAllJobs` to retrieve all jobs in the queue, regardless of status. This is useful for dashboards or admin panels:
 
 ```typescript
-import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/job-queue';
-
-export async function POST(request: NextRequest) {
-  // Add authentication as needed
-  try {
-    const { jobId } = await request.json();
-    if (!jobId) {
-      return NextResponse.json(
-        { message: 'Job ID is required' },
-        { status: 400 },
-      );
-    }
-    const jobQueue = await getJobQueue();
-    await jobQueue.retryJob(jobId);
-    return NextResponse.json({ message: 'Job queued for retry' });
-  } catch (error) {
-    console.error('Error retrying job:', error);
-    return NextResponse.json(
-      { message: 'Failed to retry job' },
-      { status: 500 },
-    );
-  }
-}
+const jobs = await jobQueue.getAllJobs(100, 0); // Get first 100 jobs
 ```
 
-## Troubleshooting & FAQ
+### 2. Retry Failed Job API
 
-- **Database connection issues?** Ensure your `DATABASE_URL` is set and accessible from your environment.
-- **Jobs not processing?** Make sure your job handlers are registered before processing jobs.
-- **Need to process jobs automatically?** Use a cron job or background worker to call your processing endpoint regularly.
+```
 
-## Contributing
-
-Contributions are welcome! Please open issues or pull requests for bugs, features, or documentation improvements.
-
-## License
-
-MIT
+```

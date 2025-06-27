@@ -200,4 +200,48 @@ describe('queue integration', () => {
     // The run_at value should match exactly (toISOString) what we inserted
     expect(job?.run_at.toISOString()).toBe(utcDate.toISOString());
   });
+
+  it('should get all jobs', async () => {
+    // Add three jobs
+    const jobId1 = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'all1@example.com' },
+    });
+    const jobId2 = await queue.addJob(pool, {
+      job_type: 'sms',
+      payload: { to: 'all2@example.com' },
+    });
+    const jobId3 = await queue.addJob(pool, {
+      job_type: 'push',
+      payload: { to: 'all3@example.com' },
+    });
+    // Get all jobs
+    const jobs = await queue.getAllJobs(pool);
+    const ids = jobs.map((j) => j.id);
+    expect(ids).toContain(jobId1);
+    expect(ids).toContain(jobId2);
+    expect(ids).toContain(jobId3);
+    // Should return correct job data
+    const job1 = jobs.find((j) => j.id === jobId1);
+    expect(job1?.job_type).toBe('email');
+    expect(job1?.payload).toEqual({ to: 'all1@example.com' });
+  });
+
+  it('should support pagination in getAllJobs', async () => {
+    // Add four jobs
+    await queue.addJob(pool, { job_type: 'a', payload: { n: 1 } });
+    await queue.addJob(pool, { job_type: 'b', payload: { n: 2 } });
+    await queue.addJob(pool, { job_type: 'c', payload: { n: 3 } });
+    await queue.addJob(pool, { job_type: 'd', payload: { n: 4 } });
+    // Get first two jobs
+    const firstTwo = await queue.getAllJobs(pool, 2, 0);
+    expect(firstTwo.length).toBe(2);
+    // Get next two jobs
+    const nextTwo = await queue.getAllJobs(pool, 2, 2);
+    expect(nextTwo.length).toBe(2);
+    // No overlap in IDs
+    const firstIds = firstTwo.map((j) => j.id);
+    const nextIds = nextTwo.map((j) => j.id);
+    expect(firstIds.some((id) => nextIds.includes(id))).toBe(false);
+  });
 });
