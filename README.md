@@ -9,7 +9,7 @@ A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Sche
 - Reclaim stuck jobs: No jobs will be stuck in the `processing` state indefinitely
 - Cleanup old jobs: Keep only the last xxx days of jobs
 - Works with serverless and traditional environments
-- Written in TypeScript
+- Strong typing for job payloads which prevents you from adding jobs with the wrong payload type, and ensures that the job handler receives the correct payload type.
 
 ## Installation
 
@@ -23,16 +23,32 @@ In this example, we'll use a Next.js with App Router project which is deployed t
 
 ### 1. Initialize the Job Queue
 
-Create a file (e.g., `lib/queue.ts`) to initialize and reuse the job queue instance:
+Create a file (e.g., `lib/queue.ts`) to initialize and reuse the job queue instance. You need to define the job payload map for this app. The keys are the job types, and the values are the payload types. This prevents you from adding jobs with the wrong payload type.
 
 ```typescript:lib/queue.ts
-import { initJobQueue, JobQueue } from 'pg-bg-job-queue';
+import { initJobQueue } from 'pg-bg-job-queue';
 
-let jobQueuePromise: Promise<JobQueue> | null = null;
+// Define the job payload map for this app.
+// This will ensure that the job payload is typed correctly when adding jobs.
+// The keys are the job types, and the values are the payload types.
+export type JobPayloadMap = {
+  send_email: {
+    to: string;
+    subject: string;
+    body: string;
+  };
+  generate_report: {
+    reportId: string;
+    userId: string;
+  };
+};
 
-export const getJobQueue = async (): Promise<JobQueue> => {
+let jobQueuePromise: ReturnType<typeof initJobQueue<JobPayloadMap>> | null =
+  null;
+
+export const getJobQueue = async () => {
   if (!jobQueuePromise) {
-    jobQueuePromise = initJobQueue({
+    jobQueuePromise = initJobQueue<JobPayloadMap>({
       databaseConfig: {
         connectionString: process.env.DATABASE_URL, // Set this in your environment
         ssl:

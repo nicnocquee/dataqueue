@@ -11,25 +11,25 @@ import { log, setLogContext } from './log-context.js';
 /**
  * Map of job types to handlers
  */
-const jobHandlers: Record<string, JobHandler<any>> = {};
+let jobHandlers: Record<string, (payload: any) => Promise<void>> = {};
 
 /**
  * Register a job handler
  */
-export const registerJobHandler = (
-  jobType: string,
-  handler: (payload: Record<string, any>) => Promise<void>,
-): void => {
-  jobHandlers[jobType] = { handler };
-};
+export function registerJobHandler<
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(jobType: T, handler: (payload: PayloadMap[T]) => Promise<void>): void {
+  jobHandlers[jobType] = handler;
+}
 
 /**
  * Process a single job
  */
-export const processJob = async <T>(
-  pool: Pool,
-  job: JobRecord<T>,
-): Promise<void> => {
+export async function processJob<
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(pool: Pool, job: JobRecord<PayloadMap, T>): Promise<void> {
   const handler = jobHandlers[job.job_type];
 
   if (!handler) {
@@ -47,7 +47,7 @@ export const processJob = async <T>(
   }
 
   try {
-    await handler.handler(job.payload);
+    await handler(job.payload);
     await completeJob(pool, job.id);
   } catch (error) {
     console.error(`Error processing job ${job.id}:`, error);
@@ -57,7 +57,7 @@ export const processJob = async <T>(
       error instanceof Error ? error : new Error(String(error)),
     );
   }
-};
+}
 
 /**
  * Process a batch of jobs

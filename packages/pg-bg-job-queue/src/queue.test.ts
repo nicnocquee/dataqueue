@@ -23,7 +23,7 @@ describe('queue integration', () => {
   });
 
   it('should add a job and retrieve it', async () => {
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'test@example.com' },
     });
@@ -36,11 +36,14 @@ describe('queue integration', () => {
 
   it('should get jobs by status', async () => {
     // Add two jobs
-    const jobId1 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'a@example.com' },
-    });
-    const jobId2 = await queue.addJob(pool, {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'a@example.com' },
+      },
+    );
+    const jobId2 = await queue.addJob<{ sms: { to: string } }, 'sms'>(pool, {
       job_type: 'sms',
       payload: { to: 'b@example.com' },
     });
@@ -52,7 +55,7 @@ describe('queue integration', () => {
   });
 
   it('should retry a failed job', async () => {
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'fail@example.com' },
     });
@@ -67,7 +70,7 @@ describe('queue integration', () => {
   });
 
   it('should mark a job as completed', async () => {
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'done@example.com' },
     });
@@ -78,14 +81,20 @@ describe('queue integration', () => {
 
   it('should get the next batch of jobs to process', async () => {
     // Add jobs (do not set run_at, use DB default)
-    const jobId1 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'batch1@example.com' },
-    });
-    const jobId2 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'batch2@example.com' },
-    });
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'batch1@example.com' },
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'batch2@example.com' },
+      },
+    );
     const jobs = await queue.getNextBatch(pool, 'worker-1', 2);
     const ids = jobs.map((j) => j.id);
     expect(ids).toContain(jobId1);
@@ -98,7 +107,7 @@ describe('queue integration', () => {
   it('should not pick up jobs scheduled in the future', async () => {
     // Add a job scheduled 1 day in the future
     const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'future@example.com' },
       run_at: futureDate,
@@ -113,7 +122,7 @@ describe('queue integration', () => {
 
   it('should cleanup old completed jobs', async () => {
     // Add and complete a job
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'cleanup@example.com' },
     });
@@ -131,7 +140,7 @@ describe('queue integration', () => {
   });
 
   it('should cancel a scheduled job', async () => {
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'cancelme@example.com' },
     });
@@ -140,10 +149,13 @@ describe('queue integration', () => {
     expect(job?.status).toBe('cancelled');
 
     // Try to cancel a job that is already completed
-    const jobId2 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'done@example.com' },
-    });
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'done@example.com' },
+      },
+    );
     await queue.completeJob(pool, jobId2);
     await queue.cancelJob(pool, jobId2);
     const completedJob = await queue.getJob(pool, jobId2);
@@ -152,23 +164,35 @@ describe('queue integration', () => {
 
   it('should cancel all upcoming jobs', async () => {
     // Add three pending jobs
-    const jobId1 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'cancelall1@example.com' },
-    });
-    const jobId2 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'cancelall2@example.com' },
-    });
-    const jobId3 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'cancelall3@example.com' },
-    });
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'cancelall1@example.com' },
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'cancelall2@example.com' },
+      },
+    );
+    const jobId3 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'cancelall3@example.com' },
+      },
+    );
     // Add a completed job
-    const jobId4 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'done@example.com' },
-    });
+    const jobId4 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'done@example.com' },
+      },
+    );
     await queue.completeJob(pool, jobId4);
 
     // Cancel all upcoming jobs
@@ -190,7 +214,7 @@ describe('queue integration', () => {
 
   it('should store and retrieve run_at in UTC without timezone shift', async () => {
     const utcDate = new Date(Date.UTC(2030, 0, 1, 12, 0, 0, 0)); // 2030-01-01T12:00:00.000Z
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'utc@example.com' },
       run_at: utcDate,
@@ -203,15 +227,18 @@ describe('queue integration', () => {
 
   it('should get all jobs', async () => {
     // Add three jobs
-    const jobId1 = await queue.addJob(pool, {
-      job_type: 'email',
-      payload: { to: 'all1@example.com' },
-    });
-    const jobId2 = await queue.addJob(pool, {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        job_type: 'email',
+        payload: { to: 'all1@example.com' },
+      },
+    );
+    const jobId2 = await queue.addJob<{ sms: { to: string } }, 'sms'>(pool, {
       job_type: 'sms',
       payload: { to: 'all2@example.com' },
     });
-    const jobId3 = await queue.addJob(pool, {
+    const jobId3 = await queue.addJob<{ push: { to: string } }, 'push'>(pool, {
       job_type: 'push',
       payload: { to: 'all3@example.com' },
     });
@@ -229,10 +256,22 @@ describe('queue integration', () => {
 
   it('should support pagination in getAllJobs', async () => {
     // Add four jobs
-    await queue.addJob(pool, { job_type: 'a', payload: { n: 1 } });
-    await queue.addJob(pool, { job_type: 'b', payload: { n: 2 } });
-    await queue.addJob(pool, { job_type: 'c', payload: { n: 3 } });
-    await queue.addJob(pool, { job_type: 'd', payload: { n: 4 } });
+    await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      job_type: 'a',
+      payload: { n: 1 },
+    });
+    await queue.addJob<{ b: { n: number } }, 'b'>(pool, {
+      job_type: 'b',
+      payload: { n: 2 },
+    });
+    await queue.addJob<{ c: { n: number } }, 'c'>(pool, {
+      job_type: 'c',
+      payload: { n: 3 },
+    });
+    await queue.addJob<{ d: { n: number } }, 'd'>(pool, {
+      job_type: 'd',
+      payload: { n: 4 },
+    });
     // Get first two jobs
     const firstTwo = await queue.getAllJobs(pool, 2, 0);
     expect(firstTwo.length).toBe(2);
@@ -246,7 +285,7 @@ describe('queue integration', () => {
   });
 
   it('should track error history for failed jobs', async () => {
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'failhistory@example.com' },
     });
@@ -265,7 +304,7 @@ describe('queue integration', () => {
 
   it('should reclaim stuck processing jobs', async () => {
     // Add a job and set it to processing with an old locked_at
-    const jobId = await queue.addJob(pool, {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       job_type: 'email',
       payload: { to: 'stuck@example.com' },
     });

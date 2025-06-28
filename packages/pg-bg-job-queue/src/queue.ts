@@ -5,7 +5,7 @@ import { log } from './log-context.js';
 /**
  * Add a job to the queue
  */
-export const addJob = async <T>(
+export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   pool: Pool,
   {
     job_type,
@@ -13,7 +13,7 @@ export const addJob = async <T>(
     max_attempts = 3,
     priority = 0,
     run_at = null,
-  }: JobOptions<T>,
+  }: JobOptions<PayloadMap, T>,
 ): Promise<number> => {
   const client = await pool.connect();
   try {
@@ -53,10 +53,10 @@ export const addJob = async <T>(
 /**
  * Get a job by ID
  */
-export const getJob = async <T>(
+export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   pool: Pool,
   id: number,
-): Promise<JobRecord<T> | null> => {
+): Promise<JobRecord<PayloadMap, T> | null> => {
   const client = await pool.connect();
   try {
     const result = await client.query('SELECT * FROM job_queue WHERE id = $1', [
@@ -85,12 +85,15 @@ export const getJob = async <T>(
 /**
  * Get jobs by status
  */
-export const getJobsByStatus = async <T>(
+export const getJobsByStatus = async <
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(
   pool: Pool,
   status: string,
   limit = 100,
   offset = 0,
-): Promise<JobRecord<T>[]> => {
+): Promise<JobRecord<PayloadMap, T>[]> => {
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -119,12 +122,15 @@ export const getJobsByStatus = async <T>(
  * @param batchSize - The batch size
  * @param jobType - Only fetch jobs with this job type (string or array of strings)
  */
-export const getNextBatch = async <T>(
+export const getNextBatch = async <
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(
   pool: Pool,
   workerId: string,
   batchSize = 10,
   jobType?: string | string[],
-): Promise<JobRecord<T>[]> => {
+): Promise<JobRecord<PayloadMap, T>[]> => {
   const client = await pool.connect();
   try {
     // Begin transaction
@@ -374,11 +380,14 @@ export const cancelAllUpcomingJobs = async (
 /**
  * Get all jobs with optional pagination
  */
-export const getAllJobs = async <T>(
+export const getAllJobs = async <
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(
   pool: Pool,
   limit = 100,
   offset = 0,
-): Promise<JobRecord<T>[]> => {
+): Promise<JobRecord<PayloadMap, T>[]> => {
   const client = await pool.connect();
   try {
     const result = await client.query(

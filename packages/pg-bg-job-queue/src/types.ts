@@ -1,17 +1,20 @@
 import { Pool } from 'pg';
 
-export interface JobOptions<T> {
-  job_type: string;
-  payload: T;
+// Utility type for job type keys
+export type JobType<PayloadMap> = keyof PayloadMap & string;
+
+export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
+  job_type: T;
+  payload: PayloadMap[T];
   max_attempts?: number;
   priority?: number;
   run_at?: Date | null;
 }
 
-export interface JobRecord<T> {
+export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
   id: number;
-  job_type: string;
-  payload: T;
+  job_type: T;
+  payload: PayloadMap[T];
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   created_at: Date;
   updated_at: Date;
@@ -26,8 +29,8 @@ export interface JobRecord<T> {
   error_history?: { message: string; timestamp: string }[];
 }
 
-export interface JobHandler<T> {
-  handler: (payload: T) => Promise<void>;
+export interface JobHandler<PayloadMap, T extends JobType<PayloadMap>> {
+  handler: (payload: PayloadMap[T]) => Promise<void>;
 }
 
 export interface ProcessorOptions {
@@ -91,27 +94,34 @@ export interface JobQueueConfig {
   verbose?: boolean;
 }
 
-export interface JobQueue {
+export interface JobQueue<PayloadMap> {
   /**
    * Add a job to the job queue.
    */
-  addJob: <T>(job: JobOptions<T>) => Promise<number>;
+  addJob: <T extends JobType<PayloadMap>>(
+    job: JobOptions<PayloadMap, T>,
+  ) => Promise<number>;
   /**
    * Get a job by its ID.
    */
-  getJob: <T>(id: number) => Promise<JobRecord<T> | null>;
+  getJob: <T extends JobType<PayloadMap>>(
+    id: number,
+  ) => Promise<JobRecord<PayloadMap, T> | null>;
   /**
    * Get jobs by their status.
    */
-  getJobsByStatus: <T>(
+  getJobsByStatus: <T extends JobType<PayloadMap>>(
     status: string,
     limit?: number,
     offset?: number,
-  ) => Promise<JobRecord<T>[]>;
+  ) => Promise<JobRecord<PayloadMap, T>[]>;
   /**
    * Get all jobs.
    */
-  getAllJobs: <T>(limit?: number, offset?: number) => Promise<JobRecord<T>[]>;
+  getAllJobs: <T extends JobType<PayloadMap>>(
+    limit?: number,
+    offset?: number,
+  ) => Promise<JobRecord<PayloadMap, T>[]>;
   /**
    * Retry a job.
    */
@@ -142,9 +152,9 @@ export interface JobQueue {
   /**
    * Register a job handler.
    */
-  registerJobHandler: (
-    jobType: string,
-    handler: (payload: Record<string, any>) => Promise<void>,
+  registerJobHandler: <T extends JobType<PayloadMap>>(
+    jobType: T,
+    handler: (payload: PayloadMap[T]) => Promise<void>,
   ) => void;
   /**
    * Create a job processor.
