@@ -137,7 +137,8 @@ export const sendEmail = async ({
 Set up a route to process jobs in batches. This example is for API route (`/api/cron/process`) which can be triggered by a cron job:
 
 ```typescript:app/api/cron/process/route.ts
-import { getJobQueue, jobHandlers } from '@/lib/queue';
+import { jobHandlers } from '@/lib/job-handler';
+import { getJobQueue } from '@/lib/queue';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -150,9 +151,12 @@ export async function GET(request: Request) {
   try {
     const jobQueue = await getJobQueue();
 
+    // You can now control how many jobs are processed in parallel per batch using the `concurrency` option.
+    // For example, to process at most 3 jobs in parallel per batch:
     const processor = jobQueue.createProcessor(jobHandlers, {
       workerId: `cron-${Date.now()}`,
-      batchSize: 3,
+      batchSize: 10, // up to 10 jobs per batch
+      concurrency: 3, // at most 3 jobs processed in parallel
       verbose: true,
     });
 
@@ -171,6 +175,14 @@ export async function GET(request: Request) {
   }
 }
 ```
+
+**Concurrency Option:**
+
+- `concurrency` controls how many jobs are processed in parallel per batch.
+- **Default is 3** (at most 3 jobs processed in parallel per batch).
+- Set to `1` to process jobs sequentially.
+- Set to a lower value to avoid resource exhaustion in resource-constrained environments.
+- Set to a higher value to increase parallelism (use with caution).
 
 #### Example: Vercel Cron Configuration
 

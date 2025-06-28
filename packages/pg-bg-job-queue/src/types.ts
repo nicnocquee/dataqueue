@@ -42,6 +42,13 @@ export interface ProcessorOptions {
    */
   batchSize?: number;
   /**
+   * The maximum number of jobs to process in parallel per batch.
+   * - If not provided, all jobs in the batch are processed in parallel.
+   * - Set to 1 to process jobs sequentially.
+   * - Set to a lower value to avoid resource exhaustion.
+   */
+  concurrency?: number;
+  /**
    * The interval in milliseconds to poll for new jobs.
    * - If not provided, the processor will process jobs every 5 seconds when startInBackground is called.
    * - In serverless functions, it's better to leave this empty.

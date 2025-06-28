@@ -49,7 +49,7 @@ async function processJobWithHandlers<
 }
 
 /**
- * Process a batch of jobs using the provided handler map
+ * Process a batch of jobs using the provided handler map and concurrency limit
  */
 async function processBatchWithHandlers<PayloadMap>(
   pool: Pool,
@@ -57,12 +57,41 @@ async function processBatchWithHandlers<PayloadMap>(
   batchSize: number,
   jobType: string | string[] | undefined,
   jobHandlers: Record<string, (payload: any) => Promise<void>>,
+  concurrency?: number,
 ): Promise<number> {
   const jobs = await getNextBatch(pool, workerId, batchSize, jobType);
-  await Promise.all(
-    jobs.map((job) => processJobWithHandlers(pool, job, jobHandlers)),
-  );
-  return jobs.length;
+  if (!concurrency || concurrency >= jobs.length) {
+    // Default: all in parallel
+    await Promise.all(
+      jobs.map((job) => processJobWithHandlers(pool, job, jobHandlers)),
+    );
+    return jobs.length;
+  }
+  // Concurrency-limited pool
+  let idx = 0;
+  let running = 0;
+  let finished = 0;
+  return new Promise((resolve, reject) => {
+    const next = () => {
+      if (finished === jobs.length) return resolve(jobs.length);
+      while (running < concurrency && idx < jobs.length) {
+        const job = jobs[idx++];
+        running++;
+        processJobWithHandlers(pool, job, jobHandlers)
+          .then(() => {
+            running--;
+            finished++;
+            next();
+          })
+          .catch((err) => {
+            running--;
+            finished++;
+            next();
+          });
+      }
+    };
+    next();
+  });
 }
 
 /**
@@ -85,6 +114,7 @@ export const createProcessor = <PayloadMap = any>(
     pollInterval = 5000,
     onError = (error: Error) => console.error('Job processor error:', error),
     jobType,
+    concurrency = 3,
   } = options;
 
   let running = false;
@@ -111,6 +141,7 @@ export const createProcessor = <PayloadMap = any>(
         batchSize,
         jobType,
         jobHandlers,
+        concurrency,
       );
 
       // If we processed a full batch, there might be more jobs ready

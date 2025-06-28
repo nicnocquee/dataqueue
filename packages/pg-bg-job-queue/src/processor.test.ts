@@ -308,6 +308,106 @@ describe('processor integration', () => {
   });
 });
 
+describe('concurrency option', () => {
+  let pool: Pool;
+  let schema: string;
+  let basePool: Pool;
+
+  beforeEach(async () => {
+    const setup = await createTestSchemaAndPool();
+    pool = setup.pool;
+    schema = setup.schema;
+    basePool = setup.basePool;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestSchema(basePool, schema);
+  });
+
+  async function addJobs(n: number) {
+    for (let i = 0; i < n; i++) {
+      await queue.addJob<{ test: {} }, 'test'>(pool, {
+        job_type: 'test',
+        payload: {},
+      });
+    }
+  }
+
+  it('should not process more than default concurrency (3) jobs in parallel', async () => {
+    let running = 0;
+    let maxParallel = 0;
+    const handler = async () => {
+      running++;
+      maxParallel = Math.max(maxParallel, running);
+      await new Promise((r) => setTimeout(r, 30));
+      running--;
+    };
+    const handlers = { test: handler };
+    await addJobs(10);
+    const processor = createProcessor(pool, handlers, { batchSize: 10 });
+    await processor.start();
+    expect(maxParallel).toBeLessThanOrEqual(3);
+  });
+
+  it('should not process more than custom concurrency jobs in parallel', async () => {
+    let running = 0;
+    let maxParallel = 0;
+    const handler = async () => {
+      running++;
+      maxParallel = Math.max(maxParallel, running);
+      await new Promise((r) => setTimeout(r, 30));
+      running--;
+    };
+    const handlers = { test: handler };
+    await addJobs(10);
+    const processor = createProcessor(pool, handlers, {
+      batchSize: 10,
+      concurrency: 2,
+    });
+    await processor.start();
+    expect(maxParallel).toBeLessThanOrEqual(2);
+  });
+
+  it('should not process more than batchSize jobs in parallel if concurrency > batchSize', async () => {
+    let running = 0;
+    let maxParallel = 0;
+    const handler = async () => {
+      running++;
+      maxParallel = Math.max(maxParallel, running);
+      await new Promise((r) => setTimeout(r, 30));
+      running--;
+    };
+    const handlers = { test: handler };
+    await addJobs(2);
+    const processor = createProcessor(pool, handlers, {
+      batchSize: 2,
+      concurrency: 5,
+    });
+    await processor.start();
+    expect(maxParallel).toBeLessThanOrEqual(2);
+  });
+
+  it('should process jobs sequentially if concurrency is 1', async () => {
+    let running = 0;
+    let maxParallel = 0;
+    const handler = async () => {
+      running++;
+      maxParallel = Math.max(maxParallel, running);
+      await new Promise((r) => setTimeout(r, 30));
+      running--;
+    };
+    const handlers = { test: handler };
+    await addJobs(5);
+    const processor = createProcessor(pool, handlers, {
+      batchSize: 5,
+      concurrency: 1,
+    });
+    await processor.start();
+    expect(maxParallel).toBe(1);
+  });
+});
+
 // Helper for per-processor job processing
 async function processJobWithHandlers<
   PayloadMap,
