@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "cron": "bash cron.sh",
-    "migrate-pg-bg-job-queue": "dotenv -e .env.local -- pg-bg-job-queue-cli migrate"
+    "migrate-pg-bg-job-queue": "pg-bg-job-queue-cli migrate"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",

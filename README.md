@@ -8,18 +8,40 @@ A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Sche
 - Supports job priorities, scheduling, canceling, and retries
 - Reclaim stuck jobs: No jobs will be stuck in the `processing` state indefinitely
 - Cleanup old jobs: Keep only the last xxx days of jobs
-- Works with serverless and traditional environments
-- Strong typing for job payloads which prevents you from adding jobs with the wrong payload type, and ensures that the job handler receives the correct payload type.
+- Works with serverless environment
+- Strong typing for job types and payloads which prevents you from adding jobs with the wrong payload type, and ensures that the job handler receives the correct payload type.
+
+## Who is this for?
+
+If all of the following apply to you, then this package is for you:
+
+|     |                                                                                             |
+| --- | ------------------------------------------------------------------------------------------- |
+| ☁️  | You're deploying a web app to serverless platforms like Vercel, AWS Lambda, etc.            |
+| 📝  | You're using TypeScript                                                                     |
+| ⚡  | You want your app to be fast and responsive by offloading heavy tasks to the background.    |
+| 💾  | You're using PostgreSQL as your database                                                    |
+| 🤷‍♂️  | You don't want to use and maintain another queue system like Redis                          |
+| 💸  | You're on a budget and don't want to pay for a job queue service or running your own server |
 
 ## Installation
 
 ```bash
-npm install pg-bg-job-queue
+npm install pg-bg-job-queue pg node-pg-migrate
 ```
 
 ## Getting Started
 
 In this example, we'll use a Next.js with App Router project which is deployed to Vercel.
+
+The TL;DR is:
+
+1. [Run migrations before deploying your app](#1-database-migrations)
+2. [Initialize the job queue](#2-initialize-the-job-queue)
+3. [Define job handlers](#3-define-job-handlers)
+4. [Add a job](#4-add-a-job-eg-in-an-api-route-or-server-function)
+5. Create three API routes to [process jobs](#5-process-jobs-eg-with-a-cron-job), [reclaim stuck jobs](#6-reclaim-stuck-jobs), and [cleanup old jobs](#7-cleanup-old-jobs)
+6. Call those API routes periodically.
 
 ### 1. Database Migrations
 
@@ -39,7 +61,13 @@ npm run migrate-pg-bg-job-queue
 
 This will apply all necessary schema migrations so that your Postgres database is ready to be used by pg-bg-job-queue. **The `PG_BG_JOB_QUEUE_DATABASE` environment variable must be set to your Postgres connection string**. The CLI will use this environment variable to connect to the database.
 
-This command needs to be run before you start using the job queue. For example, if you are deploying your app to Vercel, you need to run this command before deploying. This is similar to how Prisma and other ORMs manage migrations.
+In your computer, you can run the following command to run the migrations with the environment variables from your `.env.local` file:
+
+```bash
+env $(cat .env.local | grep -v '^#' | xargs) pnpm run migrate-pg-bg-job-queue
+```
+
+This migrations needs to be run before you start using the job queue. For example, if you are deploying your app to Vercel, you need to run this command before deploying. This is similar to how Prisma and other ORMs manage migrations.
 
 ### 2. Initialize the Job Queue
 
@@ -206,14 +234,14 @@ export async function GET(request: Request) {
 
 #### Example: Vercel Cron Configuration
 
-Add to your `vercel.json` to call the cron route every 5 minutes:
+Add to your `vercel.json` to call the cron route every minute:
 
 ```json
 {
   "crons": [
     {
       "path": "api/cron/process",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }
@@ -412,6 +440,10 @@ To get jobs by status:
 ```typescript
 const jobs = await jobQueue.getJobsByStatus(pool, status, limit, offset);
 ```
+
+## Additional Remarks
+
+The update process uses `FOR UPDATE SKIP LOCKED` to prevent race conditions. This means that if two jobs are scheduled to run at the same time, only one will be processed. The other will be skipped. This is what makes Postgres suitable for this use case.
 
 ## Contributing
 

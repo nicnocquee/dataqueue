@@ -116,7 +116,10 @@ export interface JobQueue<PayloadMap> {
     id: number,
   ) => Promise<JobRecord<PayloadMap, T> | null>;
   /**
-   * Get jobs by their status.
+   * Get jobs by their status, with pagination.
+   * - If no limit is provided, all jobs are returned.
+   * - If no offset is provided, the first page is returned.
+   * - The jobs are returned in descending order of created_at.
    */
   getJobsByStatus: <T extends JobType<PayloadMap>>(
     status: string,
@@ -131,15 +134,17 @@ export interface JobQueue<PayloadMap> {
     offset?: number,
   ) => Promise<JobRecord<PayloadMap, T>[]>;
   /**
-   * Retry a job.
+   * Retry a job given its ID.
+   * - This will set the job status back to 'pending', clear the locked_at and locked_by, and allow it to be picked up by other workers.
    */
   retryJob: (jobId: number) => Promise<void>;
   /**
-   * Cleanup old jobs.
+   * Cleanup jobs that are older than the specified number of days.
    */
   cleanupOldJobs: (daysToKeep?: number) => Promise<number>;
   /**
-   * Cancel a job.
+   * Cancel a job given its ID.
+   * - This will set the job status to 'cancelled' and clear the locked_at and locked_by.
    */
   cancelJob: (jobId: number) => Promise<void>;
   /**
@@ -150,7 +155,13 @@ export interface JobQueue<PayloadMap> {
    */
   reclaimStuckJobs: (maxProcessingTimeMinutes?: number) => Promise<number>;
   /**
-   * Cancel all upcoming jobs.
+   * Cancel all upcoming jobs that match the filters.
+   * - If no filters are provided, all upcoming jobs are cancelled.
+   * - If filters are provided, only jobs that match the filters are cancelled.
+   * - The filters are:
+   *   - job_type: The job type to cancel.
+   *   - priority: The priority of the job to cancel.
+   *   - run_at: The time the job is scheduled to run at.
    */
   cancelAllUpcomingJobs: (filters?: {
     job_type?: string;
