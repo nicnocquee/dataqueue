@@ -65,28 +65,34 @@ export const getJobQueue = async () => {
 
 ### 2. Register Job Handlers
 
-Define your job handlers (e.g., in `lib/job-handler.ts`). Handlers process jobs by type:
+Define your job handlers (e.g., in `lib/job-handler.ts`) which will be run when a job is processed. If you forget to add a handler for a job type, TypeScript will give you an error.
 
 ```typescript:lib/job-handler.ts
-import { getJobQueue } from './queue';
 import { sendEmail } from './services/email';
 import { generateReport } from './services/generate-report';
+import { getJobQueue, type JobPayloadMap } from './queue';
 
-export const registerJobHandlers = async (): Promise<void> => {
-  const jobQueue = await getJobQueue();
-
-  // Register handler for sending emails
-  jobQueue.registerJobHandler('send_email', async (payload) => {
+// Object literal mapping for static enforcement.
+// This will ensure that every job type defined in `JobPayloadMap` has a corresponding handler, enforced at compile time by TypeScript.
+// If you add a new job type to `JobPayloadMap` and forget to add a handler, TypeScript will give you an error.
+export const jobHandlers: {
+  [K in keyof JobPayloadMap]: (payload: JobPayloadMap[K]) => Promise<void>;
+} = {
+  send_email: async (payload) => {
     const { to, subject, body } = payload;
     await sendEmail(to, subject, body);
-  });
-
-  // Register handler for generating reports
-  jobQueue.registerJobHandler('generate_report', async (payload) => {
+  },
+  generate_report: async (payload) => {
     const { reportId, userId } = payload;
     await generateReport(reportId, userId);
-  });
+  },
 };
+
+export const registerAllJobHandlers = async (): Promise<void> => {
+  const jobQueue = await getJobQueue();
+  jobQueue.registerJobHandlers(jobHandlers);
+};
+
 ```
 
 ### 3. Add a Job (e.g., in an API Route or Server Function)

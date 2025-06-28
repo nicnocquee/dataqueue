@@ -150,12 +150,11 @@ export interface JobQueue<PayloadMap> {
     run_at?: Date;
   }) => Promise<number>;
   /**
-   * Register a job handler.
+   * Register multiple job handlers.
    */
-  registerJobHandler: <T extends JobType<PayloadMap>>(
-    jobType: T,
-    handler: (payload: PayloadMap[T]) => Promise<void>,
-  ) => void;
+  registerJobHandlers: (handlers: {
+    [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
+  }) => void;
   /**
    * Create a job processor.
    */

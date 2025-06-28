@@ -1,4 +1,4 @@
-import { registerJobHandlers } from '@/lib/job-handler';
+import { registerAllJobHandlers } from '@/lib/job-handler';
 import { getJobQueue } from '@/lib/queue';
 import { NextResponse } from 'next/server';
 
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const jobQueue = await getJobQueue();
 
     // Register job handlers
-    await registerJobHandlers();
+    await registerAllJobHandlers();
 
     const processor = jobQueue.createProcessor({
       workerId: `cron-${Date.now()}`,

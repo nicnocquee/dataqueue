@@ -10,7 +10,7 @@ import {
   getAllJobs,
   reclaimStuckJobs,
 } from './queue.js';
-import { registerJobHandler, createProcessor } from './processor.js';
+import { createProcessor, registerJobHandlers } from './processor.js';
 import {
   JobQueueConfig,
   JobQueue,
@@ -41,29 +41,52 @@ export const initJobQueue = async <PayloadMap = any>(
   // Return the job queue API
   return {
     // Job queue operations
-    addJob: (job: JobOptions<PayloadMap, any>) =>
-      addJob<PayloadMap, any>(pool, job),
-    getJob: (id: number) => getJob<PayloadMap, any>(pool, id),
-    getJobsByStatus: (status: string, limit?: number, offset?: number) =>
-      getJobsByStatus<PayloadMap, any>(pool, status, limit, offset),
-    getAllJobs: (limit?: number, offset?: number) =>
-      getAllJobs<PayloadMap, any>(pool, limit, offset),
+    addJob: withLogContext(
+      (job: JobOptions<PayloadMap, any>) => addJob<PayloadMap, any>(pool, job),
+      config.verbose ?? false,
+    ),
+    getJob: withLogContext(
+      (id: number) => getJob<PayloadMap, any>(pool, id),
+      config.verbose ?? false,
+    ),
+    getJobsByStatus: withLogContext(
+      (status: string, limit?: number, offset?: number) =>
+        getJobsByStatus<PayloadMap, any>(pool, status, limit, offset),
+      config.verbose ?? false,
+    ),
+    getAllJobs: withLogContext(
+      (limit?: number, offset?: number) =>
+        getAllJobs<PayloadMap, any>(pool, limit, offset),
+      config.verbose ?? false,
+    ),
     retryJob: (jobId: number) => retryJob(pool, jobId),
     cleanupOldJobs: (daysToKeep?: number) => cleanupOldJobs(pool, daysToKeep),
-    cancelJob: (jobId: number) => cancelJob(pool, jobId),
-    cancelAllUpcomingJobs: (filters?: {
-      job_type?: string;
-      priority?: number;
-      run_at?: Date;
-    }) => cancelAllUpcomingJobs(pool, filters),
-    reclaimStuckJobs: (maxProcessingTimeMinutes?: number) =>
-      reclaimStuckJobs(pool, maxProcessingTimeMinutes),
+    cancelJob: withLogContext(
+      (jobId: number) => cancelJob(pool, jobId),
+      config.verbose ?? false,
+    ),
+    cancelAllUpcomingJobs: withLogContext(
+      (filters?: { job_type?: string; priority?: number; run_at?: Date }) =>
+        cancelAllUpcomingJobs(pool, filters),
+      config.verbose ?? false,
+    ),
+    reclaimStuckJobs: withLogContext(
+      (maxProcessingTimeMinutes?: number) =>
+        reclaimStuckJobs(pool, maxProcessingTimeMinutes),
+      config.verbose ?? false,
+    ),
 
     // Job processing
-    registerJobHandler: (jobType: any, handler: any) =>
-      registerJobHandler<PayloadMap, any>(jobType, handler),
-    createProcessor: (options?: ProcessorOptions) =>
-      createProcessor(pool, options),
+    registerJobHandlers: withLogContext(
+      (handlers: {
+        [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
+      }) => registerJobHandlers(handlers),
+      config.verbose ?? false,
+    ),
+    createProcessor: withLogContext(
+      (options?: ProcessorOptions) => createProcessor(pool, options),
+      config.verbose ?? false,
+    ),
     // Advanced access (for custom operations)
     getPool: () => pool,
   };

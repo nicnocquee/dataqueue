@@ -14,13 +14,25 @@ import { log, setLogContext } from './log-context.js';
 let jobHandlers: Record<string, (payload: any) => Promise<void>> = {};
 
 /**
- * Register a job handler
+ * Register multiple job handlers at once, enforcing all job types are covered.
  */
-export function registerJobHandler<
-  PayloadMap,
-  T extends keyof PayloadMap & string,
->(jobType: T, handler: (payload: PayloadMap[T]) => Promise<void>): void {
-  jobHandlers[jobType] = handler;
+export function registerJobHandlers<PayloadMap>(
+  handlers: {
+    [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
+  },
+  reset = false,
+): void {
+  if (reset) {
+    jobHandlers = {};
+  }
+  (Object.keys(handlers) as Array<keyof PayloadMap & string>).forEach(
+    (type) => {
+      const handler = handlers[type] as (
+        payload: PayloadMap[typeof type],
+      ) => Promise<void>;
+      jobHandlers[type] = handler;
+    },
+  );
 }
 
 /**

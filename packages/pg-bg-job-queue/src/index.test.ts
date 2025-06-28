@@ -1,15 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initJobQueue, JobQueueConfig, JobOptions } from './index.js';
+import { initJobQueue, JobQueueConfig } from './index.js';
 import { createTestSchemaAndPool, destroyTestSchema } from './test-util.js';
 import { Pool } from 'pg';
 
 // Integration tests for index.ts
 
+interface TestPayloadMap {
+  email: { to: string };
+  sms: { to: string };
+  test: { foo: string };
+}
+
 describe('index integration', () => {
   let pool: Pool;
   let schema: string;
   let basePool: Pool;
-  let jobQueue: Awaited<ReturnType<typeof initJobQueue>>;
+  let jobQueue: Awaited<ReturnType<typeof initJobQueue<TestPayloadMap>>>;
 
   beforeEach(async () => {
     const setup = await createTestSchemaAndPool();
@@ -23,7 +29,7 @@ describe('index integration', () => {
           'postgres://postgres:postgres@localhost:5432/postgres',
       },
     };
-    jobQueue = await initJobQueue(config);
+    jobQueue = await initJobQueue<TestPayloadMap>(config);
     // Set search_path for the session to the test schema
     await jobQueue.getPool().query(`SET search_path TO ${schema}`);
   });
@@ -62,7 +68,11 @@ describe('index integration', () => {
 
   it('should process a job with a registered handler', async () => {
     const handler = vi.fn(async () => {});
-    jobQueue.registerJobHandler('test', handler);
+    jobQueue.registerJobHandlers({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: handler,
+    });
     const jobId = await jobQueue.addJob({
       job_type: 'test',
       payload: { foo: 'bar' },
