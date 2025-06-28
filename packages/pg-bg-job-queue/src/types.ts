@@ -34,6 +34,10 @@ export interface ProcessorOptions {
   pollInterval?: number;
   onError?: (error: Error) => void;
   verbose?: boolean;
+  /**
+   * Only process jobs with this job type (string or array of strings). If omitted, all job types are processed.
+   */
+  jobType?: string | string[];
 }
 
 export interface Processor {

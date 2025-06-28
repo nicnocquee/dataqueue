@@ -103,4 +103,97 @@ describe('processor integration', () => {
     const jobs = await queue.getJobsByStatus(pool, 'completed');
     expect(jobs.some((j) => j.job_type === 'proc')).toBe(true);
   });
+
+  it('should process only jobs of a specific job type with processBatch', async () => {
+    const handlerA = vi.fn(async () => {});
+    const handlerB = vi.fn(async () => {});
+    registerJobHandler('typeA', handlerA);
+    registerJobHandler('typeB', handlerB);
+    const idA1 = await queue.addJob(pool, {
+      job_type: 'typeA',
+      payload: { n: 1 },
+    });
+    const idA2 = await queue.addJob(pool, {
+      job_type: 'typeA',
+      payload: { n: 2 },
+    });
+    const idB1 = await queue.addJob(pool, {
+      job_type: 'typeB',
+      payload: { n: 3 },
+    });
+    // Only process typeA
+    const processed = await processBatch(pool, 'worker-typeA', 10, 'typeA');
+    expect(processed).toBe(2);
+    expect(handlerA).toHaveBeenCalledTimes(2);
+    expect(handlerB).not.toHaveBeenCalled();
+    const jobsA = await queue.getJobsByStatus(pool, 'completed');
+    expect(jobsA.some((j) => j.id === idA1)).toBe(true);
+    expect(jobsA.some((j) => j.id === idA2)).toBe(true);
+    const jobB = await queue.getJob(pool, idB1);
+    expect(jobB?.status).not.toBe('completed');
+  });
+
+  it('should process only jobs of specific job types (array) with processBatch', async () => {
+    const handlerA = vi.fn(async () => {});
+    const handlerB = vi.fn(async () => {});
+    const handlerC = vi.fn(async () => {});
+    registerJobHandler('typeA', handlerA);
+    registerJobHandler('typeB', handlerB);
+    registerJobHandler('typeC', handlerC);
+    const idA = await queue.addJob(pool, {
+      job_type: 'typeA',
+      payload: { n: 1 },
+    });
+    const idB = await queue.addJob(pool, {
+      job_type: 'typeB',
+      payload: { n: 2 },
+    });
+    const idC = await queue.addJob(pool, {
+      job_type: 'typeC',
+      payload: { n: 3 },
+    });
+    // Only process typeA and typeC
+    const processed = await processBatch(pool, 'worker-multi', 10, [
+      'typeA',
+      'typeC',
+    ]);
+    expect(processed).toBe(2);
+    expect(handlerA).toHaveBeenCalledTimes(1);
+    expect(handlerB).not.toHaveBeenCalled();
+    expect(handlerC).toHaveBeenCalledTimes(1);
+    const jobs = await queue.getJobsByStatus(pool, 'completed');
+    expect(jobs.some((j) => j.id === idA)).toBe(true);
+    expect(jobs.some((j) => j.id === idC)).toBe(true);
+    const jobB = await queue.getJob(pool, idB);
+    expect(jobB?.status).not.toBe('completed');
+  });
+
+  it('should process only jobs of a specific job type with createProcessor', async () => {
+    const handlerA = vi.fn(async () => {});
+    const handlerB = vi.fn(async () => {});
+    registerJobHandler('typeA', handlerA);
+    registerJobHandler('typeB', handlerB);
+    const idA = await queue.addJob(pool, {
+      job_type: 'typeA',
+      payload: { n: 1 },
+    });
+    const idB = await queue.addJob(pool, {
+      job_type: 'typeB',
+      payload: { n: 2 },
+    });
+    const processor = createProcessor(pool, {
+      pollInterval: 100,
+      jobType: 'typeA',
+    });
+    processor.start();
+    await new Promise((r) => setTimeout(r, 300));
+    processor.stop();
+    expect(processor.isRunning()).toBe(false);
+    expect(handlerA).toHaveBeenCalledTimes(1);
+    expect(handlerB).not.toHaveBeenCalled();
+    const jobA = await queue.getJob(pool, idA);
+    const jobB = await queue.getJob(pool, idB);
+    expect(jobA?.status).toBe('completed');
+    expect(jobB?.status).not.toBe('completed');
+  });
 });

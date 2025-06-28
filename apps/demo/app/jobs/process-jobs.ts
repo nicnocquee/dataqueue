@@ -25,3 +25,22 @@ export const processJobs = async () => {
   revalidatePath('/');
   return { deleted };
 };
+
+export const processJobsByType = async (jobType: string) => {
+  const jobQueue = await getJobQueue();
+
+  await registerJobHandlers();
+
+  const processor = jobQueue.createProcessor({
+    workerId: `cron-${Date.now()}`,
+    batchSize: 20,
+    pollInterval: 2000,
+    verbose: true,
+    jobType,
+  });
+
+  processor.start();
+
+  revalidatePath('/');
+  return { jobType };
+};

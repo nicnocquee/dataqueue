@@ -43,7 +43,7 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
   # or
   git checkout -b fix/your-bugfix
   ```
-- Run `pnpm run dev` from the root of the monorepo to start the demo app and the library in watch mode.
+- Run `pnpm dev` from the root of the monorepo to start the demo app and the library in watch mode.
 - Make your changes, following the coding standards below.
 - Add or update tests as needed.
 - Run the test suite to ensure everything works:

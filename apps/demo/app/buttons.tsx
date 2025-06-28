@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { sendEmail } from './jobs/email';
 import { generateReport } from './jobs/report';
-import { processJobs } from './jobs/process-jobs';
+import { processJobs, processJobsByType } from './jobs/process-jobs';
 import { useTransition } from 'react';
 import { refresh } from './queue/refresh';
 
@@ -44,6 +44,15 @@ export default function Buttons() {
         }}
       >
         Process Jobs
+      </Button>
+      <Button
+        disabled={isPending}
+        onClick={async () => {
+          const job = await processJobsByType('email');
+          console.log(job);
+        }}
+      >
+        Process Email Jobs
       </Button>
       <Button onClick={refresh} disabled={isPending}>
         Refresh Jobs

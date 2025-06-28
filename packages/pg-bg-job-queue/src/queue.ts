@@ -114,16 +114,34 @@ export const getJobsByStatus = async <T>(
 
 /**
  * Get the next batch of jobs to process
+ * @param pool - The database pool
+ * @param workerId - The worker ID
+ * @param batchSize - The batch size
+ * @param jobType - Only fetch jobs with this job type (string or array of strings)
  */
 export const getNextBatch = async <T>(
   pool: Pool,
   workerId: string,
   batchSize = 10,
+  jobType?: string | string[],
 ): Promise<JobRecord<T>[]> => {
   const client = await pool.connect();
   try {
     // Begin transaction
     await client.query('BEGIN');
+
+    // Build job type filter
+    let jobTypeFilter = '';
+    let params: any[] = [workerId, batchSize];
+    if (jobType) {
+      if (Array.isArray(jobType)) {
+        jobTypeFilter = ` AND job_type = ANY($3)`;
+        params.push(jobType);
+      } else {
+        jobTypeFilter = ` AND job_type = $3`;
+        params.push(jobType);
+      }
+    }
 
     // Get and lock a batch of jobs
     const result = await client.query(
@@ -139,13 +157,14 @@ export const getNextBatch = async <T>(
         WHERE (status = 'pending' OR (status = 'failed' AND next_attempt_at <= NOW()))
         AND (attempts < max_attempts)
         AND run_at <= NOW()
+        ${jobTypeFilter}
         ORDER BY priority DESC, created_at ASC
         LIMIT $2
         FOR UPDATE SKIP LOCKED
       )
       RETURNING *
     `,
-      [workerId, batchSize],
+      params,
     );
 
     log(`Found ${result.rows.length} jobs to process`);

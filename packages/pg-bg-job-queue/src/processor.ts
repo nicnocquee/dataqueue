@@ -51,13 +51,18 @@ export const processJob = async <T>(
 
 /**
  * Process a batch of jobs
+ * @param pool - The database pool
+ * @param workerId - The worker ID
+ * @param batchSize - The batch size
+ * @param jobType - Only process jobs with this job type (or array of types)
  */
 export const processBatch = async (
   pool: Pool,
   workerId: string,
   batchSize = 10,
+  jobType?: string | string[],
 ): Promise<number> => {
-  const jobs = await getNextBatch(pool, workerId, batchSize);
+  const jobs = await getNextBatch(pool, workerId, batchSize, jobType);
 
   await Promise.all(jobs.map((job) => processJob(pool, job)));
 
@@ -67,7 +72,7 @@ export const processBatch = async (
 /**
  * Start a job processor that continuously processes jobs
  * @param pool - The database pool
- * @param options - The processor options. Leave pollInterval empty to run only once.
+ * @param options - The processor options. Leave pollInterval empty to run only once. Use jobType to filter jobs by type.
  * @returns The processor instance
  */
 export const createProcessor = (
@@ -79,6 +84,7 @@ export const createProcessor = (
     batchSize = 10,
     pollInterval,
     onError = (error: Error) => console.error('Job processor error:', error),
+    jobType,
   } = options;
 
   let running = false;
@@ -89,10 +95,12 @@ export const createProcessor = (
   const processJobs = async (): Promise<void> => {
     if (!running) return;
 
-    log(`Processing jobs with workerId: ${workerId}`);
+    log(
+      `Processing jobs with workerId: ${workerId}${jobType ? ` and jobType: ${Array.isArray(jobType) ? jobType.join(',') : jobType}` : ''}`,
+    );
 
     try {
-      const processed = await processBatch(pool, workerId, batchSize);
+      const processed = await processBatch(pool, workerId, batchSize, jobType);
 
       // If we processed a full batch, there might be more jobs ready
       if (processed === batchSize) {
