@@ -151,7 +151,8 @@ export const getNextBatch = async <T>(
           locked_at = NOW(), 
           locked_by = $1,
           attempts = attempts + 1,
-          updated_at = NOW()
+          updated_at = NOW(),
+          pending_reason = NULL
       WHERE id IN (
         SELECT id FROM job_queue
         WHERE (status = 'pending' OR (status = 'failed' AND next_attempt_at <= NOW()))
@@ -379,6 +380,36 @@ export const getAllJobs = async <T>(
   } catch (error) {
     log(`Error getting all jobs: ${error}`);
     throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Set a pending reason for unpicked jobs
+ */
+export const setPendingReasonForUnpickedJobs = async (
+  pool: Pool,
+  reason: string,
+  jobType?: string | string[],
+) => {
+  const client = await pool.connect();
+  try {
+    let jobTypeFilter = '';
+    let params: any[] = [reason];
+    if (jobType) {
+      if (Array.isArray(jobType)) {
+        jobTypeFilter = ` AND job_type = ANY($2)`;
+        params.push(jobType);
+      } else {
+        jobTypeFilter = ` AND job_type = $2`;
+        params.push(jobType);
+      }
+    }
+    await client.query(
+      `UPDATE job_queue SET pending_reason = $1 WHERE status = 'pending'${jobTypeFilter}`,
+      params,
+    );
   } finally {
     client.release();
   }

@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/table';
 import { getJobQueue } from '@/lib/queue';
 import { JobRecord } from 'pg-bg-job-queue';
+import { formatTimeDistance } from '@/lib/utils';
 
 export const PendingJobs = async () => {
   const jobQueue = await getJobQueue();
@@ -34,8 +35,9 @@ const JobTable = ({ jobs }: { jobs: JobRecord<unknown>[] }) => {
         <TableRow>
           <TableHead>ID</TableHead>
           <TableHead>Type</TableHead>
-          <TableHead>Payload</TableHead>
+          <TableHead>Priority</TableHead>
           <TableHead>Run At</TableHead>
+          <TableHead>Payload</TableHead>
           <TableHead>Created At</TableHead>
         </TableRow>
       </TableHeader>
@@ -44,8 +46,11 @@ const JobTable = ({ jobs }: { jobs: JobRecord<unknown>[] }) => {
           <TableRow key={job.id}>
             <TableCell>{job.id}</TableCell>
             <TableCell>{job.job_type}</TableCell>
+            <TableCell>{job.priority ? job.priority : 'default'}</TableCell>
+            <TableCell>
+              {job.run_at ? formatTimeDistance(job.run_at) : '-'}
+            </TableCell>
             <TableCell>{JSON.stringify(job.payload)}</TableCell>
-            <TableCell>{job.run_at.toISOString()}</TableCell>
             <TableCell>{job.created_at.toISOString()}</TableCell>
           </TableRow>
         ))}

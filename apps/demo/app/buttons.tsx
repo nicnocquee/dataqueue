@@ -6,6 +6,7 @@ import { generateReport } from './jobs/report';
 import { processJobs, processJobsByType } from './jobs/process-jobs';
 import { useTransition } from 'react';
 import { refresh } from './queue/refresh';
+import { cancelPendingJobs } from './jobs/cancel';
 
 export default function Buttons() {
   const [isPending] = useTransition();
@@ -56,6 +57,10 @@ export default function Buttons() {
       </Button>
       <Button onClick={refresh} disabled={isPending}>
         Refresh Jobs
+      </Button>
+
+      <Button onClick={cancelPendingJobs} disabled={isPending}>
+        Cancel Pending Jobs
       </Button>
     </div>
   );

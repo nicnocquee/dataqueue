@@ -1,5 +1,5 @@
 import Buttons from './buttons';
-import { processJobs } from './jobs/process-jobs';
+import { ProcessJobsPeriodically } from './process-jobs-periodically';
 import { CompletedJobs, PendingJobs, ProcessingJobs } from './queue/list';
 import { refresh } from './queue/refresh';
 import { RefreshPeriodically } from './refresh-periodically';
@@ -22,8 +22,8 @@ export default function Home() {
           <CompletedJobs />
         </div>
       </div>
-      <RefreshPeriodically action={refresh} interval={10000} />
-      <RefreshPeriodically action={processJobs} interval={5000} />
+      <RefreshPeriodically key="refresh" action={refresh} interval={10000} />
+      <ProcessJobsPeriodically interval={12000} />
     </div>
   );
 }

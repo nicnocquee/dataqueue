@@ -1,6 +1,11 @@
 import { Pool } from 'pg';
 import { JobRecord, JobHandler, ProcessorOptions, Processor } from './types.js';
-import { getNextBatch, completeJob, failJob } from './queue.js';
+import {
+  getNextBatch,
+  completeJob,
+  failJob,
+  setPendingReasonForUnpickedJobs,
+} from './queue.js';
 import { log, setLogContext } from './log-context.js';
 
 /**
@@ -28,6 +33,11 @@ export const processJob = async <T>(
   const handler = jobHandlers[job.job_type];
 
   if (!handler) {
+    await setPendingReasonForUnpickedJobs(
+      pool,
+      `No handler registered for job type: ${job.job_type}`,
+      job.job_type,
+    );
     await failJob(
       pool,
       job.id,
@@ -73,7 +83,7 @@ export const processBatch = async (
  * Start a job processor that continuously processes jobs
  * @param pool - The database pool
  * @param options - The processor options. Leave pollInterval empty to run only once. Use jobType to filter jobs by type.
- * @returns The processor instance
+ * @returns {Processor} The processor instance
  */
 export const createProcessor = (
   pool: Pool,
@@ -82,7 +92,7 @@ export const createProcessor = (
   const {
     workerId = `worker-${Math.random().toString(36).substring(2, 9)}`,
     batchSize = 10,
-    pollInterval,
+    pollInterval = 5000,
     onError = (error: Error) => console.error('Job processor error:', error),
     jobType,
   } = options;
@@ -107,30 +117,28 @@ export const createProcessor = (
         // Process next batch immediately
         setImmediate(processJobs);
       }
-
-      if (processed === 0) {
-        running = false;
-        if (intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
-      }
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
     }
   };
 
   return {
-    start: () => {
+    /**
+     * Start the job processor in the background.
+     * - This will run periodically (every pollInterval milliseconds or 5 seconds if not provided) and process jobs as they become available.
+     * - You have to call the stop method to stop the processor.
+     */
+    startInBackground: () => {
       if (running) return;
 
       log(`Starting job processor with workerId: ${workerId}`);
       running = true;
       processJobs(); // Process immediately on start
-      if (pollInterval) {
-        intervalId = setInterval(processJobs, pollInterval);
-      }
+      intervalId = setInterval(processJobs, pollInterval);
     },
+    /**
+     * Stop the job processor that runs in the background
+     */
     stop: () => {
       log(`Stopping job processor with workerId: ${workerId}`);
       running = false;
@@ -138,6 +146,17 @@ export const createProcessor = (
         clearInterval(intervalId);
         intervalId = null;
       }
+    },
+    /**
+     * Start the job processor synchronously.
+     * - This will process all jobs immediately and then stop.
+     * - The pollInterval is ignored.
+     */
+    start: async () => {
+      log(`Starting job processor with workerId: ${workerId}`);
+      running = true;
+      await processJobs();
+      running = false;
     },
     isRunning: () => running,
   };

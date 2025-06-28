@@ -113,7 +113,7 @@ export const sendEmail = async ({
 
 ### 4. Process Jobs (e.g., with a Cron Job)
 
-Set up a route to process jobs in batches. This example is for a server function which can be triggered by a cron job:
+Set up a route to process jobs in batches. This example is for API route which can be triggered by a cron job:
 
 ```typescript:app/api/cron/route.ts
 import { registerJobHandlers } from '@/lib/job-handler';
@@ -137,14 +137,14 @@ export async function GET(request: NextRequest) {
     // Create a processor instance
     const processor = jobQueue.createProcessor({
       workerId: `cron-${Date.now()}`,
-      batchSize: 20,
+      batchSize: 3, // Process 3 jobs at a time. If your job handler takes a long time to process, it's better to process less jobs at a time since serverless functions are charged by the second and have a timeout.
       verbose: true,
     });
 
-    // Start the processor
-    processor.start();
+    // Start the processor and wait until all batched jobs are processed
+    await processor.start();
 
-    // Clean up old jobs (keep for 30 days)
+    // Optional: Clean up old jobs (keep for 30 days)
     const deleted = await jobQueue.cleanupOldJobs(30);
 
     return NextResponse.json({

@@ -87,7 +87,6 @@ export const initJobQueue = async (
       (options?: ProcessorOptions) => createProcessor(pool, options),
       config.verbose ?? false,
     ),
-
     // Advanced access (for custom operations)
     getPool: () => pool,
   };

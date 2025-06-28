@@ -58,6 +58,7 @@ describe('setup integration', () => {
         'next_attempt_at',
         'priority',
         'run_at',
+        'pending_reason',
       ]),
     );
   });

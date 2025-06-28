@@ -11,16 +11,14 @@ export const processJobs = async () => {
 
   const processor = jobQueue.createProcessor({
     workerId: `cron-${Date.now()}`,
-    batchSize: 20,
-    pollInterval: 2000,
+    batchSize: 3,
     verbose: true,
   });
 
-  processor.start();
+  await processor.start();
 
   // Clean up old jobs (keep for 30 days)
   const deleted = await jobQueue.cleanupOldJobs(30);
-  console.log(`Deleted ${deleted} old jobs`);
 
   revalidatePath('/');
   return { deleted };
@@ -33,13 +31,12 @@ export const processJobsByType = async (jobType: string) => {
 
   const processor = jobQueue.createProcessor({
     workerId: `cron-${Date.now()}`,
-    batchSize: 20,
-    pollInterval: 2000,
+    batchSize: 3,
     verbose: true,
     jobType,
   });
 
-  processor.start();
+  await processor.start();
 
   revalidatePath('/');
   return { jobType };

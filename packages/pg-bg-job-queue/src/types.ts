@@ -22,6 +22,7 @@ export interface JobRecord<T> {
   next_attempt_at: Date | null;
   priority: number;
   run_at: Date;
+  pending_reason?: string | null;
 }
 
 export interface JobHandler<T> {
@@ -30,7 +31,18 @@ export interface JobHandler<T> {
 
 export interface ProcessorOptions {
   workerId?: string;
+  /**
+   * The number of jobs to process at a time.
+   * - If not provided, the processor will process 10 jobs at a time.
+   * - In serverless functions, it's better to process less jobs at a time since serverless functions are charged by the second and have a timeout.
+   */
   batchSize?: number;
+  /**
+   * The interval in milliseconds to poll for new jobs.
+   * - If not provided, the processor will process jobs every 5 seconds when startInBackground is called.
+   * - In serverless functions, it's better to leave this empty.
+   * - If you call start instead of startInBackground, the pollInterval is ignored.
+   */
   pollInterval?: number;
   onError?: (error: Error) => void;
   verbose?: boolean;
@@ -41,9 +53,27 @@ export interface ProcessorOptions {
 }
 
 export interface Processor {
-  start: () => void;
+  /**
+   * Start the job processor in the background.
+   * - This will run periodically (every pollInterval milliseconds or 5 seconds if not provided) and process jobs (as many as batchSize) as they become available.
+   * - **You have to call the stop method to stop the processor.**
+   * - In serverless functions, it's recommended to call start instead and await it to finish.
+   */
+  startInBackground: () => void;
+  /**
+   * Stop the job processor that runs in the background.
+   */
   stop: () => void;
+  /**
+   * Check if the job processor is running.
+   */
   isRunning: () => boolean;
+  /**
+   * Start the job processor synchronously.
+   * - This will process jobs (as many as batchSize) immediately and then stop. The pollInterval is ignored.
+   * - In serverless functions, it's recommended to use this instead of startInBackground.
+   */
+  start: () => Promise<void>;
 }
 
 export interface JobQueueConfig {
@@ -60,26 +90,59 @@ export interface JobQueueConfig {
 }
 
 export interface JobQueue {
+  /**
+   * Add a job to the job queue.
+   */
   addJob: <T>(job: JobOptions<T>) => Promise<number>;
+  /**
+   * Get a job by its ID.
+   */
   getJob: <T>(id: number) => Promise<JobRecord<T> | null>;
+  /**
+   * Get jobs by their status.
+   */
   getJobsByStatus: <T>(
     status: string,
     limit?: number,
     offset?: number,
   ) => Promise<JobRecord<T>[]>;
+  /**
+   * Get all jobs.
+   */
   getAllJobs: <T>(limit?: number, offset?: number) => Promise<JobRecord<T>[]>;
+  /**
+   * Retry a job.
+   */
   retryJob: (jobId: number) => Promise<void>;
+  /**
+   * Cleanup old jobs.
+   */
   cleanupOldJobs: (daysToKeep?: number) => Promise<number>;
+  /**
+   * Cancel a job.
+   */
   cancelJob: (jobId: number) => Promise<void>;
+  /**
+   * Cancel all upcoming jobs.
+   */
   cancelAllUpcomingJobs: (filters?: {
     job_type?: string;
     priority?: number;
     run_at?: Date;
   }) => Promise<number>;
+  /**
+   * Register a job handler.
+   */
   registerJobHandler: (
     jobType: string,
     handler: (payload: Record<string, any>) => Promise<void>,
   ) => void;
+  /**
+   * Create a job processor.
+   */
   createProcessor: (options?: ProcessorOptions) => Processor;
+  /**
+   * Get the database pool.
+   */
   getPool: () => Pool;
 }

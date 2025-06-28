@@ -14,7 +14,7 @@ export const initializeJobQueue = async (pool: Pool): Promise<void> => {
   const client = await pool.connect();
   try {
     await client.query(`
-      CREATE TABLE IF NOT EXISTS job_queue (
+      CREATE UNLOGGED TABLE IF NOT EXISTS job_queue (
         id SERIAL PRIMARY KEY,
         job_type VARCHAR(255) NOT NULL,
         payload JSONB NOT NULL,
@@ -27,7 +27,8 @@ export const initializeJobQueue = async (pool: Pool): Promise<void> => {
         max_attempts INT DEFAULT 3,
         next_attempt_at TIMESTAMPTZ,
         priority INT DEFAULT 0,
-        run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        pending_reason TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_job_queue_status ON job_queue(status);
@@ -86,6 +87,22 @@ export const runMigrations = async (pool: Pool): Promise<void> => {
         CREATE INDEX idx_job_queue_run_at ON job_queue(run_at);
       `);
       log('Migration: Added run_at column');
+    }
+
+    // Check for pending_reason column
+    const checkPendingReasonResult = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'job_queue' AND column_name = 'pending_reason'
+      ) as has_pending_reason_column;
+    `);
+    const hasPendingReasonColumn =
+      checkPendingReasonResult.rows[0].has_pending_reason_column;
+    if (!hasPendingReasonColumn) {
+      await client.query(`
+        ALTER TABLE job_queue ADD COLUMN pending_reason TEXT;
+      `);
+      log('Migration: Added pending_reason column');
     }
 
     // Add more migrations as needed

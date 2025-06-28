@@ -17,6 +17,8 @@ export const generateReport = async ({
 
   // Add a welcome email job
   const jobQueue = await getJobQueue();
+  const delay = Math.floor(1000 + Math.random() * 9000); // 1000 to 9999 ms
+  const runAt = new Date(Date.now() + delay); // Run between 1 and 10 seconds from now
   const job = await jobQueue.addJob({
     job_type: 'generate_report',
     payload: {
@@ -24,7 +26,7 @@ export const generateReport = async ({
       userId,
     },
     priority: 5, // Higher number = higher priority
-    run_at: new Date(Date.now() + 60 * 1000), // Run 1 minute from now
+    run_at: runAt,
   });
 
   revalidatePath('/');
