@@ -1,6 +1,6 @@
 {
   "name": "pg-bg-job-queue",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "PostgreSQL-based job queue for Node.js applications with support for serverless environments",
   "type": "module",
   "main": "dist/index.js",
@@ -12,7 +12,9 @@
   },
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist/",
+    "src/",
+    "migrations/"
   ],
   "scripts": {
     "build": "tsup",
@@ -23,7 +25,8 @@
     "check-format": "prettier --check .",
     "check-exports": "attw --pack .",
     "local-release": "changeset version && changeset publish",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "migrate": "node-pg-migrate -d $PG_BG_JOB_QUEUE_DATABASE -m ./migrations"
   },
   "keywords": [
     "nextjs",
@@ -50,9 +53,14 @@
     "vite": "^7.0.0",
     "vitest": "^3.2.4",
     "pnpm": "^9.0.0",
-    "turbo": "^1.13.0"
+    "turbo": "^1.13.0",
+    "node-pg-migrate": "^8.0.3"
   },
   "peerDependencies": {
-    "pg": "^8.0.0"
+    "pg": "^8.0.0",
+    "node-pg-migrate": "^8.0.3"
+  },
+  "bin": {
+    "pg-bg-job-queue-cli": "./cli.cjs"
   }
 }
