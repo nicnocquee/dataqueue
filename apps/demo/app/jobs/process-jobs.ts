@@ -1,15 +1,12 @@
 'use server';
 
-import { registerJobHandlers } from '@/lib/job-handler';
-import { getJobQueue } from '@/lib/queue';
+import { getJobQueue, jobHandlers } from '@/lib/queue';
 import { revalidatePath } from 'next/cache';
 
 export const processJobs = async () => {
   const jobQueue = await getJobQueue();
 
-  await registerJobHandlers();
-
-  const processor = jobQueue.createProcessor({
+  const processor = jobQueue.createProcessor(jobHandlers, {
     workerId: `cron-${Date.now()}`,
     batchSize: 3,
     verbose: true,
@@ -27,9 +24,7 @@ export const processJobs = async () => {
 export const processJobsByType = async (jobType: string) => {
   const jobQueue = await getJobQueue();
 
-  await registerJobHandlers();
-
-  const processor = jobQueue.createProcessor({
+  const processor = jobQueue.createProcessor(jobHandlers, {
     workerId: `cron-${Date.now()}`,
     batchSize: 3,
     verbose: true,

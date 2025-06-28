@@ -1,4 +1,6 @@
 import { initJobQueue } from 'pg-bg-job-queue';
+import { sendEmail } from './services/email';
+import { generateReport } from './services/generate-report';
 
 // Define the job payload map for this app.
 // This will ensure that the job payload is typed correctly when adding jobs.
@@ -32,4 +34,18 @@ export const getJobQueue = async () => {
     });
   }
   return jobQueuePromise;
+};
+
+// Object literal mapping for static enforcement
+export const jobHandlers: {
+  [K in keyof JobPayloadMap]: (payload: JobPayloadMap[K]) => Promise<void>;
+} = {
+  send_email: async (payload) => {
+    const { to, subject, body } = payload;
+    await sendEmail(to, subject, body);
+  },
+  generate_report: async (payload) => {
+    const { reportId, userId } = payload;
+    await generateReport(reportId, userId);
+  },
 };

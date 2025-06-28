@@ -61,6 +61,7 @@ export interface Processor {
    * Start the job processor in the background.
    * - This will run periodically (every pollInterval milliseconds or 5 seconds if not provided) and process jobs (as many as batchSize) as they become available.
    * - **You have to call the stop method to stop the processor.**
+   * - Handlers are provided per-processor when calling createProcessor.
    * - In serverless functions, it's recommended to call start instead and await it to finish.
    */
   startInBackground: () => void;
@@ -150,15 +151,14 @@ export interface JobQueue<PayloadMap> {
     run_at?: Date;
   }) => Promise<number>;
   /**
-   * Register multiple job handlers.
+   * Create a job processor. Handlers must be provided per-processor.
    */
-  registerJobHandlers: (handlers: {
-    [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
-  }) => void;
-  /**
-   * Create a job processor.
-   */
-  createProcessor: (options?: ProcessorOptions) => Processor;
+  createProcessor: (
+    handlers: {
+      [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
+    },
+    options?: ProcessorOptions,
+  ) => Processor;
   /**
    * Get the database pool.
    */

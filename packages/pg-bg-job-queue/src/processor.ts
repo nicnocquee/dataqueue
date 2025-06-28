@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { JobRecord, JobHandler, ProcessorOptions, Processor } from './types.js';
+import { JobRecord, ProcessorOptions, Processor } from './types.js';
 import {
   getNextBatch,
   completeJob,
@@ -9,39 +9,16 @@ import {
 import { log, setLogContext } from './log-context.js';
 
 /**
- * Map of job types to handlers
+ * Process a single job using the provided handler map
  */
-let jobHandlers: Record<string, (payload: any) => Promise<void>> = {};
-
-/**
- * Register multiple job handlers at once, enforcing all job types are covered.
- */
-export function registerJobHandlers<PayloadMap>(
-  handlers: {
-    [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
-  },
-  reset = false,
-): void {
-  if (reset) {
-    jobHandlers = {};
-  }
-  (Object.keys(handlers) as Array<keyof PayloadMap & string>).forEach(
-    (type) => {
-      const handler = handlers[type] as (
-        payload: PayloadMap[typeof type],
-      ) => Promise<void>;
-      jobHandlers[type] = handler;
-    },
-  );
-}
-
-/**
- * Process a single job
- */
-export async function processJob<
+async function processJobWithHandlers<
   PayloadMap,
   T extends keyof PayloadMap & string,
->(pool: Pool, job: JobRecord<PayloadMap, T>): Promise<void> {
+>(
+  pool: Pool,
+  job: JobRecord<PayloadMap, T>,
+  jobHandlers: Record<string, (payload: any) => Promise<void>>,
+): Promise<void> {
   const handler = jobHandlers[job.job_type];
 
   if (!handler) {
@@ -72,33 +49,34 @@ export async function processJob<
 }
 
 /**
- * Process a batch of jobs
- * @param pool - The database pool
- * @param workerId - The worker ID
- * @param batchSize - The batch size
- * @param jobType - Only process jobs with this job type (or array of types)
+ * Process a batch of jobs using the provided handler map
  */
-export const processBatch = async (
+async function processBatchWithHandlers<PayloadMap>(
   pool: Pool,
   workerId: string,
-  batchSize = 10,
-  jobType?: string | string[],
-): Promise<number> => {
+  batchSize: number,
+  jobType: string | string[] | undefined,
+  jobHandlers: Record<string, (payload: any) => Promise<void>>,
+): Promise<number> {
   const jobs = await getNextBatch(pool, workerId, batchSize, jobType);
-
-  await Promise.all(jobs.map((job) => processJob(pool, job)));
-
+  await Promise.all(
+    jobs.map((job) => processJobWithHandlers(pool, job, jobHandlers)),
+  );
   return jobs.length;
-};
+}
 
 /**
  * Start a job processor that continuously processes jobs
  * @param pool - The database pool
+ * @param handlers - The job handlers for this processor instance
  * @param options - The processor options. Leave pollInterval empty to run only once. Use jobType to filter jobs by type.
  * @returns {Processor} The processor instance
  */
-export const createProcessor = (
+export const createProcessor = <PayloadMap = any>(
   pool: Pool,
+  handlers: {
+    [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
+  },
   options: ProcessorOptions = {},
 ): Processor => {
   const {
@@ -114,6 +92,11 @@ export const createProcessor = (
 
   setLogContext(options.verbose ?? false);
 
+  const jobHandlers = handlers as Record<
+    string,
+    (payload: any) => Promise<void>
+  >;
+
   const processJobs = async (): Promise<number> => {
     if (!running) return 0;
 
@@ -122,7 +105,13 @@ export const createProcessor = (
     );
 
     try {
-      const processed = await processBatch(pool, workerId, batchSize, jobType);
+      const processed = await processBatchWithHandlers(
+        pool,
+        workerId,
+        batchSize,
+        jobType,
+        jobHandlers,
+      );
 
       // If we processed a full batch, there might be more jobs ready
       if (processed === batchSize) {

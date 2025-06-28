@@ -10,7 +10,7 @@ import {
   getAllJobs,
   reclaimStuckJobs,
 } from './queue.js';
-import { createProcessor, registerJobHandlers } from './processor.js';
+import { createProcessor } from './processor.js';
 import {
   JobQueueConfig,
   JobQueue,
@@ -77,16 +77,12 @@ export const initJobQueue = async <PayloadMap = any>(
     ),
 
     // Job processing
-    registerJobHandlers: withLogContext(
-      (handlers: {
+    createProcessor: (
+      handlers: {
         [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
-      }) => registerJobHandlers(handlers),
-      config.verbose ?? false,
-    ),
-    createProcessor: withLogContext(
-      (options?: ProcessorOptions) => createProcessor(pool, options),
-      config.verbose ?? false,
-    ),
+      },
+      options?: ProcessorOptions,
+    ) => createProcessor<PayloadMap>(pool, handlers, options),
     // Advanced access (for custom operations)
     getPool: () => pool,
   };

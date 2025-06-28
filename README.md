@@ -63,14 +63,14 @@ export const getJobQueue = async () => {
 };
 ```
 
-### 2. Register Job Handlers
+### 2. Define Job Handlers
 
-Define your job handlers (e.g., in `lib/job-handler.ts`) which will be run when a job is processed. If you forget to add a handler for a job type, TypeScript will give you an error.
+Define your job handlers (e.g., in `lib/queue.ts`) which will be run when a job is processed. If you forget to add a handler for a job type, TypeScript will give you an error.
 
-```typescript:lib/job-handler.ts
+```typescript:lib/queue.ts
 import { sendEmail } from './services/email';
 import { generateReport } from './services/generate-report';
-import { getJobQueue, type JobPayloadMap } from './queue';
+import { type JobPayloadMap } from './queue';
 
 // Object literal mapping for static enforcement.
 // This will ensure that every job type defined in `JobPayloadMap` has a corresponding handler, enforced at compile time by TypeScript.
@@ -88,11 +88,7 @@ export const jobHandlers: {
   },
 };
 
-export const registerAllJobHandlers = async (): Promise<void> => {
-  const jobQueue = await getJobQueue();
-  jobQueue.registerJobHandlers(jobHandlers);
-};
-
+// The queue initialization code in step 1...
 ```
 
 ### 3. Add a Job (e.g., in an API Route or Server Function)
@@ -141,8 +137,7 @@ export const sendEmail = async ({
 Set up a route to process jobs in batches. This example is for API route (`/api/cron/process`) which can be triggered by a cron job:
 
 ```typescript:app/api/cron/process/route.ts
-import { registerJobHandlers } from '@/lib/job-handler';
-import { getJobQueue } from '@/lib/queue';
+import { getJobQueue, jobHandlers } from '@/lib/queue';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -155,10 +150,7 @@ export async function GET(request: Request) {
   try {
     const jobQueue = await getJobQueue();
 
-    // Register job handlers
-    await registerJobHandlers();
-
-    const processor = jobQueue.createProcessor({
+    const processor = jobQueue.createProcessor(jobHandlers, {
       workerId: `cron-${Date.now()}`,
       batchSize: 3,
       verbose: true,

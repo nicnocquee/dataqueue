@@ -68,16 +68,18 @@ describe('index integration', () => {
 
   it('should process a job with a registered handler', async () => {
     const handler = vi.fn(async () => {});
-    jobQueue.registerJobHandlers({
-      email: vi.fn(async () => {}),
-      sms: vi.fn(async () => {}),
-      test: handler,
-    });
     const jobId = await jobQueue.addJob({
       job_type: 'test',
       payload: { foo: 'bar' },
     });
-    const processor = jobQueue.createProcessor({ pollInterval: 100 });
+    const processor = jobQueue.createProcessor(
+      {
+        email: vi.fn(async () => {}),
+        sms: vi.fn(async () => {}),
+        test: handler,
+      },
+      { pollInterval: 100 },
+    );
     processor.start();
     await new Promise((r) => setTimeout(r, 300));
     processor.stop();

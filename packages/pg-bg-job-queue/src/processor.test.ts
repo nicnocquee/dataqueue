@@ -1,11 +1,6 @@
 import { Pool } from 'pg';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import {
-  registerJobHandlers,
-  processJob,
-  processBatch,
-  createProcessor,
-} from './processor.js';
+import { createProcessor } from './processor.js';
 import * as queue from './queue.js';
 import { createTestSchemaAndPool, destroyTestSchema } from './test-util.js';
 
@@ -42,80 +37,74 @@ describe('processor integration', () => {
 
   it('should process a job with a registered handler', async () => {
     const handler = vi.fn(async () => {});
-    registerJobHandlers<TestPayloadMap>(
-      {
-        test: handler,
-        fail: vi.fn(async () => {}),
-        missing: vi.fn(async () => {}),
-        batch: vi.fn(async () => {}),
-        proc: vi.fn(async () => {}),
-        typeA: vi.fn(async () => {}),
-        typeB: vi.fn(async () => {}),
-        typeC: vi.fn(async () => {}),
-      },
-      true,
-    );
+    const handlers = {
+      test: handler,
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
     const jobId = await queue.addJob<TestPayloadMap, 'test'>(pool, {
       job_type: 'test',
       payload: { foo: 'bar' },
     });
     const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJob(pool, job!);
+    await processJobWithHandlers(pool, job!, handlers);
     expect(handler).toHaveBeenCalledWith({ foo: 'bar' });
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
   });
 
   it('should mark job as failed if handler throws', async () => {
-    registerJobHandlers<TestPayloadMap>(
-      {
-        test: vi.fn(async () => {}),
-        fail: async () => {
-          throw new Error('fail!');
-        },
-        missing: vi.fn(async () => {}),
-        batch: vi.fn(async () => {}),
-        proc: vi.fn(async () => {}),
-        typeA: vi.fn(async () => {}),
-        typeB: vi.fn(async () => {}),
-        typeC: vi.fn(async () => {}),
-      },
-      true,
-    );
+    const handler = vi.fn(async () => {
+      throw new Error('fail!');
+    });
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: handler,
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
     const jobId = await queue.addJob<TestPayloadMap, 'fail'>(pool, {
       job_type: 'fail',
       payload: {},
     });
     const job = await queue.getJob<TestPayloadMap, 'fail'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJob(pool, job!);
+    await processJobWithHandlers(pool, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.error_history?.[0]?.message).toBe('fail!');
   });
 
   it('should mark job as failed if no handler registered', async () => {
-    registerJobHandlers<TestPayloadMap>(
-      // @ts-expect-error missing handler
-      {
-        test: vi.fn(async () => {}),
-        fail: vi.fn(async () => {}),
-        batch: vi.fn(async () => {}),
-        proc: vi.fn(async () => {}),
-        typeA: vi.fn(async () => {}),
-        typeB: vi.fn(async () => {}),
-        typeC: vi.fn(async () => {}),
-      },
-      true,
-    );
+    const handler = vi.fn(async () => {
+      throw new Error('No handler registered');
+    });
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: handler,
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
     const jobId = await queue.addJob<TestPayloadMap, 'missing'>(pool, {
       job_type: 'missing',
       payload: {},
     });
     const job = await queue.getJob<TestPayloadMap, 'missing'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJob(pool, job!);
+    await processJobWithHandlers(pool, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.error_history?.[0]?.message).toContain(
@@ -125,19 +114,16 @@ describe('processor integration', () => {
 
   it('should process a batch of jobs', async () => {
     const handler = vi.fn(async () => {});
-    registerJobHandlers<TestPayloadMap>(
-      {
-        test: vi.fn(async () => {}),
-        fail: vi.fn(async () => {}),
-        missing: vi.fn(async () => {}),
-        batch: handler,
-        proc: vi.fn(async () => {}),
-        typeA: vi.fn(async () => {}),
-        typeB: vi.fn(async () => {}),
-        typeC: vi.fn(async () => {}),
-      },
-      true,
-    );
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: handler,
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
     const ids = await Promise.all([
       queue.addJob<TestPayloadMap, 'batch'>(pool, {
         job_type: 'batch',
@@ -148,7 +134,13 @@ describe('processor integration', () => {
         payload: { i: 2 },
       }),
     ]);
-    const processed = await processBatch(pool, 'worker-batch', 2);
+    const processed = await processBatchWithHandlers(
+      pool,
+      'worker-batch',
+      2,
+      undefined,
+      handlers,
+    );
     expect(processed).toBe(2);
     const jobs = await queue.getJobsByStatus<TestPayloadMap, 'batch'>(
       pool,
@@ -160,24 +152,21 @@ describe('processor integration', () => {
 
   it('should start and stop the processor', async () => {
     const handler = vi.fn(async () => {});
-    registerJobHandlers<TestPayloadMap>(
-      {
-        test: vi.fn(async () => {}),
-        fail: vi.fn(async () => {}),
-        missing: vi.fn(async () => {}),
-        batch: vi.fn(async () => {}),
-        proc: handler,
-        typeA: vi.fn(async () => {}),
-        typeB: vi.fn(async () => {}),
-        typeC: vi.fn(async () => {}),
-      },
-      true,
-    );
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: handler,
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
     await queue.addJob<TestPayloadMap, 'proc'>(pool, {
       job_type: 'proc',
       payload: { x: 1 },
     });
-    const processor = createProcessor(pool, { pollInterval: 200 });
+    const processor = createProcessor(pool, handlers, { pollInterval: 200 });
     processor.start();
     // Wait for job to be processed
     await new Promise((r) => setTimeout(r, 500));
@@ -190,19 +179,16 @@ describe('processor integration', () => {
   it('should process only jobs of a specific job type with processBatch', async () => {
     const handlerA = vi.fn(async () => {});
     const handlerB = vi.fn(async () => {});
-    registerJobHandlers<TestPayloadMap>(
-      {
-        test: vi.fn(async () => {}),
-        fail: vi.fn(async () => {}),
-        missing: vi.fn(async () => {}),
-        batch: vi.fn(async () => {}),
-        proc: vi.fn(async () => {}),
-        typeA: handlerA,
-        typeB: handlerB,
-        typeC: vi.fn(async () => {}),
-      },
-      true,
-    );
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: handlerA,
+      typeB: handlerB,
+      typeC: vi.fn(async () => {}),
+    };
     const idA1 = await queue.addJob<TestPayloadMap, 'typeA'>(pool, {
       job_type: 'typeA',
       payload: { n: 1 },
@@ -216,7 +202,13 @@ describe('processor integration', () => {
       payload: { n: 3 },
     });
     // Only process typeA
-    const processed = await processBatch(pool, 'worker-typeA', 10, 'typeA');
+    const processed = await processBatchWithHandlers(
+      pool,
+      'worker-typeA',
+      10,
+      'typeA',
+      handlers,
+    );
     expect(processed).toBe(2);
     expect(handlerA).toHaveBeenCalledTimes(2);
     expect(handlerB).not.toHaveBeenCalled();
@@ -234,19 +226,16 @@ describe('processor integration', () => {
     const handlerA = vi.fn(async () => {});
     const handlerB = vi.fn(async () => {});
     const handlerC = vi.fn(async () => {});
-    registerJobHandlers<TestPayloadMap>(
-      {
-        test: vi.fn(async () => {}),
-        fail: vi.fn(async () => {}),
-        missing: vi.fn(async () => {}),
-        batch: vi.fn(async () => {}),
-        proc: vi.fn(async () => {}),
-        typeA: handlerA,
-        typeB: handlerB,
-        typeC: handlerC,
-      },
-      true,
-    );
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: handlerA,
+      typeB: handlerB,
+      typeC: handlerC,
+    };
     const idA = await queue.addJob<TestPayloadMap, 'typeA'>(pool, {
       job_type: 'typeA',
       payload: { n: 1 },
@@ -260,10 +249,13 @@ describe('processor integration', () => {
       payload: { n: 3 },
     });
     // Only process typeA and typeC
-    const processed = await processBatch(pool, 'worker-multi', 10, [
-      'typeA',
-      'typeC',
-    ]);
+    const processed = await processBatchWithHandlers(
+      pool,
+      'worker-multi',
+      10,
+      ['typeA', 'typeC'],
+      handlers,
+    );
     expect(processed).toBe(2);
     expect(handlerA).toHaveBeenCalledTimes(1);
     expect(handlerB).not.toHaveBeenCalled();
@@ -281,19 +273,16 @@ describe('processor integration', () => {
   it('should process only jobs of a specific job type with createProcessor', async () => {
     const handlerA = vi.fn(async () => {});
     const handlerB = vi.fn(async () => {});
-    registerJobHandlers<TestPayloadMap>(
-      {
-        test: vi.fn(async () => {}),
-        fail: vi.fn(async () => {}),
-        missing: vi.fn(async () => {}),
-        batch: vi.fn(async () => {}),
-        proc: vi.fn(async () => {}),
-        typeA: handlerA,
-        typeB: handlerB,
-        typeC: vi.fn(async () => {}),
-      },
-      true,
-    );
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: handlerA,
+      typeB: handlerB,
+      typeC: vi.fn(async () => {}),
+    };
     const idA = await queue.addJob<TestPayloadMap, 'typeA'>(pool, {
       job_type: 'typeA',
       payload: { n: 1 },
@@ -302,7 +291,7 @@ describe('processor integration', () => {
       job_type: 'typeB',
       payload: { n: 2 },
     });
-    const processor = createProcessor(pool, {
+    const processor = createProcessor(pool, handlers, {
       pollInterval: 100,
       jobType: 'typeA',
     });
@@ -318,3 +307,53 @@ describe('processor integration', () => {
     expect(jobB?.status).not.toBe('completed');
   });
 });
+
+// Helper for per-processor job processing
+async function processJobWithHandlers<
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(
+  pool: Pool,
+  job: any,
+  jobHandlers: Record<string, (payload: any) => Promise<void>>,
+): Promise<void> {
+  const handler = jobHandlers[job.job_type];
+  if (!handler) {
+    await queue.setPendingReasonForUnpickedJobs(
+      pool,
+      `No handler registered for job type: ${job.job_type}`,
+      job.job_type,
+    );
+    await queue.failJob(
+      pool,
+      job.id,
+      new Error(`No handler registered for job type: ${job.job_type}`),
+    );
+    return;
+  }
+  try {
+    await handler(job.payload);
+    await queue.completeJob(pool, job.id);
+  } catch (error) {
+    await queue.failJob(
+      pool,
+      job.id,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+}
+
+// Helper for per-processor batch processing
+async function processBatchWithHandlers<PayloadMap>(
+  pool: Pool,
+  workerId: string,
+  batchSize: number,
+  jobType: string | string[] | undefined,
+  jobHandlers: Record<string, (payload: any) => Promise<void>>,
+): Promise<number> {
+  const jobs = await queue.getNextBatch(pool, workerId, batchSize, jobType);
+  await Promise.all(
+    jobs.map((job) => processJobWithHandlers(pool, job, jobHandlers)),
+  );
+  return jobs.length;
+}
