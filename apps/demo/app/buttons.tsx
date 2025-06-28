@@ -3,9 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { sendEmail } from './jobs/email';
 import { generateReport } from './jobs/report';
-import { processJobs, processJobsByType } from './jobs/process-jobs';
 import { useTransition } from 'react';
-import { refresh } from './queue/refresh';
 import { cancelPendingJobs } from './jobs/cancel';
 
 export default function Buttons() {
@@ -37,28 +35,6 @@ export default function Buttons() {
       >
         Generate Report
       </Button>
-      <Button
-        disabled={isPending}
-        onClick={async () => {
-          const job = await processJobs();
-          console.log(job);
-        }}
-      >
-        Process Jobs
-      </Button>
-      <Button
-        disabled={isPending}
-        onClick={async () => {
-          const job = await processJobsByType('email');
-          console.log(job);
-        }}
-      >
-        Process Email Jobs
-      </Button>
-      <Button onClick={refresh} disabled={isPending}>
-        Refresh Jobs
-      </Button>
-
       <Button onClick={cancelPendingJobs} disabled={isPending}>
         Cancel Pending Jobs
       </Button>
