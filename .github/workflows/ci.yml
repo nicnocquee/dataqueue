@@ -41,6 +41,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Build
+        working-directory: packages/pg-bg-job-queue
+        run: pnpm run build
+
       - name: Run check format
         run: pnpm run check-format
 
