@@ -143,12 +143,7 @@ export const createProcessor = <PayloadMap = any>(
         jobHandlers,
         concurrency,
       );
-
-      // If we processed a full batch, there might be more jobs ready
-      if (processed === batchSize) {
-        // Process next batch immediately
-        setImmediate(processJobs);
-      }
+      // Only process one batch in start; do not schedule next batch here
       return processed;
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
@@ -167,7 +162,15 @@ export const createProcessor = <PayloadMap = any>(
 
       log(`Starting job processor with workerId: ${workerId}`);
       running = true;
-      processJobs(); // Process immediately on start
+      // Background: process batches repeatedly if needed
+      const processBatches = async () => {
+        if (!running) return;
+        const processed = await processJobs();
+        if (processed === batchSize && running) {
+          setImmediate(processBatches);
+        }
+      };
+      processBatches(); // Process immediately on start
       intervalId = setInterval(processJobs, pollInterval);
     },
     /**

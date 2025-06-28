@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     const processor = jobQueue.createProcessor(jobHandlers, {
       workerId: `cron-${Date.now()}`,
       batchSize: 3,
+      concurrency: 2,
       verbose: true,
     });
 
