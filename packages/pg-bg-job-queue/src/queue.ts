@@ -427,3 +427,36 @@ export const setPendingReasonForUnpickedJobs = async (
     client.release();
   }
 };
+
+/**
+ * Reclaim jobs stuck in 'processing' for too long.
+ *
+ * If a process (e.g., API route or worker) crashes after marking a job as 'processing' but before completing it, the job can remain stuck in the 'processing' state indefinitely. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as 'completed' or 'failed'.
+ * @param pool - The database pool
+ * @param maxProcessingTimeMinutes - Max allowed processing time in minutes (default: 10)
+ * @returns Number of jobs reclaimed
+ */
+export const reclaimStuckJobs = async (
+  pool: Pool,
+  maxProcessingTimeMinutes = 10,
+): Promise<number> => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `
+      UPDATE job_queue
+      SET status = 'pending', locked_at = NULL, locked_by = NULL, updated_at = NOW()
+      WHERE status = 'processing'
+        AND locked_at < NOW() - INTERVAL '${maxProcessingTimeMinutes} minutes'
+      RETURNING id
+      `,
+    );
+    log(`Reclaimed ${result.rowCount} stuck jobs`);
+    return result.rowCount || 0;
+  } catch (error) {
+    log(`Error reclaiming stuck jobs: ${error}`);
+    throw error;
+  } finally {
+    client.release();
+  }
+};

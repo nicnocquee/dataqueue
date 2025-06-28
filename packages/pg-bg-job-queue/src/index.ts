@@ -8,6 +8,7 @@ import {
   cancelJob,
   cancelAllUpcomingJobs,
   getAllJobs,
+  reclaimStuckJobs,
 } from './queue.js';
 import { registerJobHandler, createProcessor } from './processor.js';
 import {
@@ -72,6 +73,11 @@ export const initJobQueue = async (
     cancelAllUpcomingJobs: withLogContext(
       (filters?: { job_type?: string; priority?: number; run_at?: Date }) =>
         cancelAllUpcomingJobs(pool, filters),
+      config.verbose ?? false,
+    ),
+    reclaimStuckJobs: withLogContext(
+      (maxProcessingTimeMinutes?: number) =>
+        reclaimStuckJobs(pool, maxProcessingTimeMinutes),
       config.verbose ?? false,
     ),
 

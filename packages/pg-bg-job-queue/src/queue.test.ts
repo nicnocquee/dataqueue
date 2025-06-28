@@ -262,4 +262,26 @@ describe('queue integration', () => {
     expect(typeof job?.error_history?.[0].timestamp).toBe('string');
     expect(typeof job?.error_history?.[1].timestamp).toBe('string');
   });
+
+  it('should reclaim stuck processing jobs', async () => {
+    // Add a job and set it to processing with an old locked_at
+    const jobId = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'stuck@example.com' },
+    });
+    await pool.query(
+      `UPDATE job_queue SET status = 'processing', locked_at = NOW() - INTERVAL '15 minutes' WHERE id = $1`,
+      [jobId],
+    );
+    // Should be processing and locked_at is old
+    let job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('processing');
+    // Reclaim stuck jobs (threshold 10 minutes)
+    const reclaimed = await queue.reclaimStuckJobs(pool, 10);
+    expect(reclaimed).toBeGreaterThanOrEqual(1);
+    job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('pending');
+    expect(job?.locked_at).toBeNull();
+    expect(job?.locked_by).toBeNull();
+  });
 });

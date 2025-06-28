@@ -5,7 +5,9 @@ A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Sche
 ## Features
 
 - Simple API for adding and processing jobs
-- Supports job priorities, scheduling, and retries
+- Supports job priorities, scheduling, canceling, and retries
+- Reclaim stuck jobs: No jobs will be stuck in the `processing` state indefinitely
+- Cleanup old jobs: Keep only the last xxx days of jobs
 - Works with serverless and traditional environments
 - Written in TypeScript
 
@@ -15,7 +17,9 @@ A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Sche
 npm install pg-bg-job-queue
 ```
 
-## Quick Start
+## Getting Started
+
+In this example, we'll use a Next.js with App Router project which is deployed to Vercel.
 
 ### 1. Initialize the Job Queue
 
@@ -108,48 +112,41 @@ export const sendEmail = async ({
     throw error;
   }
 };
-
 ```
 
 ### 4. Process Jobs (e.g., with a Cron Job)
 
-Set up a route to process jobs in batches. This example is for API route which can be triggered by a cron job:
+Set up a route to process jobs in batches. This example is for API route (`/api/cron/process`) which can be triggered by a cron job:
 
-```typescript:app/api/cron/route.ts
+```typescript:app/api/cron/process/route.ts
 import { registerJobHandlers } from '@/lib/job-handler';
 import { getJobQueue } from '@/lib/queue';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest) {
-  // Optional: Authenticate the request (e.g., with a secret)
+export async function GET(request: Request) {
+  // Secure the cron route: https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    // Initialize the job queue
     const jobQueue = await getJobQueue();
 
     // Register job handlers
     await registerJobHandlers();
 
-    // Create a processor instance
     const processor = jobQueue.createProcessor({
       workerId: `cron-${Date.now()}`,
-      batchSize: 3, // Process 3 jobs at a time. If your job handler takes a long time to process, it's better to process less jobs at a time since serverless functions are charged by the second and have a timeout.
+      batchSize: 3,
       verbose: true,
     });
 
-    // Start the processor and wait until all batched jobs are processed
-    await processor.start();
-
-    // Optional: Clean up old jobs (keep for 30 days)
-    const deleted = await jobQueue.cleanupOldJobs(30);
+    const processed = await processor.start();
 
     return NextResponse.json({
       message: 'Job processing completed',
-      cleanedUp: deleted,
+      processed,
     });
   } catch (error) {
     console.error('Error processing jobs:', error);
@@ -169,7 +166,7 @@ Add to your `vercel.json` to call the cron route every 5 minutes:
 {
   "crons": [
     {
-      "path": "/api/cron",
+      "path": "api/cron/process",
       "schedule": "*/5 * * * *"
     }
   ]
@@ -202,7 +199,110 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-### 6. Cancel All Upcoming Jobs
+### 5. Reclaim Stuck Jobs
+
+There are cases where a job is stuck in the `processing` state. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as `completed` or `failed`.
+
+To reclaim stuck jobs, create another end point to do so. This example is for API route (`/api/cron/reclaim`) which can be triggered by a cron job:
+
+```typescript:app/api/cron/reclaim/route.ts
+import { getJobQueue } from '@/lib/queue';
+import { NextResponse } from 'next/server';
+
+export async function GET(request: Request) {
+  // Secure the cron route: https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const jobQueue = await getJobQueue();
+
+    // Reclaim stuck jobs (10 minutes)
+    const reclaimed = await jobQueue.reclaimStuckJobs(10);
+    console.log(`Reclaimed ${reclaimed} stuck jobs`);
+
+    return NextResponse.json({
+      message: 'Stuck jobs reclaimed',
+      reclaimed,
+    });
+  } catch (error) {
+    console.error('Error processing jobs:', error);
+    return NextResponse.json(
+      { message: 'Failed to process jobs' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+#### Example: Vercel Cron Configuration
+
+Add to your `vercel.json` to call the cron route every 10 minutes:
+
+```json
+{
+  "crons": [
+    {
+      "path": "api/cron/reclaim",
+      "schedule": "*/10 * * * *"
+    }
+  ]
+}
+```
+
+### 6. Cleanup Old Jobs
+
+When you have a lot of jobs, you might want to cleanup old jobs, e.g., keep only the last 30 days of jobs. This example is for API route (`/api/cron/cleanup`) which can be triggered by a cron job:
+
+```typescript:app/api/cron/cleanup/route.ts
+import { getJobQueue } from '@/lib/queue';
+import { NextResponse } from 'next/server';
+
+export async function GET(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const jobQueue = await getJobQueue();
+
+    // Cleanup old jobs (keep for 30 days)
+    const deleted = await jobQueue.cleanupOldJobs(30);
+    console.log(`Deleted ${deleted} old jobs`);
+
+    return NextResponse.json({
+      message: 'Old jobs cleaned up',
+      deleted,
+    });
+  } catch (error) {
+    console.error('Error processing jobs:', error);
+    return NextResponse.json(
+      { message: 'Failed to process jobs' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+#### Example: Vercel Cron Configuration
+
+Add to your `vercel.json` to call the cron route every day at midnight:
+
+```json
+{
+  "crons": [
+    {
+      "path": "api/cron/cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+```
+
+### 7. Cancel All Upcoming Jobs
 
 Cancel all jobs that are still pending (not yet started or scheduled for the future):
 

@@ -32,8 +32,18 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
    pnpm install
    ```
 3. **Set up your environment**:
-   - Copy `.env.example` to `.env` and update the variables as needed (e.g., `DATABASE_URL`).
-   - Make sure you have a PostgreSQL instance running and accessible.
+   - Copy `env.example` to `.env` and update the variables as needed (e.g., `DATABASE_URL`).
+   - Make sure you have a PostgreSQL instance running and accessible. You can use the docker-compose file in the root of the monorepo to start a PostgreSQL instance:
+     ```bash
+     docker-compose up
+     ```
+4. **Run the demo app**:
+
+   ```bash
+   pnpm dev
+   ```
+
+   This wil run three things: the demo Next.js app, the library in watch mode, and the cron job to trigger the jobs processing, reclaim stuck jobs, and cleanup old jobs.
 
 ## Development Workflow
 
@@ -48,15 +58,15 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - Add or update tests as needed.
 - Run the test suite to ensure everything works:
   ```bash
-  pnpm test --filter pg-bg-job-queue
+  cd packages/pg-bg-job-queue && pnpm test
   ```
 - To build the library:
   ```bash
-  pnpm build --filter pg-bg-job-queue
+  cd packages/pg-bg-job-queue && pnpm build
   ```
 - To run the demo app:
   ```bash
-  pnpm dev --filter demo-nextjs
+  pnpm dev
   ```
 - Commit your changes with a clear, descriptive message.
 - Push your branch and open a pull request (PR) against the `main` branch.
@@ -76,16 +86,17 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - First run `docker-compose up` to start the PostgreSQL container which will be used for testing.
 - Run the test suite with:
   ```bash
-  pnpm test --filter pg-bg-job-queue
+  cd packages/pg-bg-job-queue && pnpm test
   ```
-- Add tests in the `src/` directory of the package, following the existing test structure.
+- Add tests in the `src/` directory of the package with the name `*.test.ts`, following the existing test structure.
 - Tests should be deterministic and not depend on external state.
+- In this project, the tests don't mock the database. They use the real database. That's why you need to run `docker-compose up` before running the tests. Before each test, a new schema in the PostgreSQL database will be created. The code will be executed in the context of the new schema.
 
 ## Submitting Changes
 
 - Ensure your branch is up to date with `main` before opening a PR.
 - Provide a clear description of your changes in the PR.
-- Reference any related issues (e.g., `Closes #123`).
+- Reference any related issues (e.g., `Resolves #123`).
 - Be responsive to feedback and make requested changes promptly.
 - PRs should pass all CI checks before merging.
 - **Publishing:** The library is published to npm automatically by CI using Changesets when changes are merged to `main` and a version bump is present.

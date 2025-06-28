@@ -17,9 +17,10 @@ export default function Home() {
         <h1 className="text-2xl font-bold">Demo</h1>
         <p className="text-lg">
           This is a demo of the job queue. When run via <code>pnpm dev</code>{' '}
-          from the root, the <code>/api/cron</code> endpoint will be called
-          every 10 seconds.
+          from the root, the <code>api/cron/process</code> endpoint will be
+          called every 10 seconds.
         </p>
+        <RefreshPeriodically key="refresh" action={refresh} interval={10000} />
       </div>
       <Buttons />
       <div className="flex flex-col gap-4">
@@ -48,7 +49,6 @@ export default function Home() {
           <CompletedJobs />
         </div>
       </div>
-      <RefreshPeriodically key="refresh" action={refresh} interval={10000} />
     </div>
   );
 }

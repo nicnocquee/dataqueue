@@ -73,8 +73,9 @@ export interface Processor {
    * Start the job processor synchronously.
    * - This will process jobs (as many as batchSize) immediately and then stop. The pollInterval is ignored.
    * - In serverless functions, it's recommended to use this instead of startInBackground.
+   * - Returns the number of jobs processed.
    */
-  start: () => Promise<void>;
+  start: () => Promise<number>;
 }
 
 export interface JobQueueConfig {
@@ -123,6 +124,13 @@ export interface JobQueue {
    * Cancel a job.
    */
   cancelJob: (jobId: number) => Promise<void>;
+  /**
+   * Reclaim stuck jobs.
+   * - If a process (e.g., API route or worker) crashes after marking a job as 'processing' but before completing it, the job can remain stuck in the 'processing' state indefinitely. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as 'completed' or 'failed'.
+   * - This function will set the job status back to 'pending', clear the locked_at and locked_by, and allow it to be picked up by other workers.
+   * - The default max processing time is 10 minutes.
+   */
+  reclaimStuckJobs: (maxProcessingTimeMinutes?: number) => Promise<number>;
   /**
    * Cancel all upcoming jobs.
    */

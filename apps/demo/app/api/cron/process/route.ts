@@ -2,16 +2,16 @@ import { registerJobHandlers } from '@/lib/job-handler';
 import { getJobQueue } from '@/lib/queue';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
-  // Optional: Authenticate the request (e.g., with a secret)
-  // const authHeader = request.headers.get('authorization');
-  // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-  //   return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-  // }
+export async function GET(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
 
   try {
     const jobQueue = await getJobQueue();
 
+    // Register job handlers
     await registerJobHandlers();
 
     const processor = jobQueue.createProcessor({
@@ -20,15 +20,11 @@ export async function GET() {
       verbose: true,
     });
 
-    await processor.start();
-
-    // Clean up old jobs (keep for 30 days)
-    const deleted = await jobQueue.cleanupOldJobs(30);
-    console.log(`Deleted ${deleted} old jobs`);
+    const processed = await processor.start();
 
     return NextResponse.json({
       message: 'Job processing completed',
-      cleanedUp: deleted,
+      processed,
     });
   } catch (error) {
     console.error('Error processing jobs:', error);

@@ -102,8 +102,8 @@ export const createProcessor = (
 
   setLogContext(options.verbose ?? false);
 
-  const processJobs = async (): Promise<void> => {
-    if (!running) return;
+  const processJobs = async (): Promise<number> => {
+    if (!running) return 0;
 
     log(
       `Processing jobs with workerId: ${workerId}${jobType ? ` and jobType: ${Array.isArray(jobType) ? jobType.join(',') : jobType}` : ''}`,
@@ -117,9 +117,11 @@ export const createProcessor = (
         // Process next batch immediately
         setImmediate(processJobs);
       }
+      return processed;
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
     }
+    return 0;
   };
 
   return {
@@ -155,8 +157,9 @@ export const createProcessor = (
     start: async () => {
       log(`Starting job processor with workerId: ${workerId}`);
       running = true;
-      await processJobs();
+      const processed = await processJobs();
       running = false;
+      return processed;
     },
     isRunning: () => running,
   };
