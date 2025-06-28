@@ -49,7 +49,11 @@ export const WillRetryFailedJobs = async () => {
   return <JobTable jobs={jobsToRetry} />;
 };
 
-const JobTable = ({ jobs }: { jobs: JobRecord<unknown>[] }) => {
+const JobTable = ({
+  jobs,
+}: {
+  jobs: JobRecord<Record<string, unknown>, string>[];
+}) => {
   return (
     <Table>
       <TableHeader>
