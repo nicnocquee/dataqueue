@@ -199,28 +199,6 @@ Add to your `vercel.json` to call the cron route every 5 minutes:
 
 Failed jobs will be retried up to `max_attempts` times. If a job fails after `max_attempts` attempts, it will be set to `failed` status. The next attempt will be scheduled after `2^attempts * 1 minute` from the last attempt. You can get the error history of a job by checking the `error_history` field.
 
-### 5. Cancel a Job
-
-```typescript
-import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/queue';
-
-export async function POST(request: NextRequest) {
-  try {
-    const { jobId } = await request.json();
-    const jobQueue = await getJobQueue();
-    await jobQueue.cancelJob(jobId);
-    return NextResponse.json({ message: 'Job cancelled' });
-  } catch (error) {
-    console.error('Error cancelling job:', error);
-    return NextResponse.json(
-      { message: 'Failed to cancel job' },
-      { status: 500 },
-    );
-  }
-}
-```
-
 ### 5. Reclaim Stuck Jobs
 
 There are cases where a job is stuck in the `processing` state. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as `completed` or `failed`.
@@ -324,7 +302,29 @@ Add to your `vercel.json` to call the cron route every day at midnight:
 }
 ```
 
-### 7. Cancel All Upcoming Jobs
+### 7. Cancel a Job
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { getJobQueue } from '@/lib/queue';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { jobId } = await request.json();
+    const jobQueue = await getJobQueue();
+    await jobQueue.cancelJob(jobId);
+    return NextResponse.json({ message: 'Job cancelled' });
+  } catch (error) {
+    console.error('Error cancelling job:', error);
+    return NextResponse.json(
+      { message: 'Failed to cancel job' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+### 8. Cancel All Upcoming Jobs
 
 Cancel all jobs that are still pending (not yet started or scheduled for the future):
 
