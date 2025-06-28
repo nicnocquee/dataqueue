@@ -1,5 +1,5 @@
 ---
-'pg-bg-job-queue': major
+'pg-bg-job-queue': minor
 ---
 
 Initial release

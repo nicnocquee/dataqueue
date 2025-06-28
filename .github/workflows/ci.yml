@@ -1,4 +1,4 @@
-name: CI and Release
+name: Checks and Tests
 
 on:
   push:
