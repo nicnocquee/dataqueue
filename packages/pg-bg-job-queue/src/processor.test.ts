@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { createProcessor } from './processor.js';
 import * as queue from './queue.js';
-import { createTestSchemaAndPool, destroyTestSchema } from './test-util.js';
+import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 
 // Define the payload map for test jobs
 interface TestPayloadMap {
@@ -20,19 +20,17 @@ interface TestPayloadMap {
 
 describe('processor integration', () => {
   let pool: Pool;
-  let schema: string;
-  let basePool: Pool;
+  let dbName: string;
 
   beforeEach(async () => {
-    const setup = await createTestSchemaAndPool();
+    const setup = await createTestDbAndPool();
     pool = setup.pool;
-    schema = setup.schema;
-    basePool = setup.basePool;
+    dbName = setup.dbName;
   });
 
   afterEach(async () => {
     await pool.end();
-    await destroyTestSchema(basePool, schema);
+    await destroyTestDb(dbName);
   });
 
   it('should process a job with a registered handler', async () => {
@@ -310,19 +308,17 @@ describe('processor integration', () => {
 
 describe('concurrency option', () => {
   let pool: Pool;
-  let schema: string;
-  let basePool: Pool;
+  let dbName: string;
 
   beforeEach(async () => {
-    const setup = await createTestSchemaAndPool();
+    const setup = await createTestDbAndPool();
     pool = setup.pool;
-    schema = setup.schema;
-    basePool = setup.basePool;
+    dbName = setup.dbName;
   });
 
   afterEach(async () => {
     await pool.end();
-    await destroyTestSchema(basePool, schema);
+    await destroyTestDb(dbName);
   });
 
   async function addJobs(n: number) {

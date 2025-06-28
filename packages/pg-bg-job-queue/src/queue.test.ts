@@ -1,25 +1,23 @@
 import { Pool } from 'pg';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as queue from './queue.js';
-import { createTestSchemaAndPool, destroyTestSchema } from './test-util.js';
+import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 
 // Example integration test setup
 
 describe('queue integration', () => {
   let pool: Pool;
-  let schema: string;
-  let basePool: Pool;
+  let dbName: string;
 
   beforeEach(async () => {
-    const setup = await createTestSchemaAndPool();
+    const setup = await createTestDbAndPool();
     pool = setup.pool;
-    schema = setup.schema;
-    basePool = setup.basePool;
+    dbName = setup.dbName;
   });
 
   afterEach(async () => {
     await pool.end();
-    await destroyTestSchema(basePool, schema);
+    await destroyTestDb(dbName);
   });
 
   it('should add a job and retrieve it', async () => {

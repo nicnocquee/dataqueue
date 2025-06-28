@@ -24,7 +24,7 @@ export const getJobQueue = async () => {
   if (!jobQueuePromise) {
     jobQueuePromise = initJobQueue<JobPayloadMap>({
       databaseConfig: {
-        connectionString: process.env.DATABASE_URL, // Set this in your environment
+        connectionString: process.env.PG_BG_JOB_QUEUE_DATABASE, // Set this in your environment
         ssl:
           process.env.NODE_ENV === 'production'
             ? { rejectUnauthorized: false }

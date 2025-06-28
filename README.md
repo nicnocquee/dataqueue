@@ -21,7 +21,27 @@ npm install pg-bg-job-queue
 
 In this example, we'll use a Next.js with App Router project which is deployed to Vercel.
 
-### 1. Initialize the Job Queue
+### 1. Database Migrations
+
+After installing the package, add a script to your `package.json` to apply the migrations:
+
+```json
+"scripts": {
+  "migrate-pg-bg-job-queue": "pg-bg-job-queue-cli migrate"
+}
+```
+
+Then run the following command to apply the migrations:
+
+```sh
+npm run migrate-pg-bg-job-queue
+```
+
+This will apply all necessary schema migrations so that your Postgres database is ready to be used by pg-bg-job-queue. **The `PG_BG_JOB_QUEUE_DATABASE` environment variable must be set to your Postgres connection string**. The CLI will use this environment variable to connect to the database.
+
+This command needs to be run before you start using the job queue. For example, if you are deploying your app to Vercel, you need to run this command before deploying. This is similar to how Prisma and other ORMs manage migrations.
+
+### 2. Initialize the Job Queue
 
 Create a file (e.g., `lib/queue.ts`) to initialize and reuse the job queue instance. You need to define the job payload map for this app. The keys are the job types, and the values are the payload types. This prevents you from adding jobs with the wrong payload type.
 
@@ -50,7 +70,7 @@ export const getJobQueue = async () => {
   if (!jobQueuePromise) {
     jobQueuePromise = initJobQueue<JobPayloadMap>({
       databaseConfig: {
-        connectionString: process.env.DATABASE_URL, // Set this in your environment
+        connectionString: process.env.PG_BG_JOB_QUEUE_DATABASE, // Set this in your environment
         ssl:
           process.env.NODE_ENV === 'production'
             ? { rejectUnauthorized: false }
@@ -63,7 +83,7 @@ export const getJobQueue = async () => {
 };
 ```
 
-### 2. Define Job Handlers
+### 3. Define Job Handlers
 
 Define your job handlers (e.g., in `lib/queue.ts`) which will be run when a job is processed. If you forget to add a handler for a job type, TypeScript will give you an error.
 
@@ -91,7 +111,7 @@ export const jobHandlers: {
 // The queue initialization code in step 1...
 ```
 
-### 3. Add a Job (e.g., in an API Route or Server Function)
+### 4. Add a Job (e.g., in an API Route or Server Function)
 
 Add jobs to the queue from your application logic, for example in a server function:
 
@@ -132,7 +152,7 @@ export const sendEmail = async ({
 };
 ```
 
-### 4. Process Jobs (e.g., with a Cron Job)
+### 5. Process Jobs (e.g., with a Cron Job)
 
 Set up a route to process jobs in batches. This example is for API route (`/api/cron/process`) which can be triggered by a cron job:
 
@@ -203,7 +223,7 @@ Add to your `vercel.json` to call the cron route every 5 minutes:
 
 Failed jobs will be retried up to `max_attempts` times. If a job fails after `max_attempts` attempts, it will be set to `failed` status. The next attempt will be scheduled after `2^attempts * 1 minute` from the last attempt. You can get the error history of a job by checking the `error_history` field.
 
-### 5. Reclaim Stuck Jobs
+### 6. Reclaim Stuck Jobs
 
 There are cases where a job is stuck in the `processing` state. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as `completed` or `failed`.
 
@@ -256,7 +276,7 @@ Add to your `vercel.json` to call the cron route every 10 minutes:
 }
 ```
 
-### 6. Cleanup Old Jobs
+### 7. Cleanup Old Jobs
 
 When you have a lot of jobs, you might want to cleanup old jobs, e.g., keep only the last 30 days of jobs. This example is for API route (`/api/cron/cleanup`) which can be triggered by a cron job:
 
@@ -306,7 +326,7 @@ Add to your `vercel.json` to call the cron route every day at midnight:
 }
 ```
 
-### 7. Cancel a Job
+### 8. Cancel a Job
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
@@ -328,7 +348,7 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-### 8. Cancel All Upcoming Jobs
+### 9. Cancel All Upcoming Jobs
 
 Cancel all jobs that are still pending (not yet started or scheduled for the future):
 
@@ -373,7 +393,7 @@ await jobQueue.cancelAllUpcomingJobs({ job_type: 'email', priority: 2 });
 
 This will set the status of all jobs that are still pending (not yet started or scheduled for the future) to `cancelled`.
 
-### 7. Get Job(s)
+### 10. Get Job(s)
 
 To get a job by id:
 

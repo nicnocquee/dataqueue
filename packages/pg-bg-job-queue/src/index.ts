@@ -1,4 +1,3 @@
-import { createPool, initializeJobQueue, runMigrations } from './setup.js';
 import {
   addJob,
   getJob,
@@ -18,6 +17,7 @@ import {
   ProcessorOptions,
 } from './types.js';
 import { setLogContext } from './log-context.js';
+import { createPool } from './db-util.js';
 
 /**
  * Initialize the job queue system
@@ -31,12 +31,6 @@ export const initJobQueue = async <PayloadMap = any>(
   const pool = createPool(databaseConfig);
 
   setLogContext(config.verbose ?? false);
-
-  // Initialize database tables
-  await initializeJobQueue(pool);
-
-  // Run migrations if needed
-  await runMigrations(pool);
 
   // Return the job queue API
   return {

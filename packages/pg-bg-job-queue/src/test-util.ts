@@ -1,35 +1,56 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
-import { initializeJobQueue } from './setup.js';
+import { join } from 'path';
+import { runner } from 'node-pg-migrate';
 
-export async function createTestSchemaAndPool() {
-  const basePool = new Pool({
-    connectionString:
-      process.env.PG_TEST_URL ||
-      'postgres://postgres:postgres@localhost:5432/postgres',
-  });
-  const schema = `test_schema_${randomUUID().replace(/-/g, '')}`;
-  await basePool.query(`CREATE SCHEMA ${schema}`);
+export async function createTestDbAndPool() {
+  const baseDatabaseUrl =
+    process.env.PG_TEST_URL ||
+    'postgres://postgres:postgres@localhost:5432/postgres';
+  const dbName = `test_db_${randomUUID().replace(/-/g, '')}`;
 
-  const pool = new Pool({
-    connectionString:
-      process.env.PG_TEST_URL ||
-      'postgres://postgres:postgres@localhost:5432/postgres',
-    options: `-c search_path=${schema}`,
-  });
+  // 1. Connect to the default database to create a new test database
+  const adminPool = new Pool({ connectionString: baseDatabaseUrl });
+  await adminPool.query(`CREATE DATABASE ${dbName}`);
+  await adminPool.end();
 
-  // Wait a bit to ensure schema/table visibility
+  // 2. Connect to the new test database
+  const testDbUrl = baseDatabaseUrl.replace(/(\/)[^/]+$/, `/${dbName}`);
+  const pool = new Pool({ connectionString: testDbUrl });
+
+  // Wait a bit to ensure DB visibility
   await new Promise((r) => setTimeout(r, 50));
 
-  // Explicitly set search_path for the session
-  await pool.query(`SET search_path TO ${schema}`);
+  // 3. Run migrations
+  try {
+    await runner({
+      databaseUrl: testDbUrl,
+      dir: join(__dirname, '../migrations'),
+      direction: 'up',
+      count: Infinity,
+      migrationsTable: 'pgmigrations',
+    });
+  } catch (error) {
+    console.error(error);
+  }
 
-  await initializeJobQueue(pool);
-
-  return { pool, schema, basePool };
+  return { pool, dbName, testDbUrl };
 }
 
-export async function destroyTestSchema(basePool: Pool, schema: string) {
-  await basePool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-  await basePool.end();
+export async function destroyTestDb(dbName: string) {
+  const baseDatabaseUrl =
+    process.env.PG_TEST_URL ||
+    'postgres://postgres:postgres@localhost:5432/postgres';
+  const adminPool = new Pool({ connectionString: baseDatabaseUrl });
+  // Terminate all connections to the test database before dropping
+  await adminPool.query(
+    `
+    SELECT pg_terminate_backend(pid)
+    FROM pg_stat_activity
+    WHERE datname = $1 AND pid <> pg_backend_pid()
+  `,
+    [dbName],
+  );
+  await adminPool.query(`DROP DATABASE IF EXISTS ${dbName}`);
+  await adminPool.end();
 }

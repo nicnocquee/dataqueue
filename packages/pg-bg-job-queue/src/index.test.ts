@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { initJobQueue, JobQueueConfig } from './index.js';
-import { createTestSchemaAndPool, destroyTestSchema } from './test-util.js';
+import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 import { Pool } from 'pg';
 
 // Integration tests for index.ts
@@ -13,30 +13,27 @@ interface TestPayloadMap {
 
 describe('index integration', () => {
   let pool: Pool;
-  let schema: string;
-  let basePool: Pool;
+  let dbName: string;
+  let testDbUrl: string;
   let jobQueue: Awaited<ReturnType<typeof initJobQueue<TestPayloadMap>>>;
 
   beforeEach(async () => {
-    const setup = await createTestSchemaAndPool();
+    const setup = await createTestDbAndPool();
     pool = setup.pool;
-    schema = setup.schema;
-    basePool = setup.basePool;
+    dbName = setup.dbName;
+    testDbUrl = setup.testDbUrl;
     const config: JobQueueConfig = {
       databaseConfig: {
-        connectionString:
-          process.env.PG_TEST_URL ||
-          'postgres://postgres:postgres@localhost:5432/postgres',
+        connectionString: testDbUrl,
       },
     };
     jobQueue = await initJobQueue<TestPayloadMap>(config);
-    // Set search_path for the session to the test schema
-    await jobQueue.getPool().query(`SET search_path TO ${schema}`);
   });
 
   afterEach(async () => {
+    jobQueue.getPool().end();
     await pool.end();
-    await destroyTestSchema(basePool, schema);
+    await destroyTestDb(dbName);
   });
 
   it('should add a job and retrieve it', async () => {
