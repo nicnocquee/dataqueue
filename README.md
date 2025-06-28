@@ -1,15 +1,15 @@
 # pg-bg-job-queue
 
-A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Schedule, process, and manage background jobs with ease—perfect for Next.js, serverless, and traditional Node.js apps.
+A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Schedule, process, and manage background jobs with ease. Perfect for web apps (Next.js, etc.) deployed to serverless platforms like Vercel, AWS Lambda, etc.
 
 ## Features
 
 - Simple API for adding and processing jobs
+- Strong typing for job types and payloads which prevents you from adding jobs with the wrong payload type, and ensures that the job handler receives the correct payload type.
+- Works with serverless environment
 - Supports job priorities, scheduling, canceling, and retries
 - Reclaim stuck jobs: No jobs will be stuck in the `processing` state indefinitely
 - Cleanup old jobs: Keep only the last xxx days of jobs
-- Works with serverless environment
-- Strong typing for job types and payloads which prevents you from adding jobs with the wrong payload type, and ensures that the job handler receives the correct payload type.
 
 ## Who is this for?
 
@@ -238,14 +238,17 @@ Add to your `vercel.json` to call the cron route every minute:
 
 ```json
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "api/cron/process",
+      "path": "/api/cron/process",
       "schedule": "* * * * *"
     }
   ]
 }
 ```
+
+In Vercel cron, the `CRON_SECRET` environment variable is sent as the `authorization` header. If you are using a different cron service, you need to set the `authorization` header to the `CRON_SECRET` value.
 
 #### Failed Jobs
 
@@ -297,7 +300,7 @@ Add to your `vercel.json` to call the cron route every 10 minutes:
 {
   "crons": [
     {
-      "path": "api/cron/reclaim",
+      "path": "/api/cron/reclaim",
       "schedule": "*/10 * * * *"
     }
   ]
@@ -347,7 +350,7 @@ Add to your `vercel.json` to call the cron route every day at midnight:
 {
   "crons": [
     {
-      "path": "api/cron/cleanup",
+      "path": "/api/cron/cleanup",
       "schedule": "0 0 * * *"
     }
   ]
