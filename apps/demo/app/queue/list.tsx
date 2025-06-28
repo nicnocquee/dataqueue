@@ -28,6 +28,18 @@ export const CompletedJobs = async () => {
   return <JobTable jobs={jobs} />;
 };
 
+export const FailedJobs = async () => {
+  const jobQueue = await getJobQueue();
+  const jobs = await jobQueue.getJobsByStatus('failed');
+  return <JobTable jobs={jobs} />;
+};
+
+export const CancelledJobs = async () => {
+  const jobQueue = await getJobQueue();
+  const jobs = await jobQueue.getJobsByStatus('cancelled');
+  return <JobTable jobs={jobs} />;
+};
+
 const JobTable = ({ jobs }: { jobs: JobRecord<unknown>[] }) => {
   return (
     <Table>

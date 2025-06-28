@@ -1,6 +1,12 @@
 import Buttons from './buttons';
 import { ProcessJobsPeriodically } from './process-jobs-periodically';
-import { CompletedJobs, PendingJobs, ProcessingJobs } from './queue/list';
+import {
+  CancelledJobs,
+  CompletedJobs,
+  FailedJobs,
+  PendingJobs,
+  ProcessingJobs,
+} from './queue/list';
 import { refresh } from './queue/refresh';
 import { RefreshPeriodically } from './refresh-periodically';
 
@@ -16,6 +22,14 @@ export default function Home() {
         <div>
           <p className="text-lg font-bold">Processing Jobs</p>
           <ProcessingJobs />
+        </div>
+        <div>
+          <p className="text-lg font-bold">Failed Jobs</p>
+          <FailedJobs />
+        </div>
+        <div>
+          <p className="text-lg font-bold">Cancelled Jobs</p>
+          <CancelledJobs />
         </div>
         <div>
           <p className="text-lg font-bold">Completed Jobs</p>
