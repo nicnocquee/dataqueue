@@ -237,13 +237,11 @@ export const failJob = async (
             WHEN attempts < max_attempts THEN NOW() + (POWER(2, attempts) * INTERVAL '1 minute')
             ELSE NULL
           END,
-          payload = jsonb_set(payload, '{last_error}', $2),
-          error_history = COALESCE(error_history, '[]'::jsonb) || $3::jsonb
+          error_history = COALESCE(error_history, '[]'::jsonb) || $2::jsonb
       WHERE id = $1
     `,
       [
         jobId,
-        JSON.stringify(error.message || String(error)),
         JSON.stringify([
           {
             message: error.message || String(error),
