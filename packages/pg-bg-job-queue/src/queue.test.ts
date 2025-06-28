@@ -244,4 +244,22 @@ describe('queue integration', () => {
     const nextIds = nextTwo.map((j) => j.id);
     expect(firstIds.some((id) => nextIds.includes(id))).toBe(false);
   });
+
+  it('should track error history for failed jobs', async () => {
+    const jobId = await queue.addJob(pool, {
+      job_type: 'email',
+      payload: { to: 'failhistory@example.com' },
+    });
+    // Fail the job twice with different errors
+    await queue.failJob(pool, jobId, new Error('first error'));
+    await queue.failJob(pool, jobId, new Error('second error'));
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('failed');
+    expect(Array.isArray(job?.error_history)).toBe(true);
+    expect(job?.error_history?.length).toBeGreaterThanOrEqual(2);
+    expect(job?.error_history?.[0].message).toBe('first error');
+    expect(job?.error_history?.[1].message).toBe('second error');
+    expect(typeof job?.error_history?.[0].timestamp).toBe('string');
+    expect(typeof job?.error_history?.[1].timestamp).toBe('string');
+  });
 });

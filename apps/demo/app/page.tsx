@@ -6,6 +6,7 @@ import {
   FailedJobs,
   PendingJobs,
   ProcessingJobs,
+  WillRetryFailedJobs,
 } from './queue/list';
 import { refresh } from './queue/refresh';
 import { RefreshPeriodically } from './refresh-periodically';
@@ -22,6 +23,10 @@ export default function Home() {
         <div>
           <p className="text-lg font-bold">Processing Jobs</p>
           <ProcessingJobs />
+        </div>
+        <div>
+          <p className="text-lg font-bold">Will Retry Failed Jobs</p>
+          <WillRetryFailedJobs />
         </div>
         <div>
           <p className="text-lg font-bold">Failed Jobs</p>

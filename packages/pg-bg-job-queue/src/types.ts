@@ -23,6 +23,7 @@ export interface JobRecord<T> {
   priority: number;
   run_at: Date;
   pending_reason?: string | null;
+  error_history?: { message: string; timestamp: string }[];
 }
 
 export interface JobHandler<T> {

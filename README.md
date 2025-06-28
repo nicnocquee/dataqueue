@@ -176,6 +176,10 @@ Add to your `vercel.json` to call the cron route every 5 minutes:
 }
 ```
 
+#### Failed Jobs
+
+Failed jobs will be retried up to `max_attempts` times. If a job fails after `max_attempts` attempts, it will be set to `failed` status. The next attempt will be scheduled after `2^attempts * 1 minute` from the last attempt. You can get the error history of a job by checking the `error_history` field.
+
 ### 5. Cancel a Job
 
 ```typescript

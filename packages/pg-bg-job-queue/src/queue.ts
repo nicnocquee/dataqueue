@@ -219,6 +219,9 @@ export const failJob = async (
 ): Promise<void> => {
   const client = await pool.connect();
   try {
+    /**
+     * The next attempt will be scheduled after `2^attempts * 1 minute` from the last attempt.
+     */
     await client.query(
       `
       UPDATE job_queue
@@ -228,10 +231,20 @@ export const failJob = async (
             WHEN attempts < max_attempts THEN NOW() + (POWER(2, attempts) * INTERVAL '1 minute')
             ELSE NULL
           END,
-          payload = jsonb_set(payload, '{last_error}', $2)
+          payload = jsonb_set(payload, '{last_error}', $2),
+          error_history = COALESCE(error_history, '[]'::jsonb) || $3::jsonb
       WHERE id = $1
     `,
-      [jobId, JSON.stringify(error.message || String(error))],
+      [
+        jobId,
+        JSON.stringify(error.message || String(error)),
+        JSON.stringify([
+          {
+            message: error.message || String(error),
+            timestamp: new Date().toISOString(),
+          },
+        ]),
+      ],
     );
   } catch (error) {
     log(`Error failing job ${jobId}: ${error}`);

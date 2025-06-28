@@ -28,7 +28,8 @@ export const initializeJobQueue = async (pool: Pool): Promise<void> => {
         next_attempt_at TIMESTAMPTZ,
         priority INT DEFAULT 0,
         run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-        pending_reason TEXT
+        pending_reason TEXT,
+        error_history JSONB DEFAULT '[]'::jsonb
       );
 
       CREATE INDEX IF NOT EXISTS idx_job_queue_status ON job_queue(status);
@@ -105,6 +106,21 @@ export const runMigrations = async (pool: Pool): Promise<void> => {
       log('Migration: Added pending_reason column');
     }
 
+    // Check for error_history column
+    const checkErrorHistoryResult = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'job_queue' AND column_name = 'error_history'
+      ) as has_error_history_column;
+    `);
+    const hasErrorHistoryColumn =
+      checkErrorHistoryResult.rows[0].has_error_history_column;
+    if (!hasErrorHistoryColumn) {
+      await client.query(`
+        ALTER TABLE job_queue ADD COLUMN error_history JSONB DEFAULT '[]'::jsonb;
+      `);
+      log('Migration: Added error_history column');
+    }
     // Add more migrations as needed
   } catch (error) {
     console.error('Error running migrations:', error);
