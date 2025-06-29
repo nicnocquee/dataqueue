@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { JobOptions, JobRecord } from './types.js';
+import { JobOptions, JobRecord, FailureReason } from './types.js';
 import { log } from './log-context.js';
 
 /**
@@ -13,6 +13,7 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     max_attempts = 3,
     priority = 0,
     run_at = null,
+    timeoutMs = undefined,
   }: JobOptions<PayloadMap, T>,
 ): Promise<number> => {
   const client = await pool.connect();
@@ -21,10 +22,10 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     if (run_at) {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority, run_at) 
-         VALUES ($1, $2, $3, $4, $5) 
+          (job_type, payload, max_attempts, priority, run_at, timeout_ms) 
+         VALUES ($1, $2, $3, $4, $5, $6) 
          RETURNING id`,
-        [job_type, payload, max_attempts, priority, run_at],
+        [job_type, payload, max_attempts, priority, run_at, timeoutMs ?? null],
       );
       log(
         `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, run_at ${run_at.toISOString()}, priority ${priority}, max_attempts ${max_attempts} job_type ${job_type}`,
@@ -32,10 +33,10 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     } else {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority) 
-         VALUES ($1, $2, $3, $4) 
+          (job_type, payload, max_attempts, priority, timeout_ms) 
+         VALUES ($1, $2, $3, $4, $5) 
          RETURNING id`,
-        [job_type, payload, max_attempts, priority],
+        [job_type, payload, max_attempts, priority, timeoutMs ?? null],
       );
       log(
         `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, max_attempts ${max_attempts} job_type ${job_type}`,
@@ -73,6 +74,8 @@ export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     return {
       ...result.rows[0],
       payload: result.rows[0].payload,
+      timeout_ms: result.rows[0].timeout_ms,
+      failure_reason: result.rows[0].failure_reason,
     };
   } catch (error) {
     log(`Error getting job ${id}: ${error}`);
@@ -106,6 +109,8 @@ export const getJobsByStatus = async <
     return result.rows.map((row) => ({
       ...row,
       payload: row.payload,
+      timeout_ms: row.timeout_ms,
+      failure_reason: row.failure_reason,
     }));
   } catch (error) {
     log(`Error getting jobs by status ${status}: ${error}`);
@@ -182,6 +187,7 @@ export const getNextBatch = async <
     return result.rows.map((row) => ({
       ...row,
       payload: row.payload,
+      timeout_ms: row.timeout_ms,
     }));
   } catch (error) {
     log(`Error getting next batch: ${error}`);
@@ -222,6 +228,7 @@ export const failJob = async (
   pool: Pool,
   jobId: number,
   error: Error,
+  failureReason?: FailureReason,
 ): Promise<void> => {
   const client = await pool.connect();
   try {
@@ -237,7 +244,8 @@ export const failJob = async (
             WHEN attempts < max_attempts THEN NOW() + (POWER(2, attempts) * INTERVAL '1 minute')
             ELSE NULL
           END,
-          error_history = COALESCE(error_history, '[]'::jsonb) || $2::jsonb
+          error_history = COALESCE(error_history, '[]'::jsonb) || $2::jsonb,
+          failure_reason = $3
       WHERE id = $1
     `,
       [
@@ -248,6 +256,7 @@ export const failJob = async (
             timestamp: new Date().toISOString(),
           },
         ]),
+        failureReason ?? null,
       ],
     );
   } catch (error) {
@@ -396,6 +405,7 @@ export const getAllJobs = async <
     return result.rows.map((row) => ({
       ...row,
       payload: row.payload,
+      timeout_ms: row.timeout_ms,
     }));
   } catch (error) {
     log(`Error getting all jobs: ${error}`);

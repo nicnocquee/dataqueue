@@ -64,7 +64,7 @@ describe('index integration', () => {
   });
 
   it('should process a job with a registered handler', async () => {
-    const handler = vi.fn(async () => {});
+    const handler = vi.fn(async (_payload, _signal) => {});
     const jobId = await jobQueue.addJob({
       job_type: 'test',
       payload: { foo: 'bar' },
@@ -81,7 +81,7 @@ describe('index integration', () => {
     await new Promise((r) => setTimeout(r, 300));
     processor.stop();
     const job = await jobQueue.getJob(jobId);
-    expect(handler).toHaveBeenCalledWith({ foo: 'bar' });
+    expect(handler).toHaveBeenCalledWith({ foo: 'bar' }, expect.any(Object));
     expect(job?.status).toBe('completed');
   });
 

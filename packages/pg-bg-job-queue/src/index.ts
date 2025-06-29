@@ -15,6 +15,7 @@ import {
   JobQueue,
   JobOptions,
   ProcessorOptions,
+  JobHandlers,
 } from './types.js';
 import { setLogContext } from './log-context.js';
 import { createPool } from './db-util.js';
@@ -72,9 +73,7 @@ export const initJobQueue = async <PayloadMap = any>(
 
     // Job processing
     createProcessor: (
-      handlers: {
-        [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
-      },
+      handlers: JobHandlers<PayloadMap>,
       options?: ProcessorOptions,
     ) => createProcessor<PayloadMap>(pool, handlers, options),
     // Advanced access (for custom operations)

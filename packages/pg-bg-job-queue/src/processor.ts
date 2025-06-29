@@ -1,5 +1,13 @@
 import { Pool } from 'pg';
-import { JobRecord, ProcessorOptions, Processor } from './types.js';
+import {
+  JobRecord,
+  ProcessorOptions,
+  Processor,
+  JobHandler,
+  JobType,
+  FailureReason,
+  JobHandlers,
+} from './types.js';
 import {
   getNextBatch,
   completeJob,
@@ -11,13 +19,13 @@ import { log, setLogContext } from './log-context.js';
 /**
  * Process a single job using the provided handler map
  */
-async function processJobWithHandlers<
+export async function processJobWithHandlers<
   PayloadMap,
   T extends keyof PayloadMap & string,
 >(
   pool: Pool,
   job: JobRecord<PayloadMap, T>,
-  jobHandlers: Record<string, (payload: any) => Promise<void>>,
+  jobHandlers: JobHandlers<PayloadMap>,
 ): Promise<void> {
   const handler = jobHandlers[job.job_type];
 
@@ -31,19 +39,54 @@ async function processJobWithHandlers<
       pool,
       job.id,
       new Error(`No handler registered for job type: ${job.job_type}`),
+      FailureReason.NoHandler,
     );
     return;
   }
 
+  // Per-job timeout logic
+  const timeoutMs = job.timeout_ms ?? undefined;
+  let timeoutId: NodeJS.Timeout | undefined;
+  const controller = new AbortController();
   try {
-    await handler(job.payload);
+    const jobPromise = handler(job.payload, controller.signal);
+    if (timeoutMs && timeoutMs > 0) {
+      await Promise.race([
+        jobPromise,
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            controller.abort();
+            const timeoutError = new Error(
+              `Job timed out after ${timeoutMs} ms`,
+            );
+            // @ts-ignore
+            timeoutError.failureReason = FailureReason.Timeout;
+            reject(timeoutError);
+          }, timeoutMs);
+        }),
+      ]);
+    } else {
+      await jobPromise;
+    }
+    if (timeoutId) clearTimeout(timeoutId);
     await completeJob(pool, job.id);
   } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
     console.error(`Error processing job ${job.id}:`, error);
+    let failureReason = FailureReason.HandlerError;
+    if (
+      error &&
+      typeof error === 'object' &&
+      'failureReason' in error &&
+      (error as any).failureReason === FailureReason.Timeout
+    ) {
+      failureReason = FailureReason.Timeout;
+    }
     await failJob(
       pool,
       job.id,
       error instanceof Error ? error : new Error(String(error)),
+      failureReason,
     );
   }
 }
@@ -51,15 +94,20 @@ async function processJobWithHandlers<
 /**
  * Process a batch of jobs using the provided handler map and concurrency limit
  */
-async function processBatchWithHandlers<PayloadMap>(
+export async function processBatchWithHandlers<PayloadMap>(
   pool: Pool,
   workerId: string,
   batchSize: number,
   jobType: string | string[] | undefined,
-  jobHandlers: Record<string, (payload: any) => Promise<void>>,
+  jobHandlers: JobHandlers<PayloadMap>,
   concurrency?: number,
 ): Promise<number> {
-  const jobs = await getNextBatch(pool, workerId, batchSize, jobType);
+  const jobs = await getNextBatch<PayloadMap, JobType<PayloadMap>>(
+    pool,
+    workerId,
+    batchSize,
+    jobType,
+  );
   if (!concurrency || concurrency >= jobs.length) {
     // Default: all in parallel
     await Promise.all(
@@ -103,9 +151,7 @@ async function processBatchWithHandlers<PayloadMap>(
  */
 export const createProcessor = <PayloadMap = any>(
   pool: Pool,
-  handlers: {
-    [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
-  },
+  handlers: JobHandlers<PayloadMap>,
   options: ProcessorOptions = {},
 ): Processor => {
   const {
@@ -122,11 +168,6 @@ export const createProcessor = <PayloadMap = any>(
 
   setLogContext(options.verbose ?? false);
 
-  const jobHandlers = handlers as Record<
-    string,
-    (payload: any) => Promise<void>
-  >;
-
   const processJobs = async (): Promise<number> => {
     if (!running) return 0;
 
@@ -140,7 +181,7 @@ export const createProcessor = <PayloadMap = any>(
         workerId,
         batchSize,
         jobType,
-        jobHandlers,
+        handlers,
         concurrency,
       );
       // Only process one batch in start; do not schedule next batch here

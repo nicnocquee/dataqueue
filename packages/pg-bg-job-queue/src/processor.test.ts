@@ -1,8 +1,13 @@
 import { Pool } from 'pg';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { createProcessor } from './processor.js';
+import {
+  createProcessor,
+  processBatchWithHandlers,
+  processJobWithHandlers,
+} from './processor.js';
 import * as queue from './queue.js';
 import { createTestDbAndPool, destroyTestDb } from './test-util.js';
+import { FailureReason, JobHandler } from './types.js';
 
 // Define the payload map for test jobs
 interface TestPayloadMap {
@@ -52,7 +57,10 @@ describe('processor integration', () => {
     const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
     await processJobWithHandlers(pool, job!, handlers);
-    expect(handler).toHaveBeenCalledWith({ foo: 'bar' });
+    expect(handler).toHaveBeenCalledWith(
+      { foo: 'bar' },
+      expect.any(AbortSignal),
+    );
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
   });
@@ -81,6 +89,7 @@ describe('processor integration', () => {
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.error_history?.[0]?.message).toBe('fail!');
+    expect(failed?.failure_reason).toBe('handler_error');
   });
 
   it('should mark job as failed if no handler registered', async () => {
@@ -102,12 +111,14 @@ describe('processor integration', () => {
     });
     const job = await queue.getJob<TestPayloadMap, 'missing'>(pool, jobId);
     expect(job).not.toBeNull();
+    // @ts-expect-error - test handler is missing
     await processJobWithHandlers(pool, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.error_history?.[0]?.message).toContain(
       'No handler registered',
     );
+    expect(failed?.failure_reason).toBe('no_handler');
   });
 
   it('should process a batch of jobs', async () => {
@@ -404,52 +415,64 @@ describe('concurrency option', () => {
   });
 });
 
-// Helper for per-processor job processing
-async function processJobWithHandlers<
-  PayloadMap,
-  T extends keyof PayloadMap & string,
->(
-  pool: Pool,
-  job: any,
-  jobHandlers: Record<string, (payload: any) => Promise<void>>,
-): Promise<void> {
-  const handler = jobHandlers[job.job_type];
-  if (!handler) {
-    await queue.setPendingReasonForUnpickedJobs(
-      pool,
-      `No handler registered for job type: ${job.job_type}`,
-      job.job_type,
-    );
-    await queue.failJob(
-      pool,
-      job.id,
-      new Error(`No handler registered for job type: ${job.job_type}`),
-    );
-    return;
-  }
-  try {
-    await handler(job.payload);
-    await queue.completeJob(pool, job.id);
-  } catch (error) {
-    await queue.failJob(
-      pool,
-      job.id,
-      error instanceof Error ? error : new Error(String(error)),
-    );
-  }
-}
+describe('per-job timeout', () => {
+  let pool: Pool;
+  let dbName: string;
 
-// Helper for per-processor batch processing
-async function processBatchWithHandlers<PayloadMap>(
-  pool: Pool,
-  workerId: string,
-  batchSize: number,
-  jobType: string | string[] | undefined,
-  jobHandlers: Record<string, (payload: any) => Promise<void>>,
-): Promise<number> {
-  const jobs = await queue.getNextBatch(pool, workerId, batchSize, jobType);
-  await Promise.all(
-    jobs.map((job) => processJobWithHandlers(pool, job, jobHandlers)),
-  );
-  return jobs.length;
-}
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('should fail the job if handler exceeds timeoutMs', async () => {
+    const handler = vi.fn(async (_payload, signal) => {
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(resolve, 200);
+        signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(new Error('aborted'));
+        });
+      });
+    });
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      job_type: 'test',
+      payload: {},
+      timeoutMs: 50, // 50ms
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+    expect(job).not.toBeNull();
+    await processJobWithHandlers(pool, job!, handlers);
+    const failed = await queue.getJob(pool, jobId);
+    expect(failed?.status).toBe('failed');
+    expect(failed?.error_history?.[0]?.message).toContain('timed out');
+    expect(failed?.failure_reason).toBe(FailureReason.Timeout);
+  });
+
+  it('should complete the job if handler finishes before timeoutMs', async () => {
+    const handler = vi.fn(async (_payload, _signal) => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      job_type: 'test',
+      payload: {},
+      timeoutMs: 200, // 200ms
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+    expect(job).not.toBeNull();
+    await processJobWithHandlers(pool, job!, handlers);
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+  });
+});

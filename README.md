@@ -10,6 +10,7 @@ A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Sche
 - Supports job priorities, scheduling, canceling, and retries
 - Reclaim stuck jobs: No jobs will be stuck in the `processing` state indefinitely
 - Cleanup old jobs: Keep only the last xxx days of jobs
+- Per-job timeout and abortable handlers
 
 ## Who is this for?
 
@@ -124,8 +125,12 @@ import { type JobPayloadMap } from './queue';
 // This will ensure that every job type defined in `JobPayloadMap` has a corresponding handler, enforced at compile time by TypeScript.
 // If you add a new job type to `JobPayloadMap` and forget to add a handler, TypeScript will give you an error.
 export const jobHandlers: {
-  [K in keyof JobPayloadMap]: (payload: JobPayloadMap[K]) => Promise<void>;
+  [K in keyof JobPayloadMap]: (
+    payload: JobPayloadMap[K],
+    signal: AbortSignal,
+  ) => Promise<void>;
 } = {
+  // If you don't need the abort signal, you can omit it.
   send_email: async (payload) => {
     const { to, subject, body } = payload;
     await sendEmail(to, subject, body);
@@ -134,10 +139,42 @@ export const jobHandlers: {
     const { reportId, userId } = payload;
     await generateReport(reportId, userId);
   },
+  // The first argument is the job payload, the second argument is the abort signal.
+  generate_image: async (payload, signal) => {
+    const { prompt } = payload;
+    await generateImageAi(prompt, signal);
+  },
 };
 
 // The queue initialization code in step 1...
 ```
+
+### Per-Job Timeout and Abortable Handlers
+
+**pg-bg-job-queue** supports per-job timeouts and abortable handlers. When a job is processed, the handler receives two arguments: the job payload and an `AbortSignal`. If the job exceeds its timeout (set via `timeoutMs`), the processor will call `abort()` on the signal, and the handler should exit early if possible.
+
+**Handler signature:**
+
+```ts
+(payload: Payload, signal: AbortSignal) => Promise<void>;
+```
+
+**Example abortable handler:**
+
+```ts
+const handler = async (payload, signal) => {
+  // Simulate work
+  // do something that may take a long time
+  if (signal.aborted) {
+    throw new Error('Job aborted');
+  }
+  // ...rest of your logic
+};
+```
+
+- If the job times out, the signal will be aborted and the handler should throw or exit early.
+- If your handler does not check for `signal.aborted` or listen for the abort event, it will continue running in the background even after the job is marked as failed due to timeout.
+- For best results, always make your handlers abortable if they may run for a long time.
 
 ### 4. Add a Job (e.g., in an API Route or Server Function)
 

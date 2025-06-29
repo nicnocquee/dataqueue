@@ -9,6 +9,16 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
   max_attempts?: number;
   priority?: number;
   run_at?: Date | null;
+  /**
+   * Timeout for this job in milliseconds. If not set, uses the processor default or unlimited.
+   */
+  timeoutMs?: number;
+}
+
+export enum FailureReason {
+  Timeout = 'timeout',
+  HandlerError = 'handler_error',
+  NoHandler = 'no_handler',
 }
 
 export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
@@ -27,11 +37,24 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
   run_at: Date;
   pending_reason?: string | null;
   error_history?: { message: string; timestamp: string }[];
+  /**
+   * Timeout for this job in milliseconds (null means no timeout).
+   */
+  timeout_ms?: number | null;
+  /**
+   * The reason for the last failure, if any.
+   */
+  failure_reason?: FailureReason | null;
 }
 
-export interface JobHandler<PayloadMap, T extends JobType<PayloadMap>> {
-  handler: (payload: PayloadMap[T]) => Promise<void>;
-}
+export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
+  payload: PayloadMap[T],
+  signal: AbortSignal,
+) => Promise<void>;
+
+export type JobHandlers<PayloadMap> = {
+  [K in keyof PayloadMap]: JobHandler<PayloadMap, K>;
+};
 
 export interface ProcessorOptions {
   workerId?: string;
@@ -173,7 +196,7 @@ export interface JobQueue<PayloadMap> {
    */
   createProcessor: (
     handlers: {
-      [K in keyof PayloadMap]: (payload: PayloadMap[K]) => Promise<void>;
+      [K in keyof PayloadMap]: JobHandler<PayloadMap, K>;
     },
     options?: ProcessorOptions,
   ) => Processor;
