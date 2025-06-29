@@ -1,5 +1,11 @@
 # pg-bg-job-queue
 
+## 1.15.0
+
+### Minor Changes
+
+- Added job events
+
 ## 1.14.0
 
 ### Minor Changes

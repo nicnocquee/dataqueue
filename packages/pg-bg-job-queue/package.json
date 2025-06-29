@@ -1,6 +1,6 @@
 {
   "name": "pg-bg-job-queue",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "description": "PostgreSQL-based job queue for Node.js applications with support for serverless environments",
   "type": "module",
   "main": "dist/index.js",
