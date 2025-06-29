@@ -28,7 +28,7 @@ If all of the following apply to you, then this package is for you:
 ## Installation
 
 ```bash
-npm install dataqueue
+npm install @nicnocquee/dataqueue
 npm install -D node-pg-migrate ts-node
 ```
 
@@ -76,7 +76,7 @@ This migrations needs to be run before you start using the job queue. For exampl
 Create a file (e.g., `lib/queue.ts`) to initialize and reuse the job queue instance. You need to define the job payload map for this app. The keys are the job types, and the values are the payload types. This prevents you from adding jobs with the wrong payload type.
 
 ```typescript:lib/queue.ts
-import { initJobQueue } from 'dataqueue';
+import { initJobQueue } from '@nicnocquee/dataqueue';
 
 // Define the job payload map for this app.
 // This will ensure that the job payload is typed correctly when adding jobs.
