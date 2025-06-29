@@ -42,20 +42,20 @@ jobs:
         run: pnpm install
 
       - name: Build
-        working-directory: packages/pg-bg-job-queue
+        working-directory: packages/dataqueue
         run: pnpm run build
 
       - name: Run check format
         run: pnpm run check-format
 
       - name: Run check exports
-        working-directory: packages/pg-bg-job-queue
+        working-directory: packages/dataqueue
         run: pnpm run check-exports
 
       - name: Run lint
-        working-directory: packages/pg-bg-job-queue
+        working-directory: packages/dataqueue
         run: pnpm run lint
 
       - name: Run test
-        working-directory: packages/pg-bg-job-queue
+        working-directory: packages/dataqueue
         run: pnpm run test

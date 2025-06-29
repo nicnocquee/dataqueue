@@ -1,4 +1,7 @@
-import { initJobQueue, JobHandlers } from 'pg-bg-job-queue';
+import {
+  initJobQueue,
+  JobHandlers,
+} from '../../../packages/dataqueue/dist/index.js';
 import { sendEmail } from './services/email';
 import { generateReport } from './services/generate-report';
 import { generateImageAi } from './services/generate-image-ai';

@@ -4,7 +4,7 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 
 function printUsage() {
-  console.log('Usage: pg-bg-job-queue-cli migrate');
+  console.log('Usage: dataqueue-cli migrate');
   process.exit(1);
 }
 

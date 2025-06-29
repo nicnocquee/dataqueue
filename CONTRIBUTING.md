@@ -1,6 +1,6 @@
-# Contributing to pg-bg-job-queue (Monorepo)
+# Contributing to dataqueue (Monorepo)
 
-Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is greatly appreciated. This guide will help you get started with contributing to the monorepo, from setting up your environment to submitting your first pull request.
+Thank you for your interest in contributing to **dataqueue**! Your help is greatly appreciated. This guide will help you get started with contributing to the monorepo, from setting up your environment to submitting your first pull request.
 
 ## Table of Contents
 
@@ -17,15 +17,15 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 
 ## Monorepo Structure
 
-- `packages/pg-bg-job-queue`: The main library package.
+- `packages/dataqueue`: The main library package.
 - `apps/demo-nextjs`: Example Next.js app using the library.
 
 ## Getting Started
 
 1. **Fork the repository** on GitHub and clone your fork locally:
    ```bash
-   git clone https://github.com/your-username/pg-bg-job-queue.git
-   cd pg-bg-job-queue
+   git clone https://github.com/your-username/dataqueue.git
+   cd dataqueue
    ```
 2. **Install dependencies** (using pnpm):
    ```bash
@@ -58,11 +58,11 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - Add or update tests as needed.
 - Run the test suite to ensure everything works:
   ```bash
-  cd packages/pg-bg-job-queue && pnpm test
+  cd packages/dataqueue && pnpm test
   ```
 - To build the library:
   ```bash
-  cd packages/pg-bg-job-queue && pnpm build
+  cd packages/dataqueue && pnpm build
   ```
 - To run the demo app:
   ```bash
@@ -86,7 +86,7 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 - First run `docker-compose up` to start the PostgreSQL container which will be used for testing.
 - Run the test suite with:
   ```bash
-  cd packages/pg-bg-job-queue && pnpm test
+  cd packages/dataqueue && pnpm test
   ```
 - Add tests in the `src/` directory of the package with the name `*.test.ts`, following the existing test structure.
 - Tests should be deterministic and not depend on external state.
@@ -105,7 +105,7 @@ Thank you for your interest in contributing to **pg-bg-job-queue**! Your help is
 
 If you find a bug or have a feature request:
 
-- Search [existing issues](https://github.com/your-username/pg-bg-job-queue/issues) to avoid duplicates.
+- Search [existing issues](https://github.com/your-username/dataqueue/issues) to avoid duplicates.
 - Open a new issue with a clear title and detailed description.
 - Include steps to reproduce, expected behavior, and relevant logs or screenshots.
 
@@ -117,4 +117,4 @@ If you find a bug or have a feature request:
 
 ---
 
-Thank you for helping make **pg-bg-job-queue** better!
+Thank you for helping make **dataqueue** better!

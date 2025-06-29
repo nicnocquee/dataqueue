@@ -1,4 +1,4 @@
--- 001-initial.sql: Initial schema for pg-bg-job-queue
+-- 001-initial.sql: Initial schema for dataqueue
 
 -- Up Migration
 CREATE TABLE IF NOT EXISTS job_queue (

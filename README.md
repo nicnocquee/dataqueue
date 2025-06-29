@@ -1,4 +1,4 @@
-# pg-bg-job-queue
+# dataqueue
 
 A lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Schedule, process, and manage background jobs with ease. Perfect for web apps (Next.js, etc.) deployed to serverless platforms like Vercel, AWS Lambda, etc.
 
@@ -28,7 +28,7 @@ If all of the following apply to you, then this package is for you:
 ## Installation
 
 ```bash
-npm install pg-bg-job-queue
+npm install dataqueue
 npm install -D node-pg-migrate ts-node
 ```
 
@@ -51,22 +51,22 @@ After installing the package, add a script to your `package.json` to apply the m
 
 ```json
 "scripts": {
-  "migrate-pg-bg-job-queue": "pg-bg-job-queue-cli migrate"
+  "migrate-dataqueue": "dataqueue-cli migrate"
 }
 ```
 
 Then run the following command to apply the migrations:
 
 ```sh
-npm run migrate-pg-bg-job-queue
+npm run migrate-dataqueue
 ```
 
-This will apply all necessary schema migrations so that your Postgres database is ready to be used by pg-bg-job-queue. **The `PG_BG_JOB_QUEUE_DATABASE` environment variable must be set to your Postgres connection string**. The CLI will use this environment variable to connect to the database.
+This will apply all necessary schema migrations so that your Postgres database is ready to be used by dataqueue. **The `PG_BG_JOB_QUEUE_DATABASE` environment variable must be set to your Postgres connection string**. The CLI will use this environment variable to connect to the database.
 
 In your computer, you can run the following command to run the migrations with the environment variables from your `.env.local` file:
 
 ```bash
-env $(cat .env.local | grep -v '^#' | xargs) pnpm run migrate-pg-bg-job-queue
+env $(cat .env.local | grep -v '^#' | xargs) pnpm run migrate-dataqueue
 ```
 
 This migrations needs to be run before you start using the job queue. For example, if you are deploying your app to Vercel, you need to run this command before deploying. This is similar to how Prisma and other ORMs manage migrations.
@@ -76,7 +76,7 @@ This migrations needs to be run before you start using the job queue. For exampl
 Create a file (e.g., `lib/queue.ts`) to initialize and reuse the job queue instance. You need to define the job payload map for this app. The keys are the job types, and the values are the payload types. This prevents you from adding jobs with the wrong payload type.
 
 ```typescript:lib/queue.ts
-import { initJobQueue } from 'pg-bg-job-queue';
+import { initJobQueue } from 'dataqueue';
 
 // Define the job payload map for this app.
 // This will ensure that the job payload is typed correctly when adding jobs.
@@ -152,7 +152,7 @@ export const jobHandlers: {
 
 ### Per-Job Timeout and Abortable Handlers
 
-**pg-bg-job-queue** supports per-job timeouts and abortable handlers. When a job is processed, the handler receives two arguments: the job payload and an `AbortSignal`. If the job exceeds its timeout (set via `timeoutMs`), the processor will call `abort()` on the signal, and the handler should exit early if possible.
+**dataqueue** supports per-job timeouts and abortable handlers. When a job is processed, the handler receives two arguments: the job payload and an `AbortSignal`. If the job exceeds its timeout (set via `timeoutMs`), the processor will call `abort()` on the signal, and the handler should exit early if possible.
 
 **Handler signature:**
 

@@ -7,7 +7,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getJobQueue } from '@/lib/queue';
-import { JobRecord } from 'pg-bg-job-queue';
+import { JobRecord } from '../../../../packages/dataqueue/dist';
 import { formatTimeDistance } from '@/lib/utils';
 import Link from 'next/link';
 

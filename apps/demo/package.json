@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "cron": "bash cron.sh",
-    "migrate-pg-bg-job-queue": "pg-bg-job-queue-cli migrate"
+    "migrate-dataqueue": "dataqueue-cli migrate"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
@@ -20,7 +20,7 @@
     "next": "^15.3.4",
     "node-pg-migrate": "^8.0.3",
     "pg": "^8.16.3",
-    "pg-bg-job-queue": "workspace:*",
+    "dataqueue": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.1",

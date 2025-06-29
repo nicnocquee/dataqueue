@@ -1,5 +1,5 @@
 {
-  "name": "pg-bg-job-queue",
+  "name": "dataqueue",
   "version": "1.15.0",
   "description": "PostgreSQL-based job queue for Node.js applications with support for serverless environments",
   "type": "module",
@@ -62,6 +62,6 @@
     "pg": "^8.0.0"
   },
   "bin": {
-    "pg-bg-job-queue-cli": "./cli.cjs"
+    "dataqueue-cli": "./cli.cjs"
   }
 }

@@ -19,10 +19,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Build package
-        working-directory: packages/pg-bg-job-queue
+        working-directory: packages/dataqueue
         run: pnpm run build
       - name: Publish to npm
-        working-directory: packages/pg-bg-job-queue
+        working-directory: packages/dataqueue
         run: pnpm exec changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
