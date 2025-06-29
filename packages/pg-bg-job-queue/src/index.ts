@@ -8,6 +8,7 @@ import {
   cancelAllUpcomingJobs,
   getAllJobs,
   reclaimStuckJobs,
+  getJobEvents,
 } from './queue.js';
 import { createProcessor } from './processor.js';
 import {
@@ -78,6 +79,11 @@ export const initJobQueue = async <PayloadMap = any>(
     ) => createProcessor<PayloadMap>(pool, handlers, options),
     // Advanced access (for custom operations)
     getPool: () => pool,
+    // Job events
+    getJobEvents: withLogContext(
+      (jobId: number) => getJobEvents(pool, jobId),
+      config.verbose ?? false,
+    ),
   };
 };
 

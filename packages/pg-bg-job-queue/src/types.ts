@@ -15,6 +15,23 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
   timeoutMs?: number;
 }
 
+export enum JobEventType {
+  Added = 'added',
+  Processing = 'processing',
+  Completed = 'completed',
+  Failed = 'failed',
+  Cancelled = 'cancelled',
+  Retried = 'retried',
+}
+
+export interface JobEvent {
+  id: number;
+  job_id: number;
+  event_type: JobEventType;
+  created_at: Date;
+  metadata: any;
+}
+
 export enum FailureReason {
   Timeout = 'timeout',
   HandlerError = 'handler_error',
@@ -45,6 +62,26 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * The reason for the last failure, if any.
    */
   failure_reason?: FailureReason | null;
+  /**
+   * The time the job was completed, if completed.
+   */
+  completed_at: Date | null;
+  /**
+   * The time the job was first picked up for processing.
+   */
+  started_at: Date | null;
+  /**
+   * The time the job was last retried.
+   */
+  last_retried_at: Date | null;
+  /**
+   * The time the job last failed.
+   */
+  last_failed_at: Date | null;
+  /**
+   * The time the job was last cancelled.
+   */
+  last_cancelled_at: Date | null;
 }
 
 export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
@@ -195,11 +232,14 @@ export interface JobQueue<PayloadMap> {
    * Create a job processor. Handlers must be provided per-processor.
    */
   createProcessor: (
-    handlers: {
-      [K in keyof PayloadMap]: JobHandler<PayloadMap, K>;
-    },
+    handlers: JobHandlers<PayloadMap>,
     options?: ProcessorOptions,
   ) => Processor;
+
+  /**
+   * Get the job events for a job.
+   */
+  getJobEvents: (jobId: number) => Promise<JobEvent[]>;
   /**
    * Get the database pool.
    */

@@ -1,6 +1,35 @@
 import { Pool } from 'pg';
-import { JobOptions, JobRecord, FailureReason } from './types.js';
+import {
+  JobOptions,
+  JobRecord,
+  FailureReason,
+  JobEvent,
+  JobEventType,
+} from './types.js';
 import { log } from './log-context.js';
+
+/**
+ * Record a job event in the job_events table
+ */
+export const recordJobEvent = async (
+  pool: Pool,
+  jobId: number,
+  eventType: JobEventType,
+  metadata?: any,
+): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `INSERT INTO job_events (job_id, event_type, metadata) VALUES ($1, $2, $3)`,
+      [jobId, eventType, metadata ? JSON.stringify(metadata) : null],
+    );
+  } catch (error) {
+    log(`Error recording job event for job ${jobId}: ${error}`);
+    // Do not throw, to avoid interfering with main job logic
+  } finally {
+    client.release();
+  }
+};
 
 /**
  * Add a job to the queue
@@ -42,6 +71,10 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
         `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, max_attempts ${max_attempts} job_type ${job_type}`,
       );
     }
+    await recordJobEvent(pool, result.rows[0].id, JobEventType.Added, {
+      job_type,
+      payload,
+    });
     return result.rows[0].id;
   } catch (error) {
     log(`Error adding job: ${error}`);
@@ -163,7 +196,9 @@ export const getNextBatch = async <
           locked_by = $1,
           attempts = attempts + 1,
           updated_at = NOW(),
-          pending_reason = NULL
+          pending_reason = NULL,
+          started_at = COALESCE(started_at, NOW()),
+          last_retried_at = CASE WHEN attempts > 0 THEN NOW() ELSE last_retried_at END
       WHERE id IN (
         SELECT id FROM job_queue
         WHERE (status = 'pending' OR (status = 'failed' AND next_attempt_at <= NOW()))
@@ -183,6 +218,11 @@ export const getNextBatch = async <
 
     // Commit transaction
     await client.query('COMMIT');
+
+    // Record processing event for each job
+    for (const row of result.rows) {
+      await recordJobEvent(pool, row.id, JobEventType.Processing);
+    }
 
     return result.rows.map((row) => ({
       ...row,
@@ -207,11 +247,12 @@ export const completeJob = async (pool: Pool, jobId: number): Promise<void> => {
     await client.query(
       `
       UPDATE job_queue
-      SET status = 'completed', updated_at = NOW()
+      SET status = 'completed', updated_at = NOW(), completed_at = NOW()
       WHERE id = $1
     `,
       [jobId],
     );
+    await recordJobEvent(pool, jobId, JobEventType.Completed);
   } catch (error) {
     log(`Error completing job ${jobId}: ${error}`);
     throw error;
@@ -245,7 +286,8 @@ export const failJob = async (
             ELSE NULL
           END,
           error_history = COALESCE(error_history, '[]'::jsonb) || $2::jsonb,
-          failure_reason = $3
+          failure_reason = $3,
+          last_failed_at = NOW()
       WHERE id = $1
     `,
       [
@@ -259,6 +301,10 @@ export const failJob = async (
         failureReason ?? null,
       ],
     );
+    await recordJobEvent(pool, jobId, JobEventType.Failed, {
+      message: error.message || String(error),
+      failureReason,
+    });
   } catch (error) {
     log(`Error failing job ${jobId}: ${error}`);
     throw error;
@@ -281,11 +327,13 @@ export const retryJob = async (pool: Pool, jobId: number): Promise<void> => {
           updated_at = NOW(),
           locked_at = NULL,
           locked_by = NULL,
-          next_attempt_at = NOW()
+          next_attempt_at = NOW(),
+          last_retried_at = NOW()
       WHERE id = $1
     `,
       [jobId],
     );
+    await recordJobEvent(pool, jobId, JobEventType.Retried);
   } catch (error) {
     log(`Error retrying job ${jobId}: ${error}`);
     throw error;
@@ -329,11 +377,12 @@ export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
     await client.query(
       `
       UPDATE job_queue
-      SET status = 'cancelled', updated_at = NOW()
+      SET status = 'cancelled', updated_at = NOW(), last_cancelled_at = NOW()
       WHERE id = $1 AND status = 'pending'
     `,
       [jobId],
     );
+    await recordJobEvent(pool, jobId, JobEventType.Cancelled);
   } catch (error) {
     log(`Error cancelling job ${jobId}: ${error}`);
     throw error;
@@ -473,6 +522,25 @@ export const reclaimStuckJobs = async (
   } catch (error) {
     log(`Error reclaiming stuck jobs: ${error}`);
     throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Get all events for a job, ordered by created_at ascending
+ */
+export const getJobEvents = async (
+  pool: Pool,
+  jobId: number,
+): Promise<JobEvent[]> => {
+  const client = await pool.connect();
+  try {
+    const res = await client.query(
+      'SELECT * FROM job_events WHERE job_id = $1 ORDER BY created_at ASC',
+      [jobId],
+    );
+    return res.rows;
   } finally {
     client.release();
   }

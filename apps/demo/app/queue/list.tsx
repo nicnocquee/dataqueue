@@ -20,7 +20,18 @@ export const PendingJobs = async () => {
 export const ProcessingJobs = async () => {
   const jobQueue = await getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('processing');
-  return <DefaultJobTable jobs={jobs} />;
+  return (
+    <JobTable
+      jobs={jobs}
+      columnJobKeyMap={{
+        ID: 'id',
+        Type: 'job_type',
+        Started: 'started_at',
+        Retried: 'last_retried_at',
+        Payload: 'payload',
+      }}
+    />
+  );
 };
 
 export const CompletedJobs = async () => {
@@ -32,7 +43,8 @@ export const CompletedJobs = async () => {
       columnJobKeyMap={{
         ID: 'id',
         Type: 'job_type',
-        Completed: 'updated_at',
+        Completed: 'completed_at',
+        Attempts: 'attempts',
         Payload: 'payload',
         Created: 'created_at',
       }}
@@ -50,7 +62,7 @@ export const FailedJobs = async () => {
       columnJobKeyMap={{
         ID: 'id',
         Type: 'job_type',
-        Failed: 'updated_at',
+        Failed: 'last_failed_at',
         Reason: 'failure_reason',
         'Error History': 'error_history',
         Payload: 'payload',
@@ -69,7 +81,7 @@ export const CancelledJobs = async () => {
       columnJobKeyMap={{
         ID: 'id',
         Type: 'job_type',
-        Cancelled: 'updated_at',
+        Cancelled: 'last_cancelled_at',
         Payload: 'payload',
         Created: 'created_at',
       }}
@@ -142,7 +154,10 @@ const JobTable = ({
               } else if (jobKey === 'id') {
                 return (
                   <TableCell key={column}>
-                    <Link href={`/queue/job/${value as string | number}`}>
+                    <Link
+                      className="underline text-primary"
+                      href={`/job/${value as string | number}`}
+                    >
                       {value as string | number}
                     </Link>
                   </TableCell>
@@ -176,7 +191,7 @@ const DefaultJobTable = ({
     ID: 'id',
     Type: 'job_type',
     Priority: 'priority',
-    'Run At': 'run_at',
+    'Scheduled At': 'run_at',
     Attempts: 'attempts',
     'Next Retry At': 'next_attempt_at',
     Payload: 'payload',

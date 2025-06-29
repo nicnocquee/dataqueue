@@ -28,7 +28,8 @@ If all of the following apply to you, then this package is for you:
 ## Installation
 
 ```bash
-npm install pg-bg-job-queue pg node-pg-migrate
+npm install pg-bg-job-queue
+npm install -D node-pg-migrate ts-node
 ```
 
 ## Getting Started
@@ -479,6 +480,24 @@ To get jobs by status:
 
 ```typescript
 const jobs = await jobQueue.getJobsByStatus(pool, status, limit, offset);
+```
+
+### 11. Get Job Events
+
+To get the events for a job:
+
+```typescript
+const events = await jobQueue.getJobEvents(jobId);
+console.log(events);
+// [
+//   {
+//     id: 1,
+//     job_id: 1,
+//     event_type: 'processing', // or 'completed', 'failed', 'cancelled', 'retried'
+//     created_at: '2024-06-01T12:00:00Z',
+//     metadata: ''
+//   },
+// ]
 ```
 
 ## Additional Remarks
