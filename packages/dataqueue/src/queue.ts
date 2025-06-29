@@ -37,27 +37,27 @@ export const recordJobEvent = async (
 export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   pool: Pool,
   {
-    job_type,
+    jobType,
     payload,
-    max_attempts = 3,
+    maxAttempts = 3,
     priority = 0,
-    run_at = null,
+    runAt = null,
     timeoutMs = undefined,
   }: JobOptions<PayloadMap, T>,
 ): Promise<number> => {
   const client = await pool.connect();
   try {
     let result;
-    if (run_at) {
+    if (runAt) {
       result = await client.query(
         `INSERT INTO job_queue 
           (job_type, payload, max_attempts, priority, run_at, timeout_ms) 
          VALUES ($1, $2, $3, $4, $5, $6) 
          RETURNING id`,
-        [job_type, payload, max_attempts, priority, run_at, timeoutMs ?? null],
+        [jobType, payload, maxAttempts, priority, runAt, timeoutMs ?? null],
       );
       log(
-        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, run_at ${run_at.toISOString()}, priority ${priority}, max_attempts ${max_attempts} job_type ${job_type}`,
+        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, runAt ${runAt.toISOString()}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}`,
       );
     } else {
       result = await client.query(
@@ -65,14 +65,14 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
           (job_type, payload, max_attempts, priority, timeout_ms) 
          VALUES ($1, $2, $3, $4, $5) 
          RETURNING id`,
-        [job_type, payload, max_attempts, priority, timeoutMs ?? null],
+        [jobType, payload, maxAttempts, priority, timeoutMs ?? null],
       );
       log(
-        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, max_attempts ${max_attempts} job_type ${job_type}`,
+        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}`,
       );
     }
     await recordJobEvent(pool, result.rows[0].id, JobEventType.Added, {
-      job_type,
+      jobType,
       payload,
     });
     return result.rows[0].id;
@@ -93,9 +93,10 @@ export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
 ): Promise<JobRecord<PayloadMap, T> | null> => {
   const client = await pool.connect();
   try {
-    const result = await client.query('SELECT * FROM job_queue WHERE id = $1', [
-      id,
-    ]);
+    const result = await client.query(
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE id = $1`,
+      [id],
+    );
 
     if (result.rows.length === 0) {
       log(`Job ${id} not found`);
@@ -104,11 +105,13 @@ export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
 
     log(`Found job ${id}`);
 
+    const job = result.rows[0] as JobRecord<PayloadMap, T>;
+
     return {
-      ...result.rows[0],
-      payload: result.rows[0].payload,
-      timeout_ms: result.rows[0].timeout_ms,
-      failure_reason: result.rows[0].failure_reason,
+      ...job,
+      payload: job.payload,
+      timeoutMs: job.timeoutMs,
+      failureReason: job.failureReason,
     };
   } catch (error) {
     log(`Error getting job ${id}: ${error}`);
@@ -133,17 +136,17 @@ export const getJobsByStatus = async <
   const client = await pool.connect();
   try {
     const result = await client.query(
-      'SELECT * FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
       [status, limit, offset],
     );
 
     log(`Found ${result.rows.length} jobs by status ${status}`);
 
-    return result.rows.map((row) => ({
-      ...row,
-      payload: row.payload,
-      timeout_ms: row.timeout_ms,
-      failure_reason: row.failure_reason,
+    return result.rows.map((job) => ({
+      ...job,
+      payload: job.payload,
+      timeoutMs: job.timeoutMs,
+      failureReason: job.failureReason,
     }));
   } catch (error) {
     log(`Error getting jobs by status ${status}: ${error}`);
@@ -209,7 +212,7 @@ export const getNextBatch = async <
         LIMIT $2
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING *
+      RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason"
     `,
       params,
     );
@@ -224,10 +227,10 @@ export const getNextBatch = async <
       await recordJobEvent(pool, row.id, JobEventType.Processing);
     }
 
-    return result.rows.map((row) => ({
-      ...row,
-      payload: row.payload,
-      timeout_ms: row.timeout_ms,
+    return result.rows.map((job) => ({
+      ...job,
+      payload: job.payload,
+      timeoutMs: job.timeoutMs,
     }));
   } catch (error) {
     log(`Error getting next batch: ${error}`);
@@ -397,7 +400,7 @@ export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
  */
 export const cancelAllUpcomingJobs = async (
   pool: Pool,
-  filters?: { job_type?: string; priority?: number; run_at?: Date },
+  filters?: { jobType?: string; priority?: number; runAt?: Date },
 ): Promise<number> => {
   const client = await pool.connect();
   try {
@@ -408,17 +411,17 @@ export const cancelAllUpcomingJobs = async (
     const params: any[] = [];
     let paramIdx = 1;
     if (filters) {
-      if (filters.job_type) {
+      if (filters.jobType) {
         query += ` AND job_type = $${paramIdx++}`;
-        params.push(filters.job_type);
+        params.push(filters.jobType);
       }
       if (filters.priority !== undefined) {
         query += ` AND priority = $${paramIdx++}`;
         params.push(filters.priority);
       }
-      if (filters.run_at) {
+      if (filters.runAt) {
         query += ` AND run_at = $${paramIdx++}`;
-        params.push(filters.run_at);
+        params.push(filters.runAt);
       }
     }
     query += '\nRETURNING id';
@@ -447,14 +450,14 @@ export const getAllJobs = async <
   const client = await pool.connect();
   try {
     const result = await client.query(
-      'SELECT * FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
       [limit, offset],
     );
     log(`Found ${result.rows.length} jobs (all)`);
-    return result.rows.map((row) => ({
-      ...row,
-      payload: row.payload,
-      timeout_ms: row.timeout_ms,
+    return result.rows.map((job) => ({
+      ...job,
+      payload: job.payload,
+      timeoutMs: job.timeoutMs,
     }));
   } catch (error) {
     log(`Error getting all jobs: ${error}`);
@@ -528,7 +531,7 @@ export const reclaimStuckJobs = async (
 };
 
 /**
- * Get all events for a job, ordered by created_at ascending
+ * Get all events for a job, ordered by createdAt ascending
  */
 export const getJobEvents = async (
   pool: Pool,
@@ -537,10 +540,10 @@ export const getJobEvents = async (
   const client = await pool.connect();
   try {
     const res = await client.query(
-      'SELECT * FROM job_events WHERE job_id = $1 ORDER BY created_at ASC',
+      `SELECT id, job_id AS "jobId", event_type AS "eventType", metadata, created_at AS "createdAt" FROM job_events WHERE job_id = $1 ORDER BY created_at ASC`,
       [jobId],
     );
-    return res.rows;
+    return res.rows as JobEvent[];
   } finally {
     client.release();
   }

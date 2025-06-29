@@ -51,7 +51,7 @@ describe('processor integration', () => {
       typeC: vi.fn(async () => {}),
     };
     const jobId = await queue.addJob<TestPayloadMap, 'test'>(pool, {
-      job_type: 'test',
+      jobType: 'test',
       payload: { foo: 'bar' },
     });
     const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
@@ -80,7 +80,7 @@ describe('processor integration', () => {
       typeC: vi.fn(async () => {}),
     };
     const jobId = await queue.addJob<TestPayloadMap, 'fail'>(pool, {
-      job_type: 'fail',
+      jobType: 'fail',
       payload: {},
     });
     const job = await queue.getJob<TestPayloadMap, 'fail'>(pool, jobId);
@@ -88,8 +88,8 @@ describe('processor integration', () => {
     await processJobWithHandlers(pool, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
-    expect(failed?.error_history?.[0]?.message).toBe('fail!');
-    expect(failed?.failure_reason).toBe('handler_error');
+    expect(failed?.errorHistory?.[0]?.message).toBe('fail!');
+    expect(failed?.failureReason).toBe('handler_error');
   });
 
   it('should mark job as failed if no handler registered', async () => {
@@ -106,7 +106,7 @@ describe('processor integration', () => {
       typeC: vi.fn(async () => {}),
     };
     const jobId = await queue.addJob<TestPayloadMap, 'missing'>(pool, {
-      job_type: 'missing',
+      jobType: 'missing',
       payload: {},
     });
     const job = await queue.getJob<TestPayloadMap, 'missing'>(pool, jobId);
@@ -115,10 +115,10 @@ describe('processor integration', () => {
     await processJobWithHandlers(pool, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
-    expect(failed?.error_history?.[0]?.message).toContain(
+    expect(failed?.errorHistory?.[0]?.message).toContain(
       'No handler registered',
     );
-    expect(failed?.failure_reason).toBe('no_handler');
+    expect(failed?.failureReason).toBe('no_handler');
   });
 
   it('should process a batch of jobs', async () => {
@@ -135,11 +135,11 @@ describe('processor integration', () => {
     };
     const ids = await Promise.all([
       queue.addJob<TestPayloadMap, 'batch'>(pool, {
-        job_type: 'batch',
+        jobType: 'batch',
         payload: { i: 1 },
       }),
       queue.addJob<TestPayloadMap, 'batch'>(pool, {
-        job_type: 'batch',
+        jobType: 'batch',
         payload: { i: 2 },
       }),
     ]);
@@ -172,7 +172,7 @@ describe('processor integration', () => {
       typeC: vi.fn(async () => {}),
     };
     await queue.addJob<TestPayloadMap, 'proc'>(pool, {
-      job_type: 'proc',
+      jobType: 'proc',
       payload: { x: 1 },
     });
     const processor = createProcessor(pool, handlers, { pollInterval: 200 });
@@ -182,7 +182,7 @@ describe('processor integration', () => {
     processor.stop();
     expect(processor.isRunning()).toBe(false);
     const jobs = await queue.getJobsByStatus(pool, 'completed');
-    expect(jobs.some((j) => j.job_type === 'proc')).toBe(true);
+    expect(jobs.some((j) => j.jobType === 'proc')).toBe(true);
   });
 
   it('should process only jobs of a specific job type with processBatch', async () => {
@@ -199,15 +199,15 @@ describe('processor integration', () => {
       typeC: vi.fn(async () => {}),
     };
     const idA1 = await queue.addJob<TestPayloadMap, 'typeA'>(pool, {
-      job_type: 'typeA',
+      jobType: 'typeA',
       payload: { n: 1 },
     });
     const idA2 = await queue.addJob<TestPayloadMap, 'typeA'>(pool, {
-      job_type: 'typeA',
+      jobType: 'typeA',
       payload: { n: 2 },
     });
     const idB1 = await queue.addJob<TestPayloadMap, 'typeB'>(pool, {
-      job_type: 'typeB',
+      jobType: 'typeB',
       payload: { n: 3 },
     });
     // Only process typeA
@@ -246,15 +246,15 @@ describe('processor integration', () => {
       typeC: handlerC,
     };
     const idA = await queue.addJob<TestPayloadMap, 'typeA'>(pool, {
-      job_type: 'typeA',
+      jobType: 'typeA',
       payload: { n: 1 },
     });
     const idB = await queue.addJob<TestPayloadMap, 'typeB'>(pool, {
-      job_type: 'typeB',
+      jobType: 'typeB',
       payload: { n: 2 },
     });
     const idC = await queue.addJob<TestPayloadMap, 'typeC'>(pool, {
-      job_type: 'typeC',
+      jobType: 'typeC',
       payload: { n: 3 },
     });
     // Only process typeA and typeC
@@ -293,11 +293,11 @@ describe('processor integration', () => {
       typeC: vi.fn(async () => {}),
     };
     const idA = await queue.addJob<TestPayloadMap, 'typeA'>(pool, {
-      job_type: 'typeA',
+      jobType: 'typeA',
       payload: { n: 1 },
     });
     const idB = await queue.addJob<TestPayloadMap, 'typeB'>(pool, {
-      job_type: 'typeB',
+      jobType: 'typeB',
       payload: { n: 2 },
     });
     const processor = createProcessor(pool, handlers, {
@@ -335,7 +335,7 @@ describe('concurrency option', () => {
   async function addJobs(n: number) {
     for (let i = 0; i < n; i++) {
       await queue.addJob<{ test: {} }, 'test'>(pool, {
-        job_type: 'test',
+        jobType: 'test',
         payload: {},
       });
     }
@@ -444,7 +444,7 @@ describe('per-job timeout', () => {
       test: handler,
     };
     const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
-      job_type: 'test',
+      jobType: 'test',
       payload: {},
       timeoutMs: 50, // 50ms
     });
@@ -453,8 +453,8 @@ describe('per-job timeout', () => {
     await processJobWithHandlers(pool, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
-    expect(failed?.error_history?.[0]?.message).toContain('timed out');
-    expect(failed?.failure_reason).toBe(FailureReason.Timeout);
+    expect(failed?.errorHistory?.[0]?.message).toContain('timed out');
+    expect(failed?.failureReason).toBe(FailureReason.Timeout);
   });
 
   it('should complete the job if handler finishes before timeoutMs', async () => {
@@ -465,7 +465,7 @@ describe('per-job timeout', () => {
       test: handler,
     };
     const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
-      job_type: 'test',
+      jobType: 'test',
       payload: {},
       timeoutMs: 200, // 200ms
     });

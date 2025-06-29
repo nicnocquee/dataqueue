@@ -1,0 +1,31 @@
+---
+title: JobOptions
+---
+
+The `JobOptions` interface defines the options for creating a new job in the queue.
+
+## Fields
+
+- `jobType`: _string_ — The type of the job.
+- `payload`: _any_ — The payload for the job, type-safe per job
+  type.
+- `maxAttempts?`: _number_ — Maximum number of attempts for
+  this job (default: 3).
+- `priority?`: _number_ — Priority of the job (higher runs
+  first, default: 0).
+- `runAt?`: _Date | null_ — When to run the job (default: now).
+- `timeoutMs?`: _number_ — Timeout for this job in milliseconds.
+  If not set, uses the processor default or unlimited.
+
+## Example
+
+```ts
+const job = {
+  jobType: 'email',
+  payload: { to: 'user@example.com', subject: 'Hello' },
+  maxAttempts: 5,
+  priority: 10,
+  runAt: new Date(Date.now() + 60000), // run in 1 minute
+  timeoutMs: 30000, // 30 seconds
+};
+```

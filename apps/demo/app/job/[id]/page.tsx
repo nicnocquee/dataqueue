@@ -49,8 +49,8 @@ const JobPage = async ({ params }: { params: Promise<{ id: string }> }) => {
         <TableBody>
           {events.map((event) => (
             <TableRow key={event.id}>
-              <TableCell>{event.event_type}</TableCell>
-              <TableCell>{event.created_at.toISOString()}</TableCell>
+              <TableCell>{event.eventType}</TableCell>
+              <TableCell>{event.createdAt.toISOString()}</TableCell>
               <TableCell>{JSON.stringify(event.metadata)}</TableCell>
             </TableRow>
           ))}

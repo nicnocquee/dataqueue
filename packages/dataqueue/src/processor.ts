@@ -27,25 +27,25 @@ export async function processJobWithHandlers<
   job: JobRecord<PayloadMap, T>,
   jobHandlers: JobHandlers<PayloadMap>,
 ): Promise<void> {
-  const handler = jobHandlers[job.job_type];
+  const handler = jobHandlers[job.jobType];
 
   if (!handler) {
     await setPendingReasonForUnpickedJobs(
       pool,
-      `No handler registered for job type: ${job.job_type}`,
-      job.job_type,
+      `No handler registered for job type: ${job.jobType}`,
+      job.jobType,
     );
     await failJob(
       pool,
       job.id,
-      new Error(`No handler registered for job type: ${job.job_type}`),
+      new Error(`No handler registered for job type: ${job.jobType}`),
       FailureReason.NoHandler,
     );
     return;
   }
 
   // Per-job timeout logic
-  const timeoutMs = job.timeout_ms ?? undefined;
+  const timeoutMs = job.timeoutMs ?? undefined;
   let timeoutId: NodeJS.Timeout | undefined;
   const controller = new AbortController();
   try {

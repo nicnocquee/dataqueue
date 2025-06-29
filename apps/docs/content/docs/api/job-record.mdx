@@ -1,0 +1,40 @@
+---
+title: JobRecord
+---
+
+The `JobRecord` interface represents a job stored in the queue, including its status, attempts, and metadata.
+
+## Fields
+
+- `id`: _number_ — Unique job ID.
+- `jobType`: _string_ — The type of the job.
+- `payload`: _any_ — The job payload.
+- `status`:
+  _'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'_ —
+  Current job status.
+- `createdAt`: _Date_ — When the job was created.
+- `updated_at`: _Date_ — When the job was last updated.
+- `locked_at`: _Date | null_ — When the job was locked for
+  processing.
+- `locked_by`: _string | null_ — Worker that locked the job.
+- `attempts`: _number_ — Number of attempts so far.
+- `maxAttempts`: _number_ — Maximum allowed attempts.
+- `nextAttemptAt`: _Date | null_ — When the next attempt is
+  scheduled.
+- `priority`: _number_ — Job priority.
+- `runAt`: _Date_ — When the job is scheduled to run.
+- `pendingReason?`: _string | null_ — Reason for pending
+  status.
+- `errorHistory?`: _\{ message: string; timestamp: string \}[]_ — Error history for the job.
+- `timeoutMs?`: _number | null_ — Timeout for this job in
+  milliseconds.
+- `failureReason?`: _FailureReason | null_ — Reason for last
+  failure, if any.
+- `completedAt`: _Date | null_ — When the job was completed.
+- `startedAt`: _Date | null_ — When the job was first picked up
+  for processing.
+- `lastRetriedAt`: _Date | null_ — When the job was last
+  retried.
+- `lastFailedAt`: _Date | null_ — When the job last failed.
+- `lastCancelledAt`: _Date | null_ — When the job was last
+  cancelled.

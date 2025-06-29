@@ -1,0 +1,28 @@
+---
+title: Database Utility
+---
+
+The `createPool` function creates a PostgreSQL connection pool for use with the job queue system.
+
+## Function
+
+```ts
+createPool(config: JobQueueConfig['databaseConfig']): Pool
+```
+
+- `config`: The database connection configuration (connection string, host, port, database, user, password, ssl).
+- Returns a `Pool` instance from `pg`.
+
+## Example
+
+```ts
+import { createPool } from 'dataqueue';
+
+const pool = createPool({
+  host: 'localhost',
+  port: 5432,
+  database: 'mydb',
+  user: 'postgres',
+  password: 'secret',
+});
+```

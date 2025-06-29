@@ -1,0 +1,27 @@
+---
+title: JobEvent
+---
+
+The `JobEvent` interface represents an event in the lifecycle of a job, such as when it is added, processed, completed, failed, cancelled, or retried.
+
+## Fields
+
+- `id`: _number_ — Unique event ID.
+- `jobId`: _number_ — The job this event is associated with.
+- `eventType`: _JobEventType_ — The type of event (see below).
+- `createdAt`: _Date_ — When the event was created.
+- `metadata`: _any_ — Additional metadata for the event.
+
+## JobEventType
+
+`JobEventType` is an enum of possible job event types:
+
+```ts
+type JobEventType =
+  | 'added'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'retried';
+```

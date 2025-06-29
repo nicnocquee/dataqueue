@@ -10,13 +10,13 @@ export async function POST(request: NextRequest) {
     // Add a welcome email job
     const jobQueue = await getJobQueue();
     await jobQueue.addJob({
-      job_type: 'generate_report',
+      jobType: 'generate_report',
       payload: {
         reportId,
         userId,
       },
       priority: 5, // Higher number = higher priority
-      run_at: new Date(Date.now() + 5 * 60 * 1000), // Run 5 minutes from now
+      runAt: new Date(Date.now() + 5 * 60 * 1000), // Run 5 minutes from now
     });
 
     return NextResponse.json({ userId }, { status: 201 });

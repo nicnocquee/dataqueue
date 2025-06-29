@@ -8,12 +8,12 @@ export async function POST(request: NextRequest) {
     // Add a generate image job
     const jobQueue = await getJobQueue();
     await jobQueue.addJob({
-      job_type: 'generate_image',
+      jobType: 'generate_image',
       payload: {
         prompt,
       },
       priority: 5, // Higher number = higher priority
-      run_at: new Date(Date.now() + 1000), // Run 1 second from now
+      runAt: new Date(Date.now() + 1000), // Run 1 second from now
       timeoutMs: 5000, // 5 second timeout
     });
 

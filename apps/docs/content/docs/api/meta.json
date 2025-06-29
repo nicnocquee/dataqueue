@@ -1,0 +1,14 @@
+{
+  "title": "API",
+  "pages": [
+    "index",
+    "job-queue",
+    "job-options",
+    "job-record",
+    "job-event",
+    "processor",
+    "job-handlers",
+    "db-util",
+    "failure-reason"
+  ]
+}

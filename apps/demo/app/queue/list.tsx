@@ -25,9 +25,9 @@ export const ProcessingJobs = async () => {
       jobs={jobs}
       columnJobKeyMap={{
         ID: 'id',
-        Type: 'job_type',
-        Started: 'started_at',
-        Retried: 'last_retried_at',
+        Type: 'jobType',
+        Started: 'startedAt',
+        Retried: 'lastRetriedAt',
         Payload: 'payload',
       }}
     />
@@ -42,11 +42,11 @@ export const CompletedJobs = async () => {
       jobs={jobs}
       columnJobKeyMap={{
         ID: 'id',
-        Type: 'job_type',
-        Completed: 'completed_at',
+        Type: 'jobType',
+        Completed: 'completedAt',
         Attempts: 'attempts',
         Payload: 'payload',
-        Created: 'created_at',
+        Created: 'createdAt',
       }}
     />
   );
@@ -55,18 +55,18 @@ export const CompletedJobs = async () => {
 export const FailedJobs = async () => {
   const jobQueue = await getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('failed');
-  const noRetryJobs = jobs.filter((job) => job.attempts === job.max_attempts);
+  const noRetryJobs = jobs.filter((job) => job.attempts === job.maxAttempts);
   return (
     <JobTable
       jobs={noRetryJobs}
       columnJobKeyMap={{
         ID: 'id',
-        Type: 'job_type',
-        Failed: 'last_failed_at',
-        Reason: 'failure_reason',
-        'Error History': 'error_history',
+        Type: 'jobType',
+        Failed: 'lastFailedAt',
+        Reason: 'failureReason',
+        'Error History': 'errorHistory',
         Payload: 'payload',
-        Created: 'created_at',
+        Created: 'createdAt',
       }}
     />
   );
@@ -80,10 +80,10 @@ export const CancelledJobs = async () => {
       jobs={jobs}
       columnJobKeyMap={{
         ID: 'id',
-        Type: 'job_type',
-        Cancelled: 'last_cancelled_at',
+        Type: 'jobType',
+        Cancelled: 'lastCancelledAt',
         Payload: 'payload',
-        Created: 'created_at',
+        Created: 'createdAt',
       }}
     />
   );
@@ -92,19 +92,19 @@ export const CancelledJobs = async () => {
 export const WillRetryFailedJobs = async () => {
   const jobQueue = await getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('failed');
-  const jobsToRetry = jobs.filter((job) => job.attempts < job.max_attempts);
+  const jobsToRetry = jobs.filter((job) => job.attempts < job.maxAttempts);
   return (
     <JobTable
       jobs={jobsToRetry}
       columnJobKeyMap={{
         ID: 'id',
-        Type: 'job_type',
-        Failed: 'updated_at',
-        Reason: 'failure_reason',
+        Type: 'jobType',
+        Failed: 'updatedAt',
+        Reason: 'failureReason',
         Attempts: 'attempts',
-        'Next Retry At': 'next_attempt_at',
+        'Next Retry At': 'nextAttemptAt',
         Payload: 'payload',
-        Created: 'created_at',
+        Created: 'createdAt',
       }}
     />
   );
@@ -133,7 +133,7 @@ const JobTable = ({
           <TableRow key={job.id}>
             {Object.entries(columnJobKeyMap).map(([column, jobKey]) => {
               const value = job[jobKey] as string | number | Date | null;
-              if (jobKey === 'error_history') {
+              if (jobKey === 'errorHistory') {
                 const errorHistory = value as
                   | {
                       message: string;
@@ -189,17 +189,17 @@ const DefaultJobTable = ({
 }) => {
   const columnJobKeyMap: ColumnJobKeyMap = {
     ID: 'id',
-    Type: 'job_type',
+    Type: 'jobType',
     Priority: 'priority',
-    'Scheduled At': 'run_at',
+    'Scheduled At': 'runAt',
     Attempts: 'attempts',
-    'Next Retry At': 'next_attempt_at',
+    'Next Retry At': 'nextAttemptAt',
     Payload: 'payload',
-    'Timeout (ms)': 'timeout_ms',
-    'Failure Reason': 'failure_reason',
-    'Pending Reason': 'pending_reason',
-    'Error History': 'error_history',
-    Created: 'created_at',
+    'Timeout (ms)': 'timeoutMs',
+    'Failure Reason': 'failureReason',
+    'Pending Reason': 'pendingReason',
+    'Error History': 'errorHistory',
+    Created: 'createdAt',
   };
   return <JobTable jobs={jobs} columnJobKeyMap={columnJobKeyMap} />;
 };

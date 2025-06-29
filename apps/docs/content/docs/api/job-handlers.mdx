@@ -1,0 +1,33 @@
+---
+title: JobHandlers
+---
+
+The `JobHandlers` type defines a map of job types to their handler functions. Each handler processes a job's payload and receives an `AbortSignal` for cancellation.
+
+## Type
+
+```ts
+type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
+  payload: PayloadMap[T],
+  signal: AbortSignal,
+) => Promise<void>;
+
+// Map of job types to handlers
+
+export type JobHandlers<PayloadMap> = {
+  [K in keyof PayloadMap]: JobHandler<PayloadMap, K>;
+};
+```
+
+## Example
+
+```ts
+const handlers = {
+  email: async (payload, signal) => {
+    // send email
+  },
+  generateReport: async (payload, signal) => {
+    // generate report
+  },
+};
+```

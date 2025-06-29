@@ -62,7 +62,7 @@ export const initJobQueue = async <PayloadMap = any>(
       config.verbose ?? false,
     ),
     cancelAllUpcomingJobs: withLogContext(
-      (filters?: { job_type?: string; priority?: number; run_at?: Date }) =>
+      (filters?: { jobType?: string; priority?: number; runAt?: Date }) =>
         cancelAllUpcomingJobs(pool, filters),
       config.verbose ?? false,
     ),

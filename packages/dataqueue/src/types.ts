@@ -4,11 +4,11 @@ import { Pool } from 'pg';
 export type JobType<PayloadMap> = keyof PayloadMap & string;
 
 export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
-  job_type: T;
+  jobType: T;
   payload: PayloadMap[T];
-  max_attempts?: number;
+  maxAttempts?: number;
   priority?: number;
-  run_at?: Date | null;
+  runAt?: Date | null;
   /**
    * Timeout for this job in milliseconds. If not set, uses the processor default or unlimited.
    */
@@ -26,9 +26,9 @@ export enum JobEventType {
 
 export interface JobEvent {
   id: number;
-  job_id: number;
-  event_type: JobEventType;
-  created_at: Date;
+  jobId: number;
+  eventType: JobEventType;
+  createdAt: Date;
   metadata: any;
 }
 
@@ -38,50 +38,57 @@ export enum FailureReason {
   NoHandler = 'no_handler',
 }
 
+export type JobStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
 export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
   id: number;
-  job_type: T;
+  jobType: T;
   payload: PayloadMap[T];
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
-  created_at: Date;
-  updated_at: Date;
-  locked_at: Date | null;
-  locked_by: string | null;
+  status: JobStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  lockedAt: Date | null;
+  lockedBy: string | null;
   attempts: number;
-  max_attempts: number;
-  next_attempt_at: Date | null;
+  maxAttempts: number;
+  nextAttemptAt: Date | null;
   priority: number;
-  run_at: Date;
-  pending_reason?: string | null;
-  error_history?: { message: string; timestamp: string }[];
+  runAt: Date;
+  pendingReason?: string | null;
+  errorHistory?: { message: string; timestamp: string }[];
   /**
    * Timeout for this job in milliseconds (null means no timeout).
    */
-  timeout_ms?: number | null;
+  timeoutMs?: number | null;
   /**
    * The reason for the last failure, if any.
    */
-  failure_reason?: FailureReason | null;
+  failureReason?: FailureReason | null;
   /**
    * The time the job was completed, if completed.
    */
-  completed_at: Date | null;
+  completedAt: Date | null;
   /**
    * The time the job was first picked up for processing.
    */
-  started_at: Date | null;
+  startedAt: Date | null;
   /**
    * The time the job was last retried.
    */
-  last_retried_at: Date | null;
+  lastRetriedAt: Date | null;
   /**
    * The time the job last failed.
    */
-  last_failed_at: Date | null;
+  lastFailedAt: Date | null;
   /**
    * The time the job was last cancelled.
    */
-  last_cancelled_at: Date | null;
+  lastCancelledAt: Date | null;
 }
 
 export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
@@ -179,10 +186,10 @@ export interface JobQueue<PayloadMap> {
    * Get jobs by their status, with pagination.
    * - If no limit is provided, all jobs are returned.
    * - If no offset is provided, the first page is returned.
-   * - The jobs are returned in descending order of created_at.
+   * - The jobs are returned in descending order of createdAt.
    */
   getJobsByStatus: <T extends JobType<PayloadMap>>(
-    status: string,
+    status: JobStatus,
     limit?: number,
     offset?: number,
   ) => Promise<JobRecord<PayloadMap, T>[]>;
@@ -219,14 +226,14 @@ export interface JobQueue<PayloadMap> {
    * - If no filters are provided, all upcoming jobs are cancelled.
    * - If filters are provided, only jobs that match the filters are cancelled.
    * - The filters are:
-   *   - job_type: The job type to cancel.
+   *   - jobType: The job type to cancel.
    *   - priority: The priority of the job to cancel.
-   *   - run_at: The time the job is scheduled to run at.
+   *   - runAt: The time the job is scheduled to run at.
    */
   cancelAllUpcomingJobs: (filters?: {
-    job_type?: string;
+    jobType?: string;
     priority?: number;
-    run_at?: Date;
+    runAt?: Date;
   }) => Promise<number>;
   /**
    * Create a job processor. Handlers must be provided per-processor.

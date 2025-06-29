@@ -26,7 +26,9 @@
     "check-exports": "attw --pack .",
     "local-release": "changeset version && changeset publish",
     "dev": "tsup --watch",
-    "migrate": "node-pg-migrate -d $PG_DATAQUEUE_DATABASE -m ./migrations"
+    "migrate": "node-pg-migrate -d $PG_DATAQUEUE_DATABASE -m ./migrations",
+    "changeset:add": "changeset",
+    "changeset:version": "changeset version && find .changeset -type f -name '*.md' ! -name 'README.md' -delete"
   },
   "keywords": [
     "nextjs",

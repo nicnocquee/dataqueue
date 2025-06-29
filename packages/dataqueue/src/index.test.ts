@@ -38,23 +38,23 @@ describe('index integration', () => {
 
   it('should add a job and retrieve it', async () => {
     const jobId = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'test@example.com' },
     });
     expect(typeof jobId).toBe('number');
     const job = await jobQueue.getJob(jobId);
     expect(job).not.toBeNull();
-    expect(job?.job_type).toBe('email');
+    expect(job?.jobType).toBe('email');
     expect(job?.payload).toEqual({ to: 'test@example.com' });
   });
 
   it('should get jobs by status', async () => {
     const jobId1 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'a@example.com' },
     });
     const jobId2 = await jobQueue.addJob({
-      job_type: 'sms',
+      jobType: 'sms',
       payload: { to: 'b@example.com' },
     });
     const jobs = await jobQueue.getJobsByStatus('pending');
@@ -66,7 +66,7 @@ describe('index integration', () => {
   it('should process a job with a registered handler', async () => {
     const handler = vi.fn(async (_payload, _signal) => {});
     const jobId = await jobQueue.addJob({
-      job_type: 'test',
+      jobType: 'test',
       payload: { foo: 'bar' },
     });
     const processor = jobQueue.createProcessor(
@@ -87,7 +87,7 @@ describe('index integration', () => {
 
   it('should retry a failed job', async () => {
     const jobId = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'fail@example.com' },
     });
     // Manually mark as failed
@@ -103,7 +103,7 @@ describe('index integration', () => {
 
   it('should cleanup old completed jobs', async () => {
     const jobId = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'cleanup@example.com' },
     });
     // Mark as completed
@@ -123,7 +123,7 @@ describe('index integration', () => {
 
   it('should cancel a scheduled job', async () => {
     const jobId = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'cancelme@example.com' },
     });
     // Cancel the job
@@ -133,7 +133,7 @@ describe('index integration', () => {
 
     // Try to cancel a completed job (should not change status)
     const jobId2 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'done@example.com' },
     });
     await pool.query(
@@ -148,20 +148,20 @@ describe('index integration', () => {
   it('should cancel all upcoming jobs via JobQueue API', async () => {
     // Add three pending jobs
     const jobId1 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'cancelall1@example.com' },
     });
     const jobId2 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'cancelall2@example.com' },
     });
     const jobId3 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'cancelall3@example.com' },
     });
     // Add a completed job
     const jobId4 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'done@example.com' },
     });
     await pool.query(
@@ -186,18 +186,18 @@ describe('index integration', () => {
     expect(completedJob?.status).toBe('completed');
   });
 
-  it('should cancel all upcoming jobs by job_type', async () => {
+  it('should cancel all upcoming jobs by jobType', async () => {
     const jobId1 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'a@example.com' },
     });
     const jobId2 = await jobQueue.addJob({
-      job_type: 'sms',
+      jobType: 'sms',
       payload: { to: 'b@example.com' },
     });
     // Cancel only email jobs
     const cancelledCount = await jobQueue.cancelAllUpcomingJobs({
-      job_type: 'email',
+      jobType: 'email',
     });
     expect(cancelledCount).toBeGreaterThanOrEqual(1);
     const job1 = await jobQueue.getJob(jobId1);
@@ -208,12 +208,12 @@ describe('index integration', () => {
 
   it('should cancel all upcoming jobs by priority', async () => {
     const jobId1 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'a@example.com' },
       priority: 1,
     });
     const jobId2 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'b@example.com' },
       priority: 2,
     });
@@ -228,20 +228,20 @@ describe('index integration', () => {
     expect(job2?.status).toBe('cancelled');
   });
 
-  it('should cancel all upcoming jobs by run_at', async () => {
+  it('should cancel all upcoming jobs by runAt', async () => {
     const runAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour in future
     const jobId1 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'a@example.com' },
-      run_at: runAt,
+      runAt: runAt,
     });
     const jobId2 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'b@example.com' },
     });
-    // Cancel only jobs with run_at = runAt
+    // Cancel only jobs with runAt = runAt
     const cancelledCount = await jobQueue.cancelAllUpcomingJobs({
-      run_at: runAt,
+      runAt: runAt,
     });
     expect(cancelledCount).toBeGreaterThanOrEqual(1);
     const job1 = await jobQueue.getJob(jobId1);
@@ -250,25 +250,25 @@ describe('index integration', () => {
     expect(job2?.status).toBe('pending');
   });
 
-  it('should cancel all upcoming jobs by job_type and priority', async () => {
+  it('should cancel all upcoming jobs by jobType and priority', async () => {
     const jobId1 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'a@example.com' },
       priority: 1,
     });
     const jobId2 = await jobQueue.addJob({
-      job_type: 'email',
+      jobType: 'email',
       payload: { to: 'b@example.com' },
       priority: 2,
     });
     const jobId3 = await jobQueue.addJob({
-      job_type: 'sms',
+      jobType: 'sms',
       payload: { to: 'c@example.com' },
       priority: 2,
     });
     // Cancel only email jobs with priority 2
     const cancelledCount = await jobQueue.cancelAllUpcomingJobs({
-      job_type: 'email',
+      jobType: 'email',
       priority: 2,
     });
     expect(cancelledCount).toBeGreaterThanOrEqual(1);

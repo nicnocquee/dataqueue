@@ -54,17 +54,17 @@ You can also cancel only the pending jobs that match certain criteria:
 
 ```typescript
 // Cancel only email jobs
-await jobQueue.cancelAllUpcomingJobs({ job_type: 'email' });
+await jobQueue.cancelAllUpcomingJobs({ jobType: 'email' });
 
 // Cancel only jobs with priority 2
 await jobQueue.cancelAllUpcomingJobs({ priority: 2 });
 
 // Cancel only jobs scheduled for a specific time
 const runAt = new Date('2024-06-01T12:00:00Z');
-await jobQueue.cancelAllUpcomingJobs({ run_at: runAt });
+await jobQueue.cancelAllUpcomingJobs({ runAt: runAt });
 
 // Combine filters
-await jobQueue.cancelAllUpcomingJobs({ job_type: 'email', priority: 2 });
+await jobQueue.cancelAllUpcomingJobs({ jobType: 'email', priority: 2 });
 ```
 
 This will set the status of all jobs that are still pending (not yet started or scheduled for the future) to `cancelled`.

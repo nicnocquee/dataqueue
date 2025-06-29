@@ -1,5 +1,5 @@
 {
-  "name": "pg-job-queue-monorepo",
+  "name": "dataqueue-monorepo",
   "private": true,
   "devDependencies": {
     "pnpm": "^9.0.0",

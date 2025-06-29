@@ -1,0 +1,39 @@
+---
+title: Processor
+---
+
+The `Processor` interface represents a job processor that can process jobs from the queue, either in the background or synchronously.
+
+## Methods
+
+### startInBackground
+
+```ts
+startInBackground(): void
+```
+
+Start the job processor in the background. This will run continuously and process jobs as they become available. It polls for new jobs every `pollInterval` milliseconds (default: 5 seconds).
+
+### stop
+
+```ts
+stop(): void
+```
+
+Stop the job processor that runs in the background.
+
+### isRunning
+
+```ts
+isRunning(): boolean
+```
+
+Check if the job processor is running.
+
+### start
+
+```ts
+start(): Promise<number>
+```
+
+Start the job processor synchronously. This will process jobs immediately and then stop. Returns the number of jobs processed.

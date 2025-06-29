@@ -1,0 +1,21 @@
+---
+title: FailureReason
+---
+
+The `FailureReason` enum represents the possible reasons for a job failure.
+
+## Enum
+
+```ts
+enum FailureReason {
+  Timeout = 'timeout',
+  HandlerError = 'handler_error',
+  NoHandler = 'no_handler',
+}
+```
+
+## Values
+
+- `Timeout`: The job timed out.
+- `HandlerError`: The job handler threw an error.
+- `NoHandler`: The job handler was not found.

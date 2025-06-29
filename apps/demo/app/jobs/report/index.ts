@@ -20,13 +20,13 @@ export const generateReport = async ({
   const delay = Math.floor(1000 + Math.random() * 9000); // 1000 to 9999 ms
   const runAt = new Date(Date.now() + delay); // Run between 1 and 10 seconds from now
   const job = await jobQueue.addJob({
-    job_type: 'generate_report',
+    jobType: 'generate_report',
     payload: {
       reportId,
       userId,
     },
     priority: 5, // Higher number = higher priority
-    run_at: runAt,
+    runAt: runAt,
   });
 
   revalidatePath('/');
