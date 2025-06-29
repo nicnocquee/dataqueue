@@ -1,0 +1,46 @@
+---
+title: Add Job
+---
+
+You can add jobs to the queue from your application logic, such as in a server function:
+
+```typescript
+'use server';
+
+import { getJobQueue } from '@/lib/queue';
+import { revalidatePath } from 'next/cache';
+
+export const sendEmail = async ({
+  name,
+  email,
+}: {
+  name: string;
+  email: string;
+}) => {
+  // Add a welcome email job
+  const jobQueue = await getJobQueue();
+  try {
+    const runAt = new Date(Date.now() + 5 * 1000); // Run 5 seconds from now
+    const job = await jobQueue.addJob({
+      job_type: 'send_email',
+      payload: {
+        to: email,
+        subject: 'Welcome to our platform!',
+        body: `Hi ${name}, welcome to our platform!`,
+      },
+      priority: 10, // Higher number = higher priority
+      run_at: runAt,
+    });
+
+    revalidatePath('/');
+    return { job };
+  } catch (error) {
+    console.error('Error adding job:', error);
+    throw error;
+  }
+};
+```
+
+In the example above, a job is added to the queue to send an email. The job type is `send_email`, and the payload includes the recipient's email, subject, and body.
+
+When adding a job, you can set its `priority`, schedule when it should run using `run_at`, and specify a timeout in milliseconds with `timeoutMs`.

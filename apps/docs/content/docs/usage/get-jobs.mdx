@@ -1,0 +1,21 @@
+---
+title: Get Jobs
+---
+
+To get a job by its ID:
+
+```typescript
+const job = await jobQueue.getJob(pool, jobId);
+```
+
+To get all jobs:
+
+```typescript
+const jobs = await jobQueue.getAllJobs(pool, limit, offset);
+```
+
+To get jobs by status:
+
+```typescript
+const jobs = await jobQueue.getJobsByStatus(pool, status, limit, offset);
+```

@@ -1,0 +1,13 @@
+---
+title: Job States
+description: The different states a job can be in and how they change
+---
+
+A job can be in one of these states:
+
+- `pending`: The job is waiting in the queue to be processed.
+- `processing`: The job is currently being worked on.
+- `completed`: The job finished successfully.
+- `failed`: The job did not finish successfully. It can be retried up to `max_attempts` times.
+- `cancelled`: The job was cancelled before it finished.
+- `retried`: The job is being tried again after a failure.

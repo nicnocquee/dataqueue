@@ -1,0 +1,54 @@
+---
+title: Reclaim Jobs
+---
+
+Sometimes, a job can get stuck in the `processing` state. This usually happens if the process is killed or an unhandled error occurs after the job status is updated, but before it is marked as `completed` or `failed`.
+
+To recover stuck jobs, use the `reclaimStuckJobs` method. The example below shows how to create an API route (`/api/cron/reclaim`) that can be triggered by a cron job:
+
+```typescript
+import { getJobQueue } from '@/lib/queue';
+import { NextResponse } from 'next/server';
+
+export async function GET(request: Request) {
+  // Secure the cron route: https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const jobQueue = await getJobQueue();
+
+    // Reclaim jobs stuck for more than 10 minutes
+    const reclaimed = await jobQueue.reclaimStuckJobs(10);
+    console.log(`Reclaimed ${reclaimed} stuck jobs`);
+
+    return NextResponse.json({
+      message: 'Stuck jobs reclaimed',
+      reclaimed,
+    });
+  } catch (error) {
+    console.error('Error reclaiming jobs:', error);
+    return NextResponse.json(
+      { message: 'Failed to reclaim jobs' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+#### Scheduling the Reclaim Job with Cron
+
+Add the following to your `vercel.json` to call the cron route every 10 minutes:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/reclaim",
+      "schedule": "*/10 * * * *"
+    }
+  ]
+}
+```

@@ -1,0 +1,51 @@
+---
+title: Cleanup Jobs
+---
+
+If you have a lot of jobs, you may want to clean up old ones—for example, keeping only jobs from the last 30 days. You can do this by calling the `cleanupOldJobs` method. The example below shows an API route (`/api/cron/cleanup`) that can be triggered by a cron job:
+
+```typescript
+import { getJobQueue } from '@/lib/queue';
+import { NextResponse } from 'next/server';
+
+export async function GET(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const jobQueue = await getJobQueue();
+
+    // Clean up old jobs (keep only the last 30 days)
+    const deleted = await jobQueue.cleanupOldJobs(30);
+    console.log(`Deleted ${deleted} old jobs`);
+
+    return NextResponse.json({
+      message: 'Old jobs cleaned up',
+      deleted,
+    });
+  } catch (error) {
+    console.error('Error cleaning up jobs:', error);
+    return NextResponse.json(
+      { message: 'Failed to clean up jobs' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+#### Scheduling the Cleanup Job with Cron
+
+Add the following to your `vercel.json` to call the cleanup route every day at midnight:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+```

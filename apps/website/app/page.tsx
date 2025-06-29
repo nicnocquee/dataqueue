@@ -274,7 +274,7 @@ queue.process<EmailJob>('email', async (job) => {
             </p>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <a
-                href="https://github.com/nicnocquee/dataqueue/blob/main/README.md#getting-started"
+                href="https://docs.dataqueue.dev/intro/about"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -284,17 +284,6 @@ queue.process<EmailJob>('email', async (job) => {
                 >
                   Get Started
                   <ArrowRight className="ml-2 h-5 w-5" />
-                </Button>
-              </a>
-
-              <a
-                href="https://github.com/nicnocquee/dataqueue/blob/main/README.md"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Button size="lg" variant="outline">
-                  View Documentation
-                  <ExternalLink className="ml-2 h-4 w-4" />
                 </Button>
               </a>
             </div>
@@ -384,7 +373,7 @@ queue.process<EmailJob>('email', async (job) => {
                   </Button>
                 </a>
                 <a
-                  href="https://github.com/nicnocquee/dataqueue/blob/main/README.md"
+                  href="https://docs.dataqueue.dev"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

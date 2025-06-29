@@ -1,0 +1,33 @@
+---
+title: About
+---
+
+DataQueue is a lightweight job queue for Node.js/TypeScript projects, backed by PostgreSQL. It lets you easily schedule, process, and manage background jobs. It's ideal for serverless environments like Vercel, AWS Lambda, and more.
+
+## Features
+
+- Simple API for adding and processing jobs
+- Strong typing for job types and payloads, preventing you from adding jobs with the wrong payload and ensuring handlers receive the correct type
+- Works in serverless environments
+- Supports job priorities, scheduling, canceling, and retries
+- Reclaims stuck jobs: No job will remain in the `processing` state indefinitely
+- Cleans up old jobs: Keeps only jobs from the last xxx days
+
+## Who is this for?
+
+This package is for you if all of the following apply:
+
+|     |                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------- |
+| ☁️  | You deploy web apps to serverless platforms like Vercel, AWS Lambda, etc.                      |
+| 📝  | You use TypeScript                                                                             |
+| ⚡  | You want your app to stay fast and responsive by offloading heavy tasks to the background      |
+| 💾  | You use PostgreSQL as your database                                                            |
+| 🤷‍♂️  | You don't want to set up or maintain another queue system like Redis                           |
+| 💸  | You're on a budget and want to avoid paying for a job queue service or running your own server |
+
+## Why PostgreSQL?
+
+Many people use Redis for job queues, but adding another tool to your stack can increase costs and maintenance. If you already use PostgreSQL, it makes sense to use it for job queues, thanks to [SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html).
+
+The update process uses `FOR UPDATE SKIP LOCKED` to prevent race conditions. This means if two jobs are scheduled to run at the same time, only one will be processed—the other will be skipped. This makes PostgreSQL a great fit for this use case.

@@ -1,0 +1,27 @@
+---
+title: Database Migration
+---
+
+After installing the package, add the following script to your `package.json` to apply the migrations:
+
+```json
+"scripts": {
+  "migrate-dataqueue": "dataqueue-cli migrate"
+}
+```
+
+Next, run this command to apply the migrations:
+
+```sh
+npm run migrate-dataqueue
+```
+
+This will apply all the necessary schema migrations so your Postgres database is ready to use with DataQueue. **Make sure the `PG_DATAQUEUE_DATABASE` environment variable is set to your Postgres connection string.** The CLI uses this environment variable to connect to your database.
+
+To run the migrations using environment variables from your `.env.local` file, use this command:
+
+```bash
+env $(cat .env.local | grep -v '^#' | xargs) pnpm run migrate-dataqueue
+```
+
+You must run these migrations before using the job queue. For example, if you are deploying your app to Vercel, run this command before deploying in the Vercel's pipeline. If you have used Prisma or other ORMs, you may be familiar with this process.

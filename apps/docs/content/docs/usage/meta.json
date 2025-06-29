@@ -1,0 +1,19 @@
+{
+  "title": "Usage",
+  "icon": "MyIcon",
+  "pages": [
+    "database-migration",
+    "job-handlers",
+    "init-queue",
+    "add-job",
+    "process-jobs",
+    "failed-jobs",
+    "job-timeout",
+    "reclaim-jobs",
+    "cleanup-jobs",
+    "cancel-jobs",
+    "job-events",
+    "get-jobs"
+  ],
+  "defaultOpen": true
+}

@@ -1,0 +1,70 @@
+---
+title: Cancel Jobs
+---
+
+You can cancel a job by its ID, but only if it is still pending (not yet started or scheduled for the future).
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { getJobQueue } from '@/lib/queue';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { jobId } = await request.json();
+    const jobQueue = await getJobQueue();
+    await jobQueue.cancelJob(jobId);
+    return NextResponse.json({ message: 'Job cancelled' });
+  } catch (error) {
+    console.error('Error cancelling job:', error);
+    return NextResponse.json(
+      { message: 'Failed to cancel job' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+### Cancel All Pending Jobs
+
+DataQueue also lets you cancel all pending jobs at once. This is useful if you want to stop all jobs that haven't started yet or are scheduled for the future.
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { getJobQueue } from '@/lib/queue';
+
+export async function POST(request: NextRequest) {
+  try {
+    const jobQueue = await getJobQueue();
+    // Cancel all pending jobs
+    const cancelledCount = await jobQueue.cancelAllUpcomingJobs();
+    return NextResponse.json({ message: `Cancelled ${cancelledCount} jobs` });
+  } catch (error) {
+    console.error('Error cancelling jobs:', error);
+    return NextResponse.json(
+      { message: 'Failed to cancel jobs' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+#### Cancel Jobs by Filter
+
+You can also cancel only the pending jobs that match certain criteria:
+
+```typescript
+// Cancel only email jobs
+await jobQueue.cancelAllUpcomingJobs({ job_type: 'email' });
+
+// Cancel only jobs with priority 2
+await jobQueue.cancelAllUpcomingJobs({ priority: 2 });
+
+// Cancel only jobs scheduled for a specific time
+const runAt = new Date('2024-06-01T12:00:00Z');
+await jobQueue.cancelAllUpcomingJobs({ run_at: runAt });
+
+// Combine filters
+await jobQueue.cancelAllUpcomingJobs({ job_type: 'email', priority: 2 });
+```
+
+This will set the status of all jobs that are still pending (not yet started or scheduled for the future) to `cancelled`.

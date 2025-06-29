@@ -1,7 +1,4 @@
-import {
-  initJobQueue,
-  JobHandlers,
-} from '../../../packages/dataqueue/dist/index.js';
+import { initJobQueue, JobHandlers } from '@nicnocquee/dataqueue';
 import { sendEmail } from './services/email';
 import { generateReport } from './services/generate-report';
 import { generateImageAi } from './services/generate-image-ai';

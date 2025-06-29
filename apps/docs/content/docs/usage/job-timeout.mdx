@@ -1,0 +1,29 @@
+---
+title: Job Timeout
+---
+
+When you add a job to the queue, you can set a timeout for it. If the job doesn't finish before the timeout, it will be marked as failed.
+
+When the timeout is reached, DataQueue does not actually stop the handler from running. You need to handle this in your handler by checking the `AbortSignal` at one or more points in your code. For example:
+
+```typescript
+const handler = async (payload, signal) => {
+  // Simulate work
+  // Do something that may take a long time
+
+  // Check if the job is aborted
+  if (signal.aborted) {
+    return;
+  }
+
+  // Do something else
+  // Check again if the job is aborted
+  if (signal.aborted) {
+    return;
+  }
+
+  // ...rest of your logic
+};
+```
+
+If the job times out, the signal will be aborted and your handler should exit early. If your handler does not check for `signal.aborted`, it will keep running in the background even after the job is marked as failed due to timeout. For best results, always make your handlers abortable if they might run for a long time.

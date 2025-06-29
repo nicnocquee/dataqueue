@@ -1,0 +1,64 @@
+---
+title: Job Handlers
+---
+
+The first thing you need to do is define your job types and their corresponding payload types. A payload is the data passed to the job handler. A job handler is a function that runs when a job is processed.
+
+### Define Job Types and Payloads
+
+Job types and their payloads are specific to your app. You can define them in any file. The important thing is that they are an object type, where the keys are the job types and the values are the payload types. In this example, `send_email`, `generate_report`, and `generate_image` are the job types, and their values are the payload types.
+
+```typescript
+// Define the job payload map for this app.
+// This ensures that the job payload is typed correctly when adding jobs.
+// The keys are the job types, and the values are the payload types.
+export type JobPayloadMap = {
+  send_email: {
+    to: string;
+    subject: string;
+    body: string;
+  };
+  generate_report: {
+    reportId: string;
+    userId: string;
+  };
+  generate_image: {
+    prompt: string;
+  };
+};
+```
+
+### Define Job Handlers
+
+Next, define the job handlers by exporting a `JobHandlers` object that maps job types to handler functions. If you forget to add a handler for a job type, TypeScript will show an error.
+
+```typescript
+import { sendEmail } from './services/email'; // Function to send the email
+import { generateReport } from './services/generate-report'; // Function to generate the report
+import { JobHandlers } from '@nicnocquee/dataqueue';
+
+export const jobHandlers: JobHandlers<JobPayloadMap> = {
+  send_email: async (payload) => {
+    const { to, subject, body } = payload;
+    await sendEmail(to, subject, body);
+  },
+  generate_report: async (payload) => {
+    const { reportId, userId } = payload;
+    await generateReport(reportId, userId);
+  },
+  generate_image: async (payload, signal) => {
+    const { prompt } = payload;
+    await generateImageAi(prompt, signal);
+  },
+};
+```
+
+### Job Handler Signature
+
+A job handler receives two arguments: the job payload and an `AbortSignal`.
+
+```typescript
+(payload: Payload, signal: AbortSignal) => Promise<void>;
+```
+
+However, as shown above, you can omit the `AbortSignal` if you don't need it.
