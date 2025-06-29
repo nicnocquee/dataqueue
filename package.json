@@ -10,6 +10,7 @@
     "dev": "turbo run dev cron --parallel --filter demo --filter \"@nicnocquee/dataqueue\"",
     "dev:docs": "turbo run dev --filter docs",
     "dev:demo": "turbo run dev --filter demo",
+    "dev:website": "turbo run dev --filter website",
     "dev:dataqueue": "turbo run dev --filter \"@nicnocquee/dataqueue\"",
     "build": "turbo run build",
     "lint": "turbo run lint",

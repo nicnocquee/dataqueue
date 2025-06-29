@@ -220,17 +220,18 @@ queue.process<EmailJob>('email', async (job) => {
             >
               Features
             </a>
-            <a
-              href="#examples"
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Examples
-            </a>
+
             <a
               href="#who"
               className="text-muted-foreground transition-colors hover:text-foreground"
             >
               Who It's For
+            </a>
+            <a
+              href="https://docs.dataqueue.dev"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Docs
             </a>
           </nav>
           <div className="flex items-center space-x-4">
