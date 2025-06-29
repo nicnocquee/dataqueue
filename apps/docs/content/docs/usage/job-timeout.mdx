@@ -6,7 +6,7 @@ When you add a job to the queue, you can set a timeout for it. If the job doesn'
 
 When the timeout is reached, DataQueue does not actually stop the handler from running. You need to handle this in your handler by checking the `AbortSignal` at one or more points in your code. For example:
 
-```typescript
+```typescript title="@lib/job-handlers.ts"
 const handler = async (payload, signal) => {
   // Simulate work
   // Do something that may take a long time

@@ -4,13 +4,14 @@ title: Cancel Jobs
 
 You can cancel a job by its ID, but only if it is still pending (not yet started or scheduled for the future).
 
-```typescript
+```typescript title="@/app/api/cancel-job/route.ts"
 import { NextRequest, NextResponse } from 'next/server';
 import { getJobQueue } from '@/lib/queue';
 
 export async function POST(request: NextRequest) {
   try {
     const { jobId } = await request.json();
+    // [!code highlight:2]
     const jobQueue = await getJobQueue();
     await jobQueue.cancelJob(jobId);
     return NextResponse.json({ message: 'Job cancelled' });
@@ -28,14 +29,14 @@ export async function POST(request: NextRequest) {
 
 DataQueue also lets you cancel all pending jobs at once. This is useful if you want to stop all jobs that haven't started yet or are scheduled for the future.
 
-```typescript
+```typescript title="@/app/api/cancel-all-jobs/route.ts"
 import { NextRequest, NextResponse } from 'next/server';
 import { getJobQueue } from '@/lib/queue';
 
 export async function POST(request: NextRequest) {
   try {
+    // [!code highlight:2]
     const jobQueue = await getJobQueue();
-    // Cancel all pending jobs
     const cancelledCount = await jobQueue.cancelAllUpcomingJobs();
     return NextResponse.json({ message: `Cancelled ${cancelledCount} jobs` });
   } catch (error) {

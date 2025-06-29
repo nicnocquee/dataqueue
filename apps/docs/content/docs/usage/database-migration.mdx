@@ -12,15 +12,21 @@ After installing the package, add the following script to your `package.json` to
 
 Next, run this command to apply the migrations:
 
-```sh
+```package-install
 npm run migrate-dataqueue
 ```
 
-This will apply all the necessary schema migrations so your Postgres database is ready to use with DataQueue. **Make sure the `PG_DATAQUEUE_DATABASE` environment variable is set to your Postgres connection string.** The CLI uses this environment variable to connect to your database.
+This will apply all the necessary schema migrations so your Postgres database is ready to use with DataQueue.
+
+<Callout type="warn">
+  **Make sure the `PG_DATAQUEUE_DATABASE` environment variable is set to your
+  Postgres connection string.** The CLI uses this environment variable to
+  connect to your database.
+</Callout>
 
 To run the migrations using environment variables from your `.env.local` file, use this command:
 
-```bash
+```shell
 env $(cat .env.local | grep -v '^#' | xargs) pnpm run migrate-dataqueue
 ```
 

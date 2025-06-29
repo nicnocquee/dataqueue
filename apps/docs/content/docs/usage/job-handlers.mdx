@@ -8,7 +8,7 @@ The first thing you need to do is define your job types and their corresponding 
 
 Job types and their payloads are specific to your app. You can define them in any file. The important thing is that they are an object type, where the keys are the job types and the values are the payload types. In this example, `send_email`, `generate_report`, and `generate_image` are the job types, and their values are the payload types.
 
-```typescript
+```typescript title="@lib/types/job-payload-map.ts"
 // Define the job payload map for this app.
 // This ensures that the job payload is typed correctly when adding jobs.
 // The keys are the job types, and the values are the payload types.
@@ -32,7 +32,7 @@ export type JobPayloadMap = {
 
 Next, define the job handlers by exporting a `JobHandlers` object that maps job types to handler functions. If you forget to add a handler for a job type, TypeScript will show an error.
 
-```typescript
+```typescript title="@lib/job-handlers.ts"
 import { sendEmail } from './services/email'; // Function to send the email
 import { generateReport } from './services/generate-report'; // Function to generate the report
 import { JobHandlers } from '@nicnocquee/dataqueue';
@@ -52,6 +52,8 @@ export const jobHandlers: JobHandlers<JobPayloadMap> = {
   },
 };
 ```
+
+In the example above, we define three job handlers: `send_email`, `generate_report`, and `generate_image`. Each handler is a function that takes a payload and an optional `AbortSignal` as arguments. The `AbortSignal` is used to abort the job if it takes too long to complete.
 
 ### Job Handler Signature
 

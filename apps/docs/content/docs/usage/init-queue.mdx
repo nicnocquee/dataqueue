@@ -2,19 +2,18 @@
 title: Initialize Queue
 ---
 
-After defining your job types, payloads, and handlers, you need to initialize the job queue.
+After defining your job types, payloads, and handlers, you need to initialize the job queue which basically sets up the connection pool to the Postgres database.
 
-Create a file (for example, `lib/queue.ts`) to set up and reuse your job queue instance.
-
-```typescript
+```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
-import { type JobPayloadMap } from './job-handlers';
+import { type JobPayloadMap } from './types/job-payload-map';
 
 let jobQueuePromise: ReturnType<typeof initJobQueue<JobPayloadMap>> | null =
   null;
 
 export const getJobQueue = async () => {
   if (!jobQueuePromise) {
+    // [!code highlight:6]
     jobQueuePromise = initJobQueue<JobPayloadMap>({
       databaseConfig: {
         connectionString: process.env.PG_DATAQUEUE_DATABASE, // Set this in your environment
@@ -27,3 +26,20 @@ export const getJobQueue = async () => {
 ```
 
 You can now use this queue instance throughout your app to add jobs, process jobs, and more.
+
+```typescript title="@/app/actions/send-email.ts"
+import { getJobQueue } from '@/lib/queue';
+
+const sendEmail = async () => {
+  // [!code highlight:8]
+  const jobQueue = await getJobQueue();
+  await jobQueue.addJob({
+    jobType: 'send_email',
+    payload: {
+      to: 'test@example.com',
+      subject: 'Hello',
+      body: 'Hello, world!',
+    },
+  });
+};
+```

@@ -4,7 +4,7 @@ title: Cleanup Jobs
 
 If you have a lot of jobs, you may want to clean up old ones—for example, keeping only jobs from the last 30 days. You can do this by calling the `cleanupOldJobs` method. The example below shows an API route (`/api/cron/cleanup`) that can be triggered by a cron job:
 
-```typescript
+```typescript title="@/app/api/cron/cleanup.ts"
 import { getJobQueue } from '@/lib/queue';
 import { NextResponse } from 'next/server';
 
@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    // [!code highlight:5]
     const jobQueue = await getJobQueue();
 
     // Clean up old jobs (keep only the last 30 days)

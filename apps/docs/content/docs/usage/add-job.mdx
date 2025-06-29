@@ -4,7 +4,7 @@ title: Add Job
 
 You can add jobs to the queue from your application logic, such as in a server function:
 
-```typescript
+```typescript title="@/app/actions/send-email.ts"
 'use server';
 
 import { getJobQueue } from '@/lib/queue';
@@ -18,9 +18,10 @@ export const sendEmail = async ({
   email: string;
 }) => {
   // Add a welcome email job
-  const jobQueue = await getJobQueue();
+  const jobQueue = await getJobQueue(); // [!code highlight]
   try {
     const runAt = new Date(Date.now() + 5 * 1000); // Run 5 seconds from now
+    // [!code highlight:10]
     const job = await jobQueue.addJob({
       jobType: 'send_email',
       payload: {

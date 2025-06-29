@@ -4,16 +4,19 @@ title: Job Events
 
 DataQueue keeps track of every change in a job's status. You can use `getJobEvents` to see all the events for a job, such as when it was added, started processing, completed, failed, cancelled, or retried.
 
-```typescript
+```typescript tab="Code"
 const events = await jobQueue.getJobEvents(jobId);
 console.log(events);
-// [
-//   {
-//     id: 1,
-//     jobId: 1,
-//     eventType: 'processing', // or 'completed', 'failed', 'cancelled', 'retried'
-//     createdAt: '2024-06-01T12:00:00Z',
-//     metadata: ''
-//   },
-// ]
+```
+
+```json tab="Output"
+[
+  {
+    "id": 1,
+    "jobId": 1,
+    "eventType": "processing",
+    "createdAt": "2024-06-01T12:00:00Z",
+    "metadata": ""
+  }
+]
 ```

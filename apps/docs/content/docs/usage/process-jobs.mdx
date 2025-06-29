@@ -8,7 +8,7 @@ In a serverless environment, we can't have a long-running process that constantl
 
 Instead, we create an API endpoint that checks the queue and processes jobs in batches. This endpoint is then triggered by a cron job. For example, you can create an API endpoint at `app/api/cron/process` to process jobs in batches:
 
-```typescript
+```typescript title="@/app/api/cron/process.ts"
 import { jobHandlers } from '@/lib/job-handler';
 import { getJobQueue } from '@/lib/queue';
 import { NextResponse } from 'next/server';
@@ -21,6 +21,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    // [!code highlight:12]
     const jobQueue = await getJobQueue();
 
     // Control how many jobs are processed in parallel per batch using the `concurrency` option.
