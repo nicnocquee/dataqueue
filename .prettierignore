@@ -10,3 +10,5 @@ data
 .env.production.local
 pnpm-lock.yaml
 .next
+.out
+out
