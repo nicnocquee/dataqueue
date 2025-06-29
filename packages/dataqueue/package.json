@@ -26,7 +26,7 @@
     "check-exports": "attw --pack .",
     "local-release": "changeset version && changeset publish",
     "dev": "tsup --watch",
-    "migrate": "node-pg-migrate -d $PG_BG_JOB_QUEUE_DATABASE -m ./migrations"
+    "migrate": "node-pg-migrate -d $PG_DATAQUEUE_DATABASE -m ./migrations"
   },
   "keywords": [
     "nextjs",

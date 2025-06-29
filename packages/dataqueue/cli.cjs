@@ -12,11 +12,11 @@ const [, , command] = process.argv;
 
 if (command === 'migrate') {
   const migrationsDir = path.join(__dirname, 'migrations');
-  const dbUrl = process.env.PG_BG_JOB_QUEUE_DATABASE;
+  const dbUrl = process.env.PG_DATAQUEUE_DATABASE;
   console.log(dbUrl);
   if (!dbUrl) {
     console.error(
-      'Error: PG_BG_JOB_QUEUE_DATABASE environment variable must be set to your Postgres connection string.',
+      'Error: PG_DATAQUEUE_DATABASE environment variable must be set to your Postgres connection string.',
     );
     process.exit(1);
   }
@@ -26,9 +26,7 @@ if (command === 'migrate') {
       'node-pg-migrate',
       'up',
       '-d',
-      'PG_BG_JOB_QUEUE_DATABASE',
-      '--tsconfig',
-      './tsconfig.json',
+      'PG_DATAQUEUE_DATABASE',
       '-m',
       migrationsDir,
     ],

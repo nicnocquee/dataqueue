@@ -61,7 +61,7 @@ Then run the following command to apply the migrations:
 npm run migrate-dataqueue
 ```
 
-This will apply all necessary schema migrations so that your Postgres database is ready to be used by dataqueue. **The `PG_BG_JOB_QUEUE_DATABASE` environment variable must be set to your Postgres connection string**. The CLI will use this environment variable to connect to the database.
+This will apply all necessary schema migrations so that your Postgres database is ready to be used by dataqueue. **The `PG_DATAQUEUE_DATABASE` environment variable must be set to your Postgres connection string**. The CLI will use this environment variable to connect to the database.
 
 In your computer, you can run the following command to run the migrations with the environment variables from your `.env.local` file:
 
@@ -100,7 +100,7 @@ export const getJobQueue = async () => {
   if (!jobQueuePromise) {
     jobQueuePromise = initJobQueue<JobPayloadMap>({
       databaseConfig: {
-        connectionString: process.env.PG_BG_JOB_QUEUE_DATABASE, // Set this in your environment
+        connectionString: process.env.PG_DATAQUEUE_DATABASE, // Set this in your environment
         ssl:
           process.env.NODE_ENV === 'production'
             ? { rejectUnauthorized: false }
