@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.16.0
+
+### Minor Changes
+
+- Rename the package
+
 ## 1.15.0
 
 ### Minor Changes
