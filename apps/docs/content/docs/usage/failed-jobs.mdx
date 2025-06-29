@@ -4,6 +4,6 @@ title: Failed Jobs
 
 A job handler can fail for many reasons, such as a bug in the code or running out of resources.
 
-When a job fails, it will be retried up to `maxAttempts` times. If it still fails after all attempts, its status will be set to `failed`. You can set the `maxAttempts` value when adding the job to the queue.
+When a job fails, it will be marked as `failed` and retried up to `maxAttempts` times. You can set the `maxAttempts` value when adding the job to the queue.
 
 Each retry is scheduled after `2^attempts * 1 minute` from the previous attempt. You can view the error history for a job in its `errorHistory` field.
