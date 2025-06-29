@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.17.0
+
+### Minor Changes
+
+- Update docs and cases
+
 ## 1.16.0
 
 ### Minor Changes
