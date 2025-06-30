@@ -2,6 +2,7 @@
   "title": "Usage",
   "icon": "MyIcon",
   "pages": [
+    "quick-start",
     "database-migration",
     "job-handlers",
     "init-queue",

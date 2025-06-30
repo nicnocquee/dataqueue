@@ -1,6 +1,6 @@
 {
   "title": "Introduction",
   "icon": "MyIcon",
-  "pages": ["about", "install", "quick-start", "status"],
+  "pages": ["overview", "install"],
   "defaultOpen": true
 }

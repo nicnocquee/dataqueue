@@ -1,0 +1,38 @@
+---
+title: Overview
+---
+
+DataQueue is a lightweight library that helps you manage your job queue in a Postgres database. It has two main components: the processor, the queue, and the job. It is not an external tool or service. You install DataQueue in your project and use it to add jobs to the queue, process them, and more, using your own existing Postgres database.
+
+![](/dataqueue-overview.png)
+
+## Processor
+
+The processor has these responsibilities:
+
+- retrieve a certain number of unclaimed, pending jobs from the Postgres database
+- run the defined job handlers for each job
+- update the job status accordingly
+- retry failed jobs
+
+The processor doesn't run in a separate process. It runs in the same process as your application. In a serverless environment, you can initiate and start the processor for example in an API route. In a long running process environment, you can start the processor when your application starts, and it will periodically check for jobs to process.
+
+## Queue
+
+The queue is an abstraction over the Postgres database. It has these responsibilities:
+
+- add jobs to the database
+- retrieve jobs from the database
+- cancel pending jobs
+
+## Job
+
+A job that you add to the queue needs to have a type and a payload. The type is a string that identifies the job, and the payload is the data that will be passed to the job handler of that job type.
+
+Once a job is added to the queue, it can be in one of these states:
+
+- `pending`: The job is waiting in the queue to be processed.
+- `processing`: The job is currently being worked on.
+- `completed`: The job finished successfully.
+- `failed`: The job did not finish successfully. It can be retried up to `maxAttempts` times.
+- `cancelled`: The job was cancelled before it finished.

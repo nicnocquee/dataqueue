@@ -275,7 +275,7 @@ queue.process<EmailJob>('email', async (job) => {
             </p>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <a
-                href="https://docs.dataqueue.dev/intro/about"
+                href="https://docs.dataqueue.dev/"
                 target="_blank"
                 rel="noopener noreferrer"
               >
