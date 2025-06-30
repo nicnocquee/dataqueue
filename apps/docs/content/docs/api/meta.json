@@ -1,7 +1,6 @@
 {
   "title": "API",
   "pages": [
-    "index",
     "job-queue",
     "job-options",
     "job-record",
