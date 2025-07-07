@@ -24,10 +24,29 @@ This will apply all the necessary schema migrations so your Postgres database is
   connect to your database.
 </Callout>
 
-To run the migrations using environment variables from your `.env.local` file, use this command:
+### Using a custom .env file
+
+You can use the `--envPath` option to specify a custom path to your environment file. For example:
 
 ```shell
-env $(cat .env.local | grep -v '^#' | xargs) pnpm run migrate-dataqueue
+npm run migrate-dataqueue -- --envPath .env.local
 ```
 
-You must run these migrations before using the job queue. For example, if you are deploying your app to Vercel, run this command before deploying in the Vercel's pipeline. If you have used Prisma or other ORMs, you may be familiar with this process.
+This will load environment variables from `.env.local` before running the migration.
+
+### Schema detection
+
+If your `PG_DATAQUEUE_DATABASE` connection string contains a `search_path` parameter, the CLI will automatically set the schema for migrations and ensure the schema is created if it does not exist.
+
+**Example Postgres URL with schema:**
+
+```env
+PG_DATAQUEUE_DATABASE=postgres://user:password@localhost:5432/mydb?search_path=my_schema
+```
+
+<Callout type="warn">
+  **You must run these migrations before using the job queue.** For example, if
+  you are deploying your app to Vercel, run this command before deploying in the
+  Vercel's pipeline. If you have used Prisma or other ORMs, you may be familiar
+  with this process.
+</Callout>
