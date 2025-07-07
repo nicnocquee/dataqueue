@@ -21,19 +21,18 @@ export type JobPayloadMap = {
   };
 };
 
-let jobQueuePromise: ReturnType<typeof initJobQueue<JobPayloadMap>> | null =
-  null;
+let jobQueue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
 
-export const getJobQueue = async () => {
-  if (!jobQueuePromise) {
-    jobQueuePromise = initJobQueue<JobPayloadMap>({
+export const getJobQueue = () => {
+  if (!jobQueue) {
+    jobQueue = initJobQueue<JobPayloadMap>({
       databaseConfig: {
         connectionString: process.env.PG_DATAQUEUE_DATABASE, // Set this in your environment
       },
       verbose: process.env.NODE_ENV === 'development',
     });
   }
-  return jobQueuePromise;
+  return jobQueue;
 };
 
 // Object literal mapping for static enforcement

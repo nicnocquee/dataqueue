@@ -15,7 +15,7 @@ describe('index integration', () => {
   let pool: Pool;
   let dbName: string;
   let testDbUrl: string;
-  let jobQueue: Awaited<ReturnType<typeof initJobQueue<TestPayloadMap>>>;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
@@ -27,7 +27,7 @@ describe('index integration', () => {
         connectionString: testDbUrl,
       },
     };
-    jobQueue = await initJobQueue<TestPayloadMap>(config);
+    jobQueue = initJobQueue<TestPayloadMap>(config);
   });
 
   afterEach(async () => {

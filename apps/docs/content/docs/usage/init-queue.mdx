@@ -8,20 +8,19 @@ After defining your job types, payloads, and handlers, you need to initialize th
 import { initJobQueue } from '@nicnocquee/dataqueue';
 import { type JobPayloadMap } from './types/job-payload-map';
 
-let jobQueuePromise: ReturnType<typeof initJobQueue<JobPayloadMap>> | null =
-  null;
+let jobQueue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
 
-export const getJobQueue = async () => {
-  if (!jobQueuePromise) {
+export const getJobQueue = () => {
+  if (!jobQueue) {
     // [!code highlight:6]
-    jobQueuePromise = initJobQueue<JobPayloadMap>({
+    jobQueue = initJobQueue<JobPayloadMap>({
       databaseConfig: {
         connectionString: process.env.PG_DATAQUEUE_DATABASE, // Set this in your environment
       },
       verbose: process.env.NODE_ENV === 'development',
     });
   }
-  return jobQueuePromise;
+  return jobQueue;
 };
 ```
 
@@ -32,7 +31,7 @@ import { getJobQueue } from '@/lib/queue';
 
 const sendEmail = async () => {
   // [!code highlight:8]
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   await jobQueue.addJob({
     jobType: 'send_email',
     payload: {

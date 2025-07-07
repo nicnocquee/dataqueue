@@ -29,6 +29,13 @@ export async function createTestDbAndPool() {
       direction: 'up',
       count: Infinity,
       migrationsTable: 'pgmigrations',
+      verbose: false,
+      logger: {
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+      },
     });
   } catch (error) {
     console.error(error);

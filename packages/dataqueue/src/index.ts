@@ -24,9 +24,9 @@ import { createPool } from './db-util.js';
 /**
  * Initialize the job queue system
  */
-export const initJobQueue = async <PayloadMap = any>(
+export const initJobQueue = <PayloadMap = any>(
   config: JobQueueConfig,
-): Promise<JobQueue<PayloadMap>> => {
+): JobQueue<PayloadMap> => {
   const { databaseConfig } = config;
 
   // Create database pool
