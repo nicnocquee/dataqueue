@@ -4,6 +4,12 @@
 
 ### Minor Changes
 
+- Added envPath and schema creation to the cli
+
+## 1.17.0
+
+### Minor Changes
+
 - Update docs and cases
 
 ## 1.16.0
