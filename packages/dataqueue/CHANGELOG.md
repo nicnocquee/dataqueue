@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.18.2
+
+### Patch Changes
+
+- Fixed the CLI
+
 ## 1.18.1
 
 ### Patch Changes

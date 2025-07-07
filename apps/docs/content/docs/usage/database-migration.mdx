@@ -34,14 +34,14 @@ npm run migrate-dataqueue -- --envPath .env.local
 
 This will load environment variables from `.env.local` before running the migration.
 
-### Schema detection
+### Schema selection
 
-If your `PG_DATAQUEUE_DATABASE` connection string contains a `search_path` parameter, the CLI will automatically set the schema for migrations and ensure the schema is created if it does not exist.
+You can explicitly set the schema for migrations using the `-s` or `--schema` CLI option. This option is passed directly to `node-pg-migrate` and will ensure the schema is created if it does not exist.
 
-**Example Postgres URL with schema:**
+**Example CLI usage with explicit schema:**
 
-```dotenv title=".env.local"
-PG_DATAQUEUE_DATABASE=postgres://user:password@localhost:5432/mydb?search_path=my_schema
+```package-install
+npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue
 ```
 
 <Callout type="warn">
