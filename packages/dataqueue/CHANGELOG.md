@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.19.1
+
+### Patch Changes
+
+- Refactor the cli
+
 ## 1.19.0
 
 ### Minor Changes
