@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.19.2
+
+### Patch Changes
+
+- fix cli
+
 ## 1.19.1
 
 ### Patch Changes

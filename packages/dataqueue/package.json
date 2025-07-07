@@ -1,6 +1,6 @@
 {
   "name": "@nicnocquee/dataqueue",
-  "version": "1.19.1",
+  "version": "1.19.2",
   "description": "PostgreSQL-based job queue for Node.js applications with support for serverless environments",
   "type": "module",
   "main": "dist/index.js",
