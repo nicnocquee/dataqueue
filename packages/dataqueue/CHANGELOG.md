@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.19.0
+
+### Minor Changes
+
+- Fixed cannot connect to database schema
+
 ## 1.18.2
 
 ### Patch Changes
