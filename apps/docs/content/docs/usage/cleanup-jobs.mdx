@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
   try {
     // [!code highlight:5]
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
 
     // Clean up old jobs (keep only the last 30 days)
     const deleted = await jobQueue.cleanupOldJobs(30);

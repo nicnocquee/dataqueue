@@ -12,13 +12,13 @@ import { formatTimeDistance } from '@/lib/utils';
 import Link from 'next/link';
 
 export const PendingJobs = async () => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('pending');
   return <DefaultJobTable jobs={jobs} />;
 };
 
 export const ProcessingJobs = async () => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('processing');
   return (
     <JobTable
@@ -35,7 +35,7 @@ export const ProcessingJobs = async () => {
 };
 
 export const CompletedJobs = async () => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('completed');
   return (
     <JobTable
@@ -53,7 +53,7 @@ export const CompletedJobs = async () => {
 };
 
 export const FailedJobs = async () => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('failed');
   const noRetryJobs = jobs.filter((job) => job.attempts === job.maxAttempts);
   return (
@@ -73,7 +73,7 @@ export const FailedJobs = async () => {
 };
 
 export const CancelledJobs = async () => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('cancelled');
   return (
     <JobTable
@@ -90,7 +90,7 @@ export const CancelledJobs = async () => {
 };
 
 export const WillRetryFailedJobs = async () => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   const jobs = await jobQueue.getJobsByStatus('failed');
   const jobsToRetry = jobs.filter((job) => job.attempts < job.maxAttempts);
   return (

@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
     const { prompt } = await request.json();
 
     // Add a generate image job
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
     await jobQueue.addJob({
       jobType: 'generate_image',
       payload: {

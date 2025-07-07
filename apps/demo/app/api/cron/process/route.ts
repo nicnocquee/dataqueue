@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
 
     const processor = jobQueue.createProcessor(jobHandlers, {
       workerId: `cron-${Date.now()}`,

@@ -14,7 +14,7 @@ const JobPage = async ({ params }: { params: Promise<{ id: string }> }) => {
   if (!id) {
     notFound();
   }
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   const job = await jobQueue.getJob(Number(id));
   if (!job) {
     notFound();

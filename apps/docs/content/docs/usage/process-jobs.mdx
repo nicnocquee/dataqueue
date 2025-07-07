@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
   try {
     // [!code highlight:12]
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
 
     // Control how many jobs are processed in parallel per batch using the `concurrency` option.
     // For example, to process up to 3 jobs in parallel per batch:

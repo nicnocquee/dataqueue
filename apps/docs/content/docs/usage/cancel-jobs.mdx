@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const { jobId } = await request.json();
     // [!code highlight:2]
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
     await jobQueue.cancelJob(jobId);
     return NextResponse.json({ message: 'Job cancelled' });
   } catch (error) {
@@ -36,7 +36,7 @@ import { getJobQueue } from '@/lib/queue';
 export async function POST(request: NextRequest) {
   try {
     // [!code highlight:2]
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
     const cancelledCount = await jobQueue.cancelAllUpcomingJobs();
     return NextResponse.json({ message: `Cancelled ${cancelledCount} jobs` });
   } catch (error) {

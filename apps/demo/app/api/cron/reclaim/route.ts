@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
 
     // Reclaim stuck jobs (10 minutes)
     const reclaimed = await jobQueue.reclaimStuckJobs(10);

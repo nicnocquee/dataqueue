@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     const userId = await createUser(name, email);
 
     // Add a welcome email job
-    const jobQueue = await getJobQueue();
+    const jobQueue = getJobQueue();
     await jobQueue.addJob({
       jobType: 'generate_report',
       payload: {

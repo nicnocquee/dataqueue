@@ -4,7 +4,7 @@ import { getJobQueue, jobHandlers } from '@/lib/queue';
 import { revalidatePath } from 'next/cache';
 
 export const processJobs = async () => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
 
   const processor = jobQueue.createProcessor(jobHandlers, {
     workerId: `cron-${Date.now()}`,
@@ -22,7 +22,7 @@ export const processJobs = async () => {
 };
 
 export const processJobsByType = async (jobType: string) => {
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
 
   const processor = jobQueue.createProcessor(jobHandlers, {
     workerId: `cron-${Date.now()}`,

@@ -11,7 +11,7 @@ export const sendEmail = async ({
   email: string;
 }) => {
   // Add a welcome email job
-  const jobQueue = await getJobQueue();
+  const jobQueue = getJobQueue();
   try {
     const delay = Math.floor(1000 + Math.random() * 9000); // 1000 to 9999 ms
     const runAt = new Date(Date.now() + delay); // Run between 1 and 10 seconds from now

@@ -18,7 +18,7 @@ export const sendEmail = async ({
   email: string;
 }) => {
   // Add a welcome email job
-  const jobQueue = await getJobQueue(); // [!code highlight]
+  const jobQueue = getJobQueue(); // [!code highlight]
   try {
     const runAt = new Date(Date.now() + 5 * 1000); // Run 5 seconds from now
     // [!code highlight:10]
