@@ -2,7 +2,7 @@
 title: Database Migration
 ---
 
-After installing the package, add the following script to your `package.json` to apply the migrations:
+After installing the package, add the following script to your `package.json` to apply [the migrations](https://github.com/nicnocquee/dataqueue/tree/main/packages/dataqueue/migrations):
 
 ```json
 "scripts": {
@@ -40,7 +40,7 @@ If your `PG_DATAQUEUE_DATABASE` connection string contains a `search_path` param
 
 **Example Postgres URL with schema:**
 
-```env
+```dotenv title=".env.local"
 PG_DATAQUEUE_DATABASE=postgres://user:password@localhost:5432/mydb?search_path=my_schema
 ```
 
