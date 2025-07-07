@@ -24,6 +24,13 @@ This will apply all the necessary schema migrations so your Postgres database is
   connect to your database.
 </Callout>
 
+<Callout type="warn">
+  **You must run these migrations before using the job queue.** For example, if
+  you are deploying your app to Vercel, run this command before deploying in the
+  Vercel's pipeline. If you have used Prisma or other ORMs, you may be familiar
+  with this process.
+</Callout>
+
 ### Using a custom .env file
 
 You can use the `--envPath` option to specify a custom path to your environment file. For example:
@@ -44,9 +51,9 @@ You can explicitly set the schema for migrations using the `-s` or `--schema` CL
 npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue
 ```
 
-<Callout type="warn">
-  **You must run these migrations before using the job queue.** For example, if
-  you are deploying your app to Vercel, run this command before deploying in the
-  Vercel's pipeline. If you have used Prisma or other ORMs, you may be familiar
-  with this process.
+<Callout>
+  Specifying the schema is optional but **recommended**. If you don't specify
+  the schema, the CLI will use the default schema which is `public`. If you use
+  [Prisma](https://www.prisma.io), the prisma migration will fail because of the
+  additional tables added by DataQueue.
 </Callout>
