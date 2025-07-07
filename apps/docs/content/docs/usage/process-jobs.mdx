@@ -69,7 +69,7 @@ The default is `3`. Set it to `1` to process jobs one at a time. Use a lower val
 
 Defining an endpoint isn't enough—you need to trigger it regularly. For example, use Vercel cron to trigger the endpoint every minute by adding this to your `vercel.json`:
 
-```json
+```json title="vercel.json"
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
