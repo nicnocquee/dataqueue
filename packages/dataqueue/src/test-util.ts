@@ -1,7 +1,11 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
-import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { join, dirname } from 'path';
 import { runner } from 'node-pg-migrate';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export async function createTestDbAndPool() {
   const baseDatabaseUrl =

@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.19.3
+
+### Patch Changes
+
+- Fix CLI ESM
+
 ## 1.19.2
 
 ### Patch Changes
