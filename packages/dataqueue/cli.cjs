@@ -27,13 +27,6 @@ if (command === 'migrate') {
   const migrationsDir = path.join(__dirname, 'migrations');
   const dbUrl = process.env.PG_DATAQUEUE_DATABASE;
 
-  if (!dbUrl) {
-    console.error(
-      'Error: PG_DATAQUEUE_DATABASE environment variable must be set to your Postgres connection string.',
-    );
-    process.exit(1);
-  }
-
   // Parse search_path from dbUrl if present
   let schemaArg = [];
   let hasCustomSchema = false;
