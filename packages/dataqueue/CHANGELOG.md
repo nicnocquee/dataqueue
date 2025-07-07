@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.18.1
+
+### Patch Changes
+
+- Removed the env check from cli
+
 ## 1.17.0
 
 ### Minor Changes
