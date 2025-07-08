@@ -7,7 +7,6 @@
     "job-handlers",
     "init-queue",
     "add-job",
-    "tags",
     "process-jobs",
     "failed-jobs",
     "job-timeout",
