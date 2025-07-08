@@ -634,17 +634,24 @@ describe('tags feature', () => {
     expect(jobs.map((j) => j.id)).not.toContain(jobId2);
   });
 
+  it('should handle jobs with no tags', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'notag@example.com' },
+    });
+    const jobs = await queue.getJobsByTags(pool, ['anytag'], 'all');
+    expect(jobs.map((j) => j.id)).not.toContain(jobId);
+  });
+
   it('should cancel jobs by tags (all mode)', async () => {
     const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       jobType: 'email',
       payload: { to: 'cancelme@example.com' },
       tags: ['cancel', 'urgent'],
     });
-    const cancelled = await queue.cancelJobsByTags(
-      pool,
-      ['cancel', 'urgent'],
-      'all',
-    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      tags: { values: ['cancel', 'urgent'], mode: 'all' },
+    });
     expect(cancelled).toBeGreaterThanOrEqual(1);
     const job = await queue.getJob(pool, jobId);
     expect(job?.status).toBe('cancelled');
@@ -667,11 +674,9 @@ describe('tags feature', () => {
         tags: ['cancel', 'urgent', 'other'],
       },
     );
-    const cancelled = await queue.cancelJobsByTags(
-      pool,
-      ['cancel', 'urgent'],
-      'exact',
-    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      tags: { values: ['cancel', 'urgent'], mode: 'exact' },
+    });
     expect(cancelled).toBe(1);
     const job1 = await queue.getJob(pool, jobId1);
     const job2 = await queue.getJob(pool, jobId2);
@@ -696,11 +701,9 @@ describe('tags feature', () => {
         tags: ['other'],
       },
     );
-    const cancelled = await queue.cancelJobsByTags(
-      pool,
-      ['cancel', 'other'],
-      'any',
-    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      tags: { values: ['cancel', 'other'], mode: 'any' },
+    });
     expect(cancelled).toBe(2);
     const job1 = await queue.getJob(pool, jobId1);
     const job2 = await queue.getJob(pool, jobId2);
@@ -733,11 +736,9 @@ describe('tags feature', () => {
         tags: ['baz'],
       },
     );
-    const cancelled = await queue.cancelJobsByTags(
-      pool,
-      ['foo', 'bar'],
-      'none',
-    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      tags: { values: ['foo', 'bar'], mode: 'none' },
+    });
     expect(cancelled).toBe(1);
     const job1 = await queue.getJob(pool, jobId1);
     const job2 = await queue.getJob(pool, jobId2);
@@ -745,14 +746,5 @@ describe('tags feature', () => {
     expect(job1?.status).toBe('pending');
     expect(job2?.status).toBe('pending');
     expect(job3?.status).toBe('cancelled');
-  });
-
-  it('should handle jobs with no tags', async () => {
-    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
-      jobType: 'email',
-      payload: { to: 'notag@example.com' },
-    });
-    const jobs = await queue.getJobsByTags(pool, ['anytag'], 'all');
-    expect(jobs.map((j) => j.id)).not.toContain(jobId);
   });
 });

@@ -418,7 +418,12 @@ export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
  */
 export const cancelAllUpcomingJobs = async (
   pool: Pool,
-  filters?: { jobType?: string; priority?: number; runAt?: Date },
+  filters?: {
+    jobType?: string;
+    priority?: number;
+    runAt?: Date;
+    tags?: { values: string[]; mode?: TagQueryMode };
+  },
 ): Promise<number> => {
   const client = await pool.connect();
   try {
@@ -440,6 +445,35 @@ export const cancelAllUpcomingJobs = async (
       if (filters.runAt) {
         query += ` AND run_at = $${paramIdx++}`;
         params.push(filters.runAt);
+      }
+      if (
+        filters.tags &&
+        filters.tags.values &&
+        filters.tags.values.length > 0
+      ) {
+        const mode = filters.tags.mode || 'all';
+        const tagValues = filters.tags.values;
+        switch (mode) {
+          case 'exact':
+            query += ` AND tags = $${paramIdx++}`;
+            params.push(tagValues);
+            break;
+          case 'all':
+            query += ` AND tags @> $${paramIdx++}`;
+            params.push(tagValues);
+            break;
+          case 'any':
+            query += ` AND tags && $${paramIdx++}`;
+            params.push(tagValues);
+            break;
+          case 'none':
+            query += ` AND NOT (tags && $${paramIdx++})`;
+            params.push(tagValues);
+            break;
+          default:
+            query += ` AND tags @> $${paramIdx++}`;
+            params.push(tagValues);
+        }
       }
     }
     query += '\nRETURNING id';
@@ -621,51 +655,6 @@ export const getJobsByTags = async <
   } catch (error) {
     log(
       `Error getting jobs by tags ${JSON.stringify(tags)} (mode: ${mode}): ${error}`,
-    );
-    throw error;
-  } finally {
-    client.release();
-  }
-};
-
-/**
- * Cancel jobs by tags (matches all specified tags)
- */
-export const cancelJobsByTags = async (
-  pool: Pool,
-  tags: string[],
-  mode: TagQueryMode = 'all',
-): Promise<number> => {
-  const client = await pool.connect();
-  try {
-    let query = `UPDATE job_queue
-       SET status = 'cancelled', updated_at = NOW(), last_cancelled_at = NOW()
-       WHERE status = 'pending'`;
-    switch (mode) {
-      case 'exact':
-        query += ' AND tags = $1';
-        break;
-      case 'all':
-        query += ' AND tags @> $1';
-        break;
-      case 'any':
-        query += ' AND tags && $1';
-        break;
-      case 'none':
-        query += ' AND NOT (tags && $1)';
-        break;
-      default:
-        query += ' AND tags @> $1';
-    }
-    query += ' RETURNING id';
-    const result = await client.query(query, [tags]);
-    log(
-      `Cancelled ${result.rowCount} jobs by tags ${JSON.stringify(tags)} (mode: ${mode})`,
-    );
-    return result.rowCount || 0;
-  } catch (error) {
-    log(
-      `Error cancelling jobs by tags ${JSON.stringify(tags)} (mode: ${mode}): ${error}`,
     );
     throw error;
   } finally {

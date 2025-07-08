@@ -240,16 +240,6 @@ export interface JobQueue<PayloadMap> {
    */
   cancelJob: (jobId: number) => Promise<void>;
   /**
-   * Cancel jobs by tag(s).
-   * - Modes:
-   *   - 'exact': Jobs with exactly the same tags (no more, no less)
-   *   - 'all': Jobs that have all the given tags (can have more)
-   *   - 'any': Jobs that have at least one of the given tags
-   *   - 'none': Jobs that have none of the given tags
-   * - Default mode is 'all'.
-   */
-  cancelJobsByTags: (tags: string[], mode?: TagQueryMode) => Promise<number>;
-  /**
    * Reclaim stuck jobs.
    * - If a process (e.g., API route or worker) crashes after marking a job as 'processing' but before completing it, the job can remain stuck in the 'processing' state indefinitely. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as 'completed' or 'failed'.
    * - This function will set the job status back to 'pending', clear the locked_at and locked_by, and allow it to be picked up by other workers.
@@ -264,11 +254,13 @@ export interface JobQueue<PayloadMap> {
    *   - jobType: The job type to cancel.
    *   - priority: The priority of the job to cancel.
    *   - runAt: The time the job is scheduled to run at.
+   *   - tags: An object with 'values' (string[]) and 'mode' (TagQueryMode) for tag-based cancellation.
    */
   cancelAllUpcomingJobs: (filters?: {
     jobType?: string;
     priority?: number;
     runAt?: Date;
+    tags?: { values: string[]; mode?: TagQueryMode };
   }) => Promise<number>;
   /**
    * Create a job processor. Handlers must be provided per-processor.

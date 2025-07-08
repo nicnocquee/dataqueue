@@ -279,4 +279,27 @@ describe('index integration', () => {
     expect(job2?.status).toBe('cancelled');
     expect(job3?.status).toBe('pending');
   });
+
+  it('should cancel all upcoming jobs by tags and jobType', async () => {
+    const jobId1 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'tag10@example.com' },
+      tags: ['foo', 'bar'],
+    });
+    const jobId2 = await jobQueue.addJob({
+      jobType: 'sms',
+      payload: { to: 'tag11@example.com' },
+      tags: ['foo', 'bar'],
+    });
+    // Only cancel email jobs with both tags
+    const cancelled = await jobQueue.cancelAllUpcomingJobs({
+      jobType: 'email',
+      tags: { values: ['foo', 'bar'], mode: 'all' },
+    });
+    expect(cancelled).toBe(1);
+    const job1 = await jobQueue.getJob(jobId1);
+    const job2 = await jobQueue.getJob(jobId2);
+    expect(job1?.status).toBe('cancelled');
+    expect(job2?.status).toBe('pending');
+  });
 });

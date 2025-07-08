@@ -10,7 +10,6 @@ import {
   reclaimStuckJobs,
   getJobEvents,
   getJobsByTags,
-  cancelJobsByTags,
 } from './queue.js';
 import { createProcessor } from './processor.js';
 import {
@@ -64,8 +63,12 @@ export const initJobQueue = <PayloadMap = any>(
       config.verbose ?? false,
     ),
     cancelAllUpcomingJobs: withLogContext(
-      (filters?: { jobType?: string; priority?: number; runAt?: Date }) =>
-        cancelAllUpcomingJobs(pool, filters),
+      (filters?: {
+        jobType?: string;
+        priority?: number;
+        runAt?: Date;
+        tags?: { values: string[]; mode?: import('./types.js').TagQueryMode };
+      }) => cancelAllUpcomingJobs(pool, filters),
       config.verbose ?? false,
     ),
     reclaimStuckJobs: withLogContext(
@@ -76,10 +79,6 @@ export const initJobQueue = <PayloadMap = any>(
     getJobsByTags: withLogContext(
       (tags: string[], mode = 'all', limit?: number, offset?: number) =>
         getJobsByTags<PayloadMap, any>(pool, tags, mode, limit, offset),
-      config.verbose ?? false,
-    ),
-    cancelJobsByTags: withLogContext(
-      (tags: string[], mode = 'all') => cancelJobsByTags(pool, tags, mode),
       config.verbose ?? false,
     ),
 

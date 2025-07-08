@@ -36,10 +36,30 @@ The `tags` field is available on JobRecord objects:
 const jobs = await jobQueue.getJobsByTags(['welcome', 'user'], 'all');
 ```
 
-### cancelJobsByTags
+### Cancel jobs by tags
+
+You can cancel jobs by their tags using the `cancelAllUpcomingJobs` method with the `tags` filter (an object with `values` and `mode`):
 
 ```typescript
-await jobQueue.cancelJobsByTags(['welcome', 'user'], 'any');
+// Cancel all jobs with both 'welcome' and 'user' tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['welcome', 'user'], mode: 'all' },
+});
+
+// Cancel all jobs with any of the tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'any' },
+});
+
+// Cancel all jobs with exactly the given tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'exact' },
+});
+
+// Cancel all jobs with none of the given tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'none' },
+});
 ```
 
 ## TagQueryMode
