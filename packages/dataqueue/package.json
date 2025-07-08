@@ -1,6 +1,6 @@
 {
   "name": "@nicnocquee/dataqueue",
-  "version": "1.19.3",
+  "version": "1.20.0",
   "description": "PostgreSQL-based job queue for Node.js applications with support for serverless environments",
   "type": "module",
   "main": "dist/index.js",
@@ -28,7 +28,7 @@
     "dev": "tsup --watch",
     "migrate": "node-pg-migrate -d $PG_DATAQUEUE_DATABASE -m ./migrations",
     "changeset:add": "changeset",
-    "changeset:version": "changeset version  && find .changeset -type f -name '*.md' ! -name 'README.md' -delete"
+    "changeset:version": "changeset version && find .changeset -type f -name '*.md' ! -name 'README.md' -delete"
   },
   "keywords": [
     "nextjs",

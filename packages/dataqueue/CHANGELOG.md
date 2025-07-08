@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.20.0
+
+### Minor Changes
+
+- Added new feature to add, search, and cancel jobs by tags
+
 ## 1.19.3
 
 ### Patch Changes
