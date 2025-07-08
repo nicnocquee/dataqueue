@@ -73,6 +73,7 @@ interface JobOptions {
   priority?: number;
   runAt?: Date | null;
   timeoutMs?: number;
+  tags?: string[];
 }
 ```
 
@@ -82,6 +83,7 @@ interface JobOptions {
 - `priority`: A number containing the priority of the job.
 - `runAt`: A date containing the time the job is scheduled to run at.
 - `timeoutMs`: A number containing the timeout for the job in milliseconds.
+- `tags`: An array of strings for grouping, searching, or batch operations.
 
 ### getJob
 
@@ -146,10 +148,63 @@ Reclaim jobs stuck in 'processing' for too long.
 ### cancelAllUpcomingJobs
 
 ```ts
-cancelAllUpcomingJobs(filters?): Promise<number>
+cancelAllUpcomingJobs(filters?: {
+  jobType?: string;
+  priority?: number;
+  runAt?: Date;
+  tags?: { values: string[]; mode?: 'all' | 'any' | 'none' | 'exact' };
+}): Promise<number>
 ```
 
 Cancel all upcoming jobs that match the filters.
+
+- `jobType`: (optional) Only cancel jobs of this type.
+- `priority`: (optional) Only cancel jobs with this priority.
+- `runAt`: (optional) Only cancel jobs scheduled for this time.
+- `tags`: (optional) Object with `values` (array of tags) and `mode` (tag query mode, default is `'all'`).
+
+#### Examples
+
+Cancel all jobs of type 'email' with both 'welcome' and 'user' tags:
+
+```typescript
+await jobQueue.cancelAllUpcomingJobs({
+  jobType: 'email',
+  tags: { values: ['welcome', 'user'], mode: 'all' },
+});
+```
+
+Cancel all jobs with both 'welcome' and 'user' tags:
+
+```typescript
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['welcome', 'user'], mode: 'all' },
+});
+```
+
+Cancel all jobs with any of the tags:
+
+```typescript
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'any' },
+});
+```
+
+Cancel all jobs with exactly the given tags (no more, no less):
+
+```typescript
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'exact' },
+});
+```
+
+Cancel all jobs with none of the given tags (no more, no less):
+
+```typescript
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'none' },
+});
+```
 
 ### createProcessor
 
@@ -230,3 +285,16 @@ getPool(): Pool
 ```
 
 Get the database pool.
+
+### getJobsByTags
+
+```ts
+getJobsByTags(tags: string[], mode?: TagQueryMode, limit?: number, offset?: number): Promise<JobRecord[]>
+```
+
+Get jobs by tag(s).
+
+- `tags`: An array of tags to filter jobs.
+- `mode`: (optional) Tag query mode. See [Tags](/api/tags) for more details.
+- `limit`: (optional) Maximum number of jobs to return.
+- `offset`: (optional) Offset for pagination.

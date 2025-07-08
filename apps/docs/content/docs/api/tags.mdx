@@ -1,0 +1,74 @@
+---
+title: Tags
+---
+
+The tags feature lets you group, search, and batch jobs using arbitrary string tags. Tags can be set when adding a job and used in various JobQueue methods.
+
+## Tags in JobOptions
+
+You can assign tags to a job when adding it:
+
+```typescript
+await jobQueue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com', subject: 'Hello' },
+  tags: ['welcome', 'user'],
+});
+```
+
+## Tags in JobRecord
+
+The `tags` field is available on JobRecord objects:
+
+```json
+{
+  "id": 1,
+  "jobType": "email",
+  "tags": ["welcome", "user"]
+}
+```
+
+## Tag Query Methods
+
+### getJobsByTags
+
+```typescript
+const jobs = await jobQueue.getJobsByTags(['welcome', 'user'], 'all');
+```
+
+### Cancel jobs by tags
+
+You can cancel jobs by their tags using the `cancelAllUpcomingJobs` method with the `tags` filter (an object with `values` and `mode`):
+
+```typescript
+// Cancel all jobs with both 'welcome' and 'user' tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['welcome', 'user'], mode: 'all' },
+});
+
+// Cancel all jobs with any of the tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'any' },
+});
+
+// Cancel all jobs with exactly the given tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'exact' },
+});
+
+// Cancel all jobs with none of the given tags
+await jobQueue.cancelAllUpcomingJobs({
+  tags: { values: ['foo', 'bar'], mode: 'none' },
+});
+```
+
+## TagQueryMode
+
+The `mode` parameter controls how tags are matched:
+
+- `'exact'`: Jobs with exactly the same tags (no more, no less)
+- `'all'`: Jobs that have all the given tags (can have more)
+- `'any'`: Jobs that have at least one of the given tags
+- `'none'`: Jobs that have none of the given tags
+
+The default mode is `'all'`.

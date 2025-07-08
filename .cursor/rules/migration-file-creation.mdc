@@ -1,0 +1,11 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+When generating migration files, use the command `date +%s000` to get the timestamp for the prefix of the migration file.
+
+There must be tow parts in the sql file: the up migration and the down migration.
+
+The up migration should be after the comment `-- Up Migration` and the down migration should be after the comment `-- Down Migration`.

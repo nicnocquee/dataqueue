@@ -13,6 +13,10 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    * Timeout for this job in milliseconds. If not set, uses the processor default or unlimited.
    */
   timeoutMs?: number;
+  /**
+   * Tags for this job. Used for grouping, searching, or batch operations.
+   */
+  tags?: string[];
 }
 
 export enum JobEventType {
@@ -89,6 +93,10 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * The time the job was last cancelled.
    */
   lastCancelledAt: Date | null;
+  /**
+   * Tags for this job. Used for grouping, searching, or batch operations.
+   */
+  tags?: string[];
 }
 
 export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
@@ -169,6 +177,8 @@ export interface JobQueueConfig {
   verbose?: boolean;
 }
 
+export type TagQueryMode = 'exact' | 'all' | 'any' | 'none';
+
 export interface JobQueue<PayloadMap> {
   /**
    * Add a job to the job queue.
@@ -190,6 +200,21 @@ export interface JobQueue<PayloadMap> {
    */
   getJobsByStatus: <T extends JobType<PayloadMap>>(
     status: JobStatus,
+    limit?: number,
+    offset?: number,
+  ) => Promise<JobRecord<PayloadMap, T>[]>;
+  /**
+   * Get jobs by tag(s).
+   * - Modes:
+   *   - 'exact': Jobs with exactly the same tags (no more, no less)
+   *   - 'all': Jobs that have all the given tags (can have more)
+   *   - 'any': Jobs that have at least one of the given tags
+   *   - 'none': Jobs that have none of the given tags
+   * - Default mode is 'all'.
+   */
+  getJobsByTags: <T extends JobType<PayloadMap>>(
+    tags: string[],
+    mode?: TagQueryMode,
     limit?: number,
     offset?: number,
   ) => Promise<JobRecord<PayloadMap, T>[]>;
@@ -229,11 +254,13 @@ export interface JobQueue<PayloadMap> {
    *   - jobType: The job type to cancel.
    *   - priority: The priority of the job to cancel.
    *   - runAt: The time the job is scheduled to run at.
+   *   - tags: An object with 'values' (string[]) and 'mode' (TagQueryMode) for tag-based cancellation.
    */
   cancelAllUpcomingJobs: (filters?: {
     jobType?: string;
     priority?: number;
     runAt?: Date;
+    tags?: { values: string[]; mode?: TagQueryMode };
   }) => Promise<number>;
   /**
    * Create a job processor. Handlers must be provided per-processor.
