@@ -66,26 +66,18 @@ await jobQueue.cancelAllUpcomingJobs({ runAt: runAt });
 
 // Combine filters
 await jobQueue.cancelAllUpcomingJobs({ jobType: 'email', priority: 2 });
-```
 
-This will set the status of all jobs that are still pending (not yet started or scheduled for the future) to `cancelled`.
-
-## Cancel Jobs by Tags
-
-You can cancel jobs by their tags using the `cancelAllUpcomingJobs` method with the `tags` filter (an object with `values` and `mode`):
-
-```typescript
-// Cancel all jobs with both 'welcome' and 'user' tags
+// Cancel all jobs with both 'welcome' and 'user' tags. The jobs can have other tags.
 await jobQueue.cancelAllUpcomingJobs({
   tags: { values: ['welcome', 'user'], mode: 'all' },
 });
 
-// Cancel all jobs with any of the tags
+// Cancel all jobs with any of the tags. The jobs can have other tags.
 await jobQueue.cancelAllUpcomingJobs({
   tags: { values: ['foo', 'bar'], mode: 'any' },
 });
 
-// Cancel all jobs with exactly the given tags
+// Cancel all jobs with exactly the given tags. The jobs cannot have other tags.
 await jobQueue.cancelAllUpcomingJobs({
   tags: { values: ['foo', 'bar'], mode: 'exact' },
 });
@@ -94,7 +86,12 @@ await jobQueue.cancelAllUpcomingJobs({
 await jobQueue.cancelAllUpcomingJobs({
   tags: { values: ['foo', 'bar'], mode: 'none' },
 });
+
+// Combine filters
+await jobQueue.cancelAllUpcomingJobs({
+  jobType: 'email',
+  tags: { values: ['welcome', 'user'], mode: 'all' },
+});
 ```
 
-- The `tags.values` argument is an array of tags to match.
-- The `tags.mode` argument is the tag query mode. See [Tags](/api/tags) for more details.
+This will set the status of all jobs that are still pending (not yet started or scheduled for the future) and match the filters to `cancelled`.
