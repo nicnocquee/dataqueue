@@ -38,3 +38,17 @@ The `JobRecord` interface represents a job stored in the queue, including its st
 - `lastFailedAt`: _Date | null_ — When the job last failed.
 - `lastCancelledAt`: _Date | null_ — When the job was last
   cancelled.
+- `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
+
+## Example
+
+```json
+{
+  "id": 1,
+  "jobType": "email",
+  "payload": { "to": "user@example.com", "subject": "Hello" },
+  "status": "pending",
+  "createdAt": "2024-06-01T12:00:00Z",
+  "tags": ["welcome", "user"]
+}
+```

@@ -5,8 +5,6 @@ import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 import { JobEvent, JobEventType } from './types.js';
 import { objectKeysToCamelCase } from './utils.js';
 
-// Example integration test setup
-
 describe('queue integration', () => {
   let pool: Pool;
   let dbName: string;
@@ -499,5 +497,262 @@ describe('job lifecycle timestamp columns', () => {
     await queue.getNextBatch(pool, 'worker-ts', 1);
     const job = await getJobRow(jobId);
     expect(job.lastRetriedAt).not.toBeNull();
+  });
+});
+
+describe('tags feature', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('should add a job with tags and retrieve it by tags (all mode)', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'tagged@example.com' },
+      tags: ['welcome', 'user:1'],
+    });
+    const jobs = await queue.getJobsByTags(pool, ['welcome'], 'all');
+    expect(jobs.map((j) => j.id)).toContain(jobId);
+    expect(jobs[0].tags).toContain('welcome');
+    expect(jobs[0].tags).toContain('user:1');
+  });
+
+  it('should only return jobs that match all specified tags (all mode)', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'a@example.com' },
+        tags: ['foo', 'bar'],
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'b@example.com' },
+        tags: ['foo'],
+      },
+    );
+
+    const jobId3 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'c@example.com' },
+        tags: ['foo', 'bar', 'baz'],
+      },
+    );
+    const jobs = await queue.getJobsByTags(pool, ['foo', 'bar'], 'all');
+    expect(jobs.map((j) => j.id)).toContain(jobId1);
+    expect(jobs.map((j) => j.id)).not.toContain(jobId2);
+    expect(jobs.map((j) => j.id)).toContain(jobId3);
+  });
+
+  it('should return jobs with exactly the same tags (exact mode)', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'a@example.com' },
+        tags: ['foo', 'bar'],
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'b@example.com' },
+        tags: ['foo', 'bar', 'baz'],
+      },
+    );
+    const jobs = await queue.getJobsByTags(pool, ['foo', 'bar'], 'exact');
+    expect(jobs.map((j) => j.id)).toContain(jobId1);
+    expect(jobs.map((j) => j.id)).not.toContain(jobId2);
+  });
+
+  it('should return jobs that have any of the given tags (any mode)', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'a@example.com' },
+        tags: ['foo', 'bar'],
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'b@example.com' },
+        tags: ['baz'],
+      },
+    );
+    const jobs = await queue.getJobsByTags(pool, ['bar', 'baz'], 'any');
+    expect(jobs.map((j) => j.id)).toContain(jobId1);
+    expect(jobs.map((j) => j.id)).toContain(jobId2);
+  });
+
+  it('should return jobs that have none of the given tags (none mode)', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'a@example.com' },
+        tags: ['foo'],
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'b@example.com' },
+        tags: ['bar'],
+      },
+    );
+    const jobId3 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'c@example.com' },
+        tags: ['baz'],
+      },
+    );
+    const jobs = await queue.getJobsByTags(pool, ['foo', 'bar'], 'none');
+    expect(jobs.map((j) => j.id)).toContain(jobId3);
+    expect(jobs.map((j) => j.id)).not.toContain(jobId1);
+    expect(jobs.map((j) => j.id)).not.toContain(jobId2);
+  });
+
+  it('should cancel jobs by tags (all mode)', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'cancelme@example.com' },
+      tags: ['cancel', 'urgent'],
+    });
+    const cancelled = await queue.cancelJobsByTags(
+      pool,
+      ['cancel', 'urgent'],
+      'all',
+    );
+    expect(cancelled).toBeGreaterThanOrEqual(1);
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('cancelled');
+  });
+
+  it('should cancel jobs by tags (exact mode)', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'cancel1@example.com' },
+        tags: ['cancel', 'urgent'],
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'cancel2@example.com' },
+        tags: ['cancel', 'urgent', 'other'],
+      },
+    );
+    const cancelled = await queue.cancelJobsByTags(
+      pool,
+      ['cancel', 'urgent'],
+      'exact',
+    );
+    expect(cancelled).toBe(1);
+    const job1 = await queue.getJob(pool, jobId1);
+    const job2 = await queue.getJob(pool, jobId2);
+    expect(job1?.status).toBe('cancelled');
+    expect(job2?.status).toBe('pending');
+  });
+
+  it('should cancel jobs by tags (any mode)', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'cancel1@example.com' },
+        tags: ['cancel', 'urgent'],
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'cancel2@example.com' },
+        tags: ['other'],
+      },
+    );
+    const cancelled = await queue.cancelJobsByTags(
+      pool,
+      ['cancel', 'other'],
+      'any',
+    );
+    expect(cancelled).toBe(2);
+    const job1 = await queue.getJob(pool, jobId1);
+    const job2 = await queue.getJob(pool, jobId2);
+    expect(job1?.status).toBe('cancelled');
+    expect(job2?.status).toBe('cancelled');
+  });
+
+  it('should cancel jobs by tags (none mode)', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'cancel1@example.com' },
+        tags: ['foo'],
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'cancel2@example.com' },
+        tags: ['bar'],
+      },
+    );
+    const jobId3 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'keep@example.com' },
+        tags: ['baz'],
+      },
+    );
+    const cancelled = await queue.cancelJobsByTags(
+      pool,
+      ['foo', 'bar'],
+      'none',
+    );
+    expect(cancelled).toBe(1);
+    const job1 = await queue.getJob(pool, jobId1);
+    const job2 = await queue.getJob(pool, jobId2);
+    const job3 = await queue.getJob(pool, jobId3);
+    expect(job1?.status).toBe('pending');
+    expect(job2?.status).toBe('pending');
+    expect(job3?.status).toBe('cancelled');
+  });
+
+  it('should handle jobs with no tags', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'notag@example.com' },
+    });
+    const jobs = await queue.getJobsByTags(pool, ['anytag'], 'all');
+    expect(jobs.map((j) => j.id)).not.toContain(jobId);
   });
 });

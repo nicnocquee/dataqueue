@@ -19,3 +19,15 @@ To get jobs by status:
 ```typescript
 const jobs = await jobQueue.getJobsByStatus(pool, status, limit, offset);
 ```
+
+## Get Jobs by Tags
+
+You can get jobs by their tags using the `getJobsByTags` method:
+
+```typescript
+const jobs = await jobQueue.getJobsByTags(['welcome', 'user'], 'all', 10, 0);
+```
+
+- The first argument is an array of tags to match.
+- The second argument is the tag query mode. See [Tags](/api/tags) for more details.
+- The third and fourth arguments are optional for pagination.

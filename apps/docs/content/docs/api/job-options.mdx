@@ -16,6 +16,7 @@ The `JobOptions` interface defines the options for creating a new job in the que
 - `runAt?`: _Date | null_ — When to run the job (default: now).
 - `timeoutMs?`: _number_ — Timeout for this job in milliseconds.
   If not set, uses the processor default or unlimited.
+- `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
 
 ## Example
 
@@ -27,5 +28,6 @@ const job = {
   priority: 10,
   runAt: new Date(Date.now() + 60000), // run in 1 minute
   timeoutMs: 30000, // 30 seconds
+  tags: ['welcome', 'user'], // tags for grouping/searching
 };
 ```

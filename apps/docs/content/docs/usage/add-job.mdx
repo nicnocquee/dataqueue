@@ -31,6 +31,7 @@ export const sendEmail = async ({
       },
       priority: 10, // Higher number = higher priority
       runAt: runAt,
+      tags: ['welcome', 'user'], // Add tags for grouping/searching
     });
 
     revalidatePath('/');
@@ -45,3 +46,4 @@ export const sendEmail = async ({
 In the example above, a job is added to the queue to send an email. The job type is `send_email`, and the payload includes the recipient's email, subject, and body.
 
 When adding a job, you can set its `priority`, schedule when it should run using `runAt`, and specify a timeout in milliseconds with `timeoutMs`.
+You can also add `tags` (an array of strings) to group, search, or batch jobs by category.

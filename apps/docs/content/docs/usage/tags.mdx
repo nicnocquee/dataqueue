@@ -1,0 +1,39 @@
+---
+title: Tags
+---
+
+You can use tags to group, search, and batch jobs in DataQueue. Tags are arbitrary strings you assign to jobs when adding them. You can then query or cancel jobs by their tags.
+
+## Adding Tags to Jobs
+
+When adding a job, use the `tags` field:
+
+```typescript
+await jobQueue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com', subject: 'Hello' },
+  tags: ['welcome', 'user'],
+});
+```
+
+## Querying Jobs by Tags
+
+Use `getJobsByTags` to find jobs with specific tags:
+
+```typescript
+// Find jobs with both 'welcome' and 'user' tags
+const jobs = await jobQueue.getJobsByTags(['welcome', 'user'], 'all');
+```
+
+## Canceling Jobs by Tags
+
+Use `cancelJobsByTags` to cancel jobs with specific tags:
+
+```typescript
+// Cancel jobs with any of the given tags
+await jobQueue.cancelJobsByTags(['welcome', 'user'], 'any');
+```
+
+## Tag Query Modes
+
+See [Tags](/api/tags) for more details.

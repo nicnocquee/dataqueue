@@ -8,6 +8,7 @@
     "processor",
     "job-handlers",
     "db-util",
-    "failure-reason"
+    "failure-reason",
+    "tags"
   ]
 }

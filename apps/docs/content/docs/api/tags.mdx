@@ -1,0 +1,54 @@
+---
+title: Tags
+---
+
+The tags feature lets you group, search, and batch jobs using arbitrary string tags. Tags can be set when adding a job and used in various JobQueue methods.
+
+## Tags in JobOptions
+
+You can assign tags to a job when adding it:
+
+```typescript
+await jobQueue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com', subject: 'Hello' },
+  tags: ['welcome', 'user'],
+});
+```
+
+## Tags in JobRecord
+
+The `tags` field is available on JobRecord objects:
+
+```json
+{
+  "id": 1,
+  "jobType": "email",
+  "tags": ["welcome", "user"]
+}
+```
+
+## Tag Query Methods
+
+### getJobsByTags
+
+```typescript
+const jobs = await jobQueue.getJobsByTags(['welcome', 'user'], 'all');
+```
+
+### cancelJobsByTags
+
+```typescript
+await jobQueue.cancelJobsByTags(['welcome', 'user'], 'any');
+```
+
+## TagQueryMode
+
+The `mode` parameter controls how tags are matched:
+
+- `'exact'`: Jobs with exactly the same tags (no more, no less)
+- `'all'`: Jobs that have all the given tags (can have more)
+- `'any'`: Jobs that have at least one of the given tags
+- `'none'`: Jobs that have none of the given tags
+
+The default mode is `'all'`.

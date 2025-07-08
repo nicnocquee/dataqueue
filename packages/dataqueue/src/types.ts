@@ -13,6 +13,10 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    * Timeout for this job in milliseconds. If not set, uses the processor default or unlimited.
    */
   timeoutMs?: number;
+  /**
+   * Tags for this job. Used for grouping, searching, or batch operations.
+   */
+  tags?: string[];
 }
 
 export enum JobEventType {
@@ -89,6 +93,10 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * The time the job was last cancelled.
    */
   lastCancelledAt: Date | null;
+  /**
+   * Tags for this job. Used for grouping, searching, or batch operations.
+   */
+  tags?: string[];
 }
 
 export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
@@ -169,6 +177,8 @@ export interface JobQueueConfig {
   verbose?: boolean;
 }
 
+export type TagQueryMode = 'exact' | 'all' | 'any' | 'none';
+
 export interface JobQueue<PayloadMap> {
   /**
    * Add a job to the job queue.
@@ -194,6 +204,21 @@ export interface JobQueue<PayloadMap> {
     offset?: number,
   ) => Promise<JobRecord<PayloadMap, T>[]>;
   /**
+   * Get jobs by tag(s).
+   * - Modes:
+   *   - 'exact': Jobs with exactly the same tags (no more, no less)
+   *   - 'all': Jobs that have all the given tags (can have more)
+   *   - 'any': Jobs that have at least one of the given tags
+   *   - 'none': Jobs that have none of the given tags
+   * - Default mode is 'all'.
+   */
+  getJobsByTags: <T extends JobType<PayloadMap>>(
+    tags: string[],
+    mode?: TagQueryMode,
+    limit?: number,
+    offset?: number,
+  ) => Promise<JobRecord<PayloadMap, T>[]>;
+  /**
    * Get all jobs.
    */
   getAllJobs: <T extends JobType<PayloadMap>>(
@@ -214,6 +239,16 @@ export interface JobQueue<PayloadMap> {
    * - This will set the job status to 'cancelled' and clear the locked_at and locked_by.
    */
   cancelJob: (jobId: number) => Promise<void>;
+  /**
+   * Cancel jobs by tag(s).
+   * - Modes:
+   *   - 'exact': Jobs with exactly the same tags (no more, no less)
+   *   - 'all': Jobs that have all the given tags (can have more)
+   *   - 'any': Jobs that have at least one of the given tags
+   *   - 'none': Jobs that have none of the given tags
+   * - Default mode is 'all'.
+   */
+  cancelJobsByTags: (tags: string[], mode?: TagQueryMode) => Promise<number>;
   /**
    * Reclaim stuck jobs.
    * - If a process (e.g., API route or worker) crashes after marking a job as 'processing' but before completing it, the job can remain stuck in the 'processing' state indefinitely. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as 'completed' or 'failed'.

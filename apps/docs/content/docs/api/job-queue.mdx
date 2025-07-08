@@ -73,6 +73,7 @@ interface JobOptions {
   priority?: number;
   runAt?: Date | null;
   timeoutMs?: number;
+  tags?: string[];
 }
 ```
 
@@ -82,6 +83,7 @@ interface JobOptions {
 - `priority`: A number containing the priority of the job.
 - `runAt`: A date containing the time the job is scheduled to run at.
 - `timeoutMs`: A number containing the timeout for the job in milliseconds.
+- `tags`: An array of strings for grouping, searching, or batch operations.
 
 ### getJob
 
@@ -230,3 +232,27 @@ getPool(): Pool
 ```
 
 Get the database pool.
+
+### getJobsByTags
+
+```ts
+getJobsByTags(tags: string[], mode?: TagQueryMode, limit?: number, offset?: number): Promise<JobRecord[]>
+```
+
+Get jobs by tag(s).
+
+- `tags`: An array of tags to filter jobs.
+- `mode`: (optional) Tag query mode. See [Tags](/api/tags) for more details.
+- `limit`: (optional) Maximum number of jobs to return.
+- `offset`: (optional) Offset for pagination.
+
+### cancelJobsByTags
+
+```ts
+cancelJobsByTags(tags: string[], mode?: TagQueryMode): Promise<number>
+```
+
+Cancel jobs by tag(s).
+
+- `tags`: An array of tags to filter jobs.
+- `mode`: (optional) Tag query mode. See [Tags](/api/tags) for more details.

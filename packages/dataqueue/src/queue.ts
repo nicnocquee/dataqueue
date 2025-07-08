@@ -5,6 +5,7 @@ import {
   FailureReason,
   JobEvent,
   JobEventType,
+  TagQueryMode,
 } from './types.js';
 import { log } from './log-context.js';
 
@@ -43,6 +44,7 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     priority = 0,
     runAt = null,
     timeoutMs = undefined,
+    tags = undefined,
   }: JobOptions<PayloadMap, T>,
 ): Promise<number> => {
   const client = await pool.connect();
@@ -51,29 +53,45 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     if (runAt) {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority, run_at, timeout_ms) 
-         VALUES ($1, $2, $3, $4, $5, $6) 
+          (job_type, payload, max_attempts, priority, run_at, timeout_ms, tags) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7) 
          RETURNING id`,
-        [jobType, payload, maxAttempts, priority, runAt, timeoutMs ?? null],
+        [
+          jobType,
+          payload,
+          maxAttempts,
+          priority,
+          runAt,
+          timeoutMs ?? null,
+          tags ?? null,
+        ],
       );
       log(
-        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, runAt ${runAt.toISOString()}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}`,
+        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, runAt ${runAt.toISOString()}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}, tags ${JSON.stringify(tags)}`,
       );
     } else {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority, timeout_ms) 
-         VALUES ($1, $2, $3, $4, $5) 
+          (job_type, payload, max_attempts, priority, timeout_ms, tags) 
+         VALUES ($1, $2, $3, $4, $5, $6) 
          RETURNING id`,
-        [jobType, payload, maxAttempts, priority, timeoutMs ?? null],
+        [
+          jobType,
+          payload,
+          maxAttempts,
+          priority,
+          timeoutMs ?? null,
+          tags ?? null,
+        ],
       );
       log(
-        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}`,
+        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}, tags ${JSON.stringify(tags)}`,
       );
     }
     await recordJobEvent(pool, result.rows[0].id, JobEventType.Added, {
       jobType,
       payload,
+      tags,
     });
     return result.rows[0].id;
   } catch (error) {
@@ -544,6 +562,112 @@ export const getJobEvents = async (
       [jobId],
     );
     return res.rows as JobEvent[];
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Get jobs by tags (matches all specified tags)
+ */
+export const getJobsByTags = async <
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(
+  pool: Pool,
+  tags: string[],
+  mode: TagQueryMode = 'all',
+  limit = 100,
+  offset = 0,
+): Promise<JobRecord<PayloadMap, T>[]> => {
+  const client = await pool.connect();
+  try {
+    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags
+       FROM job_queue`;
+    let params: any[] = [];
+    switch (mode) {
+      case 'exact':
+        query += ' WHERE tags = $1';
+        params = [tags];
+        break;
+      case 'all':
+        query += ' WHERE tags @> $1';
+        params = [tags];
+        break;
+      case 'any':
+        query += ' WHERE tags && $1';
+        params = [tags];
+        break;
+      case 'none':
+        query += ' WHERE NOT (tags && $1)';
+        params = [tags];
+        break;
+      default:
+        query += ' WHERE tags @> $1';
+        params = [tags];
+    }
+    query += ' ORDER BY created_at DESC LIMIT $2 OFFSET $3';
+    params.push(limit, offset);
+    const result = await client.query(query, params);
+    log(
+      `Found ${result.rows.length} jobs by tags ${JSON.stringify(tags)} (mode: ${mode})`,
+    );
+    return result.rows.map((job) => ({
+      ...job,
+      payload: job.payload,
+      timeoutMs: job.timeoutMs,
+      failureReason: job.failureReason,
+    }));
+  } catch (error) {
+    log(
+      `Error getting jobs by tags ${JSON.stringify(tags)} (mode: ${mode}): ${error}`,
+    );
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Cancel jobs by tags (matches all specified tags)
+ */
+export const cancelJobsByTags = async (
+  pool: Pool,
+  tags: string[],
+  mode: TagQueryMode = 'all',
+): Promise<number> => {
+  const client = await pool.connect();
+  try {
+    let query = `UPDATE job_queue
+       SET status = 'cancelled', updated_at = NOW(), last_cancelled_at = NOW()
+       WHERE status = 'pending'`;
+    switch (mode) {
+      case 'exact':
+        query += ' AND tags = $1';
+        break;
+      case 'all':
+        query += ' AND tags @> $1';
+        break;
+      case 'any':
+        query += ' AND tags && $1';
+        break;
+      case 'none':
+        query += ' AND NOT (tags && $1)';
+        break;
+      default:
+        query += ' AND tags @> $1';
+    }
+    query += ' RETURNING id';
+    const result = await client.query(query, [tags]);
+    log(
+      `Cancelled ${result.rowCount} jobs by tags ${JSON.stringify(tags)} (mode: ${mode})`,
+    );
+    return result.rowCount || 0;
+  } catch (error) {
+    log(
+      `Error cancelling jobs by tags ${JSON.stringify(tags)} (mode: ${mode}): ${error}`,
+    );
+    throw error;
   } finally {
     client.release();
   }
