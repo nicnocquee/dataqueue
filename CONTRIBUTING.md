@@ -18,7 +18,8 @@ Thank you for your interest in contributing to **dataqueue**! Your help is great
 ## Monorepo Structure
 
 - `packages/dataqueue`: The main library package.
-- `apps/demo-nextjs`: Example Next.js app using the library.
+- `apps/docs`: The documentation site.
+- `apps/demo`: Example Next.js app using the library.
 
 ## Getting Started
 
@@ -80,6 +81,13 @@ Thank you for your interest in contributing to **dataqueue**! Your help is great
 - Avoid using the `any` type; prefer strict typing.
 - Group related code (components, hooks, utils) together for easier maintenance.
 
+## Documentation
+
+- The documentation is using Fumadocs and written in [MDX](https://mdxjs.com/) format.
+- The documentation is written in the `apps/docs/content/docs` directory.
+- Create or update the documentation for the changes you made.
+- Run `pnpm dev` in the `apps/docs` directory to preview the documentation.
+
 ## Testing
 
 - All new features and bug fixes should include relevant tests.
@@ -90,16 +98,24 @@ Thank you for your interest in contributing to **dataqueue**! Your help is great
   ```
 - Add tests in the `src/` directory of the package with the name `*.test.ts`, following the existing test structure.
 - Tests should be deterministic and not depend on external state.
-- In this project, the tests don't mock the database. They use the real database. That's why you need to run `docker-compose up` before running the tests. Before each test, a new schema in the PostgreSQL database will be created. The code will be executed in the context of the new schema.
+- In this project, the tests don't mock the database. They use the real postgres database. That's why you need to run `docker-compose up` before running the tests. Before each test, a new schema in the PostgreSQL database will be created. The code will be executed in the context of the new schema. See the existing tests for reference.
 
 ## Submitting Changes
 
 - Ensure your branch is up to date with `main` before opening a PR.
+- Run `pnpm changeset:add` to add a new changeset. Here you can choose the type of change (major, minor, patch) and the scope of the change.
+- Make changes in the changeset if needed. Then commit the changeset.
 - Provide a clear description of your changes in the PR.
 - Reference any related issues (e.g., `Resolves #123`).
 - Be responsive to feedback and make requested changes promptly.
 - PRs should pass all CI checks before merging.
 - **Publishing:** The library is published to npm automatically by CI using Changesets when changes are merged to `main` and a version bump is present.
+
+## Publishing
+
+- Run `pnpm changeset:version` to bump the version of the package. This will bump the version of the package, update the changelog, and delete the changeset files that are not the README.md.
+- Commit the changes and push to the `main` branch.
+- Create a new release on GitHub. Use the version number from the changeset as the release version. Use the changelog as the release description.
 
 ## Reporting Issues
 
