@@ -421,7 +421,7 @@ export const cancelAllUpcomingJobs = async (
   filters?: {
     jobType?: string;
     priority?: number;
-    runAt?: Date;
+    runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
     tags?: { values: string[]; mode?: TagQueryMode };
   },
 ): Promise<number> => {
@@ -443,8 +443,32 @@ export const cancelAllUpcomingJobs = async (
         params.push(filters.priority);
       }
       if (filters.runAt) {
-        query += ` AND run_at = $${paramIdx++}`;
-        params.push(filters.runAt);
+        if (filters.runAt instanceof Date) {
+          query += ` AND run_at = $${paramIdx++}`;
+          params.push(filters.runAt);
+        } else if (typeof filters.runAt === 'object') {
+          const ops = filters.runAt;
+          if (ops.gt) {
+            query += ` AND run_at > $${paramIdx++}`;
+            params.push(ops.gt);
+          }
+          if (ops.gte) {
+            query += ` AND run_at >= $${paramIdx++}`;
+            params.push(ops.gte);
+          }
+          if (ops.lt) {
+            query += ` AND run_at < $${paramIdx++}`;
+            params.push(ops.lt);
+          }
+          if (ops.lte) {
+            query += ` AND run_at <= $${paramIdx++}`;
+            params.push(ops.lte);
+          }
+          if (ops.eq) {
+            query += ` AND run_at = $${paramIdx++}`;
+            params.push(ops.eq);
+          }
+        }
       }
       if (
         filters.tags &&
@@ -656,6 +680,126 @@ export const getJobsByTags = async <
     log(
       `Error getting jobs by tags ${JSON.stringify(tags)} (mode: ${mode}): ${error}`,
     );
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export const getJobs = async <PayloadMap, T extends keyof PayloadMap & string>(
+  pool: Pool,
+  filters?: {
+    jobType?: string;
+    priority?: number;
+    runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+    tags?: { values: string[]; mode?: TagQueryMode };
+  },
+  limit = 100,
+  offset = 0,
+): Promise<JobRecord<PayloadMap, T>[]> => {
+  const client = await pool.connect();
+  try {
+    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags FROM job_queue`;
+    const params: any[] = [];
+    let where: string[] = [];
+    let paramIdx = 1;
+    if (filters) {
+      if (filters.jobType) {
+        where.push(`job_type = $${paramIdx++}`);
+        params.push(filters.jobType);
+      }
+      if (filters.priority !== undefined) {
+        where.push(`priority = $${paramIdx++}`);
+        params.push(filters.priority);
+      }
+      if (filters.runAt) {
+        if (filters.runAt instanceof Date) {
+          where.push(`run_at = $${paramIdx++}`);
+          params.push(filters.runAt);
+        } else if (
+          typeof filters.runAt === 'object' &&
+          (filters.runAt.gt !== undefined ||
+            filters.runAt.gte !== undefined ||
+            filters.runAt.lt !== undefined ||
+            filters.runAt.lte !== undefined ||
+            filters.runAt.eq !== undefined)
+        ) {
+          const ops = filters.runAt as {
+            gt?: Date;
+            gte?: Date;
+            lt?: Date;
+            lte?: Date;
+            eq?: Date;
+          };
+          if (ops.gt) {
+            where.push(`run_at > $${paramIdx++}`);
+            params.push(ops.gt);
+          }
+          if (ops.gte) {
+            where.push(`run_at >= $${paramIdx++}`);
+            params.push(ops.gte);
+          }
+          if (ops.lt) {
+            where.push(`run_at < $${paramIdx++}`);
+            params.push(ops.lt);
+          }
+          if (ops.lte) {
+            where.push(`run_at <= $${paramIdx++}`);
+            params.push(ops.lte);
+          }
+          if (ops.eq) {
+            where.push(`run_at = $${paramIdx++}`);
+            params.push(ops.eq);
+          }
+        }
+      }
+      if (
+        filters.tags &&
+        filters.tags.values &&
+        filters.tags.values.length > 0
+      ) {
+        const mode = filters.tags.mode || 'all';
+        const tagValues = filters.tags.values;
+        switch (mode) {
+          case 'exact':
+            where.push(`tags = $${paramIdx++}`);
+            params.push(tagValues);
+            break;
+          case 'all':
+            where.push(`tags @> $${paramIdx++}`);
+            params.push(tagValues);
+            break;
+          case 'any':
+            where.push(`tags && $${paramIdx++}`);
+            params.push(tagValues);
+            break;
+          case 'none':
+            where.push(`NOT (tags && $${paramIdx++})`);
+            params.push(tagValues);
+            break;
+          default:
+            where.push(`tags @> $${paramIdx++}`);
+            params.push(tagValues);
+        }
+      }
+    }
+    if (where.length > 0) {
+      query += ` WHERE ${where.join(' AND ')}`;
+    }
+    // Always add LIMIT and OFFSET as the last parameters
+    paramIdx = params.length + 1;
+    query += ` ORDER BY created_at DESC LIMIT $${paramIdx++} OFFSET $${paramIdx}`;
+    params.push(limit, offset);
+    const result = await client.query(query, params);
+    log(`Found ${result.rows.length} jobs`);
+    return result.rows.map((job) => ({
+      ...job,
+      payload: job.payload,
+      timeoutMs: job.timeoutMs,
+      failureReason: job.failureReason,
+    }));
+  } catch (error) {
+    log(`Error getting jobs: ${error}`);
     throw error;
   } finally {
     client.release();

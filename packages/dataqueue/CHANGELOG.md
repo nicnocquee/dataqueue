@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.21.0
+
+### Minor Changes
+
+- Added getJobs by filters and updated the cancelAllUpcomingJobs runAt filter
+
 ## 1.20.0
 
 ### Minor Changes

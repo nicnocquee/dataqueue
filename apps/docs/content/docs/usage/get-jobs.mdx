@@ -5,19 +5,19 @@ title: Get Jobs
 To get a job by its ID:
 
 ```typescript
-const job = await jobQueue.getJob(pool, jobId);
+const job = await jobQueue.getJob(jobId);
 ```
 
 To get all jobs:
 
 ```typescript
-const jobs = await jobQueue.getAllJobs(pool, limit, offset);
+const jobs = await jobQueue.getAllJobs(limit, offset);
 ```
 
 To get jobs by status:
 
 ```typescript
-const jobs = await jobQueue.getJobsByStatus(pool, status, limit, offset);
+const jobs = await jobQueue.getJobsByStatus(status, limit, offset);
 ```
 
 ## Get Jobs by Tags
@@ -31,3 +31,29 @@ const jobs = await jobQueue.getJobsByTags(['welcome', 'user'], 'all', 10, 0);
 - The first argument is an array of tags to match.
 - The second argument is the tag query mode. See [Tags](/api/tags) for more details.
 - The third and fourth arguments are optional for pagination.
+
+## Get Jobs by Filter
+
+You can retrieve jobs using multiple filters with the `getJobs` method:
+
+```typescript
+const jobs = await jobQueue.getJobs(
+  {
+    jobType: 'email',
+    priority: 2,
+    runAt: { gte: new Date('2024-01-01'), lt: new Date('2024-02-01') },
+    tags: { values: ['welcome', 'user'], mode: 'all' },
+  },
+  10,
+  0,
+);
+```
+
+- The first argument is an optional filter object. You can filter by:
+  - `jobType`: The job type (string).
+  - `priority`: The job priority (number).
+  - `runAt`: The scheduled time. You can use a `Date` for exact match, or an object with `gt`, `gte`, `lt`, `lte`, or `eq` for range queries.
+  - `tags`: An object with `values` (array of tags) and `mode` (see [Tags](/api/tags)).
+- The second and third arguments are optional for pagination (`limit`, `offset`).
+
+You can combine any of these filters. If no filters are provided, all jobs are returned (with pagination if specified).
