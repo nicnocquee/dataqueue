@@ -60,12 +60,48 @@ await jobQueue.cancelAllUpcomingJobs({ jobType: 'email' });
 // Cancel only jobs with priority 2
 await jobQueue.cancelAllUpcomingJobs({ priority: 2 });
 
-// Cancel only jobs scheduled for a specific time
+// Cancel only jobs scheduled for a specific time (exact match)
 const runAt = new Date('2024-06-01T12:00:00Z');
-await jobQueue.cancelAllUpcomingJobs({ runAt: runAt });
+await jobQueue.cancelAllUpcomingJobs({ runAt });
 
-// Combine filters
-await jobQueue.cancelAllUpcomingJobs({ jobType: 'email', priority: 2 });
+// Cancel jobs scheduled after a certain time
+await jobQueue.cancelAllUpcomingJobs({
+  runAt: { gt: new Date('2024-06-01T12:00:00Z') },
+});
+
+// Cancel jobs scheduled on or after a certain time
+await jobQueue.cancelAllUpcomingJobs({
+  runAt: { gte: new Date('2024-06-01T12:00:00Z') },
+});
+
+// Cancel jobs scheduled before a certain time
+await jobQueue.cancelAllUpcomingJobs({
+  runAt: { lt: new Date('2024-06-01T12:00:00Z') },
+});
+
+// Cancel jobs scheduled on or before a certain time
+await jobQueue.cancelAllUpcomingJobs({
+  runAt: { lte: new Date('2024-06-01T12:00:00Z') },
+});
+
+// Cancel jobs scheduled exactly at a certain time
+await jobQueue.cancelAllUpcomingJobs({
+  runAt: { eq: new Date('2024-06-01T12:00:00Z') },
+});
+
+// Cancel jobs scheduled between two times (inclusive)
+await jobQueue.cancelAllUpcomingJobs({
+  runAt: {
+    gte: new Date('2024-06-01T00:00:00Z'),
+    lte: new Date('2024-06-01T23:59:59Z'),
+  },
+});
+
+// Combine runAt with other filters
+await jobQueue.cancelAllUpcomingJobs({
+  jobType: 'email',
+  runAt: { gt: new Date('2024-06-01T12:00:00Z') },
+});
 
 // Cancel all jobs with both 'welcome' and 'user' tags. The jobs can have other tags.
 await jobQueue.cancelAllUpcomingJobs({
@@ -91,7 +127,18 @@ await jobQueue.cancelAllUpcomingJobs({
 await jobQueue.cancelAllUpcomingJobs({
   jobType: 'email',
   tags: { values: ['welcome', 'user'], mode: 'all' },
+  runAt: { lt: new Date('2024-06-01T12:00:00Z') },
 });
 ```
+
+**runAt filter details:**
+
+- You can pass a single `Date` for an exact match, or an object with any of the following keys:
+  - `gt`: Greater than
+  - `gte`: Greater than or equal to
+  - `lt`: Less than
+  - `lte`: Less than or equal to
+  - `eq`: Equal to
+- All filters (`jobType`, `priority`, `runAt`, `tags`) can be combined for precise cancellation.
 
 This will set the status of all jobs that are still pending (not yet started or scheduled for the future) and match the filters to `cancelled`.

@@ -748,3 +748,452 @@ describe('tags feature', () => {
     expect(job3?.status).toBe('cancelled');
   });
 });
+
+describe('cancelAllUpcomingJobs with runAt object filter', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('should cancel jobs with runAt > filter (gt)', async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const future = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const jobIdPast = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'past@example.com' },
+        runAt: past,
+      },
+    );
+    const jobIdNow = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'now@example.com' },
+        runAt: now,
+      },
+    );
+    const jobIdFuture = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future@example.com' },
+        runAt: future,
+      },
+    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      runAt: { gt: now },
+    });
+    expect(cancelled).toBe(1);
+    const jobPast = await queue.getJob(pool, jobIdPast);
+    const jobNow = await queue.getJob(pool, jobIdNow);
+    const jobFuture = await queue.getJob(pool, jobIdFuture);
+    expect(jobPast?.status).toBe('pending');
+    expect(jobNow?.status).toBe('pending');
+    expect(jobFuture?.status).toBe('cancelled');
+  });
+
+  it('should cancel jobs with runAt >= filter (gte)', async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const future = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const jobIdPast = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'past@example.com' },
+        runAt: past,
+      },
+    );
+    const jobIdNow = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'now@example.com' },
+        runAt: now,
+      },
+    );
+    const jobIdFuture = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future@example.com' },
+        runAt: future,
+      },
+    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      runAt: { gte: now },
+    });
+    expect(cancelled).toBe(2);
+    const jobPast = await queue.getJob(pool, jobIdPast);
+    const jobNow = await queue.getJob(pool, jobIdNow);
+    const jobFuture = await queue.getJob(pool, jobIdFuture);
+    expect(jobPast?.status).toBe('pending');
+    expect(jobNow?.status).toBe('cancelled');
+    expect(jobFuture?.status).toBe('cancelled');
+  });
+
+  it('should cancel jobs with runAt < filter (lt)', async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const future = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const jobIdPast = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'past@example.com' },
+        runAt: past,
+      },
+    );
+    const jobIdNow = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'now@example.com' },
+        runAt: now,
+      },
+    );
+    const jobIdFuture = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future@example.com' },
+        runAt: future,
+      },
+    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      runAt: { lt: now },
+    });
+    expect(cancelled).toBe(1);
+    const jobPast = await queue.getJob(pool, jobIdPast);
+    const jobNow = await queue.getJob(pool, jobIdNow);
+    const jobFuture = await queue.getJob(pool, jobIdFuture);
+    expect(jobPast?.status).toBe('cancelled');
+    expect(jobNow?.status).toBe('pending');
+    expect(jobFuture?.status).toBe('pending');
+  });
+
+  it('should cancel jobs with runAt <= filter (lte)', async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const future = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const jobIdPast = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'past@example.com' },
+        runAt: past,
+      },
+    );
+    const jobIdNow = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'now@example.com' },
+        runAt: now,
+      },
+    );
+    const jobIdFuture = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future@example.com' },
+        runAt: future,
+      },
+    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      runAt: { lte: now },
+    });
+    expect(cancelled).toBe(2);
+    const jobPast = await queue.getJob(pool, jobIdPast);
+    const jobNow = await queue.getJob(pool, jobIdNow);
+    const jobFuture = await queue.getJob(pool, jobIdFuture);
+    expect(jobPast?.status).toBe('cancelled');
+    expect(jobNow?.status).toBe('cancelled');
+    expect(jobFuture?.status).toBe('pending');
+  });
+
+  it('should cancel jobs with runAt eq filter (eq)', async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const future = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const jobIdPast = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'past@example.com' },
+        runAt: past,
+      },
+    );
+    const jobIdNow = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'now@example.com' },
+        runAt: now,
+      },
+    );
+    const jobIdFuture = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future@example.com' },
+        runAt: future,
+      },
+    );
+    const cancelled = await queue.cancelAllUpcomingJobs(pool, {
+      runAt: { eq: now },
+    });
+    expect(cancelled).toBe(1);
+    const jobPast = await queue.getJob(pool, jobIdPast);
+    const jobNow = await queue.getJob(pool, jobIdNow);
+    const jobFuture = await queue.getJob(pool, jobIdFuture);
+    expect(jobPast?.status).toBe('pending');
+    expect(jobNow?.status).toBe('cancelled');
+    expect(jobFuture?.status).toBe('pending');
+  });
+});
+
+describe('getJobs', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('should filter by jobType', async () => {
+    const id1 = await queue.addJob<{ a: { n: number }; b: { n: number } }, 'a'>(
+      pool,
+      { jobType: 'a', payload: { n: 1 } },
+    );
+    const id2 = await queue.addJob<{ a: { n: number }; b: { n: number } }, 'b'>(
+      pool,
+      { jobType: 'b', payload: { n: 2 } },
+    );
+    const jobs = await queue.getJobs(pool, { jobType: 'a' });
+    expect(jobs.map((j) => j.id)).toContain(id1);
+    expect(jobs.map((j) => j.id)).not.toContain(id2);
+  });
+
+  it('should filter by priority', async () => {
+    const id1 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 1 },
+      priority: 1,
+    });
+    const id2 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 2 },
+      priority: 2,
+    });
+    const jobs = await queue.getJobs(pool, { priority: 2 });
+    expect(jobs.map((j) => j.id)).toContain(id2);
+    expect(jobs.map((j) => j.id)).not.toContain(id1);
+  });
+
+  it('should filter by runAt', async () => {
+    const runAt = new Date(Date.UTC(2030, 0, 1, 12, 0, 0, 0));
+    const id1 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 1 },
+      runAt,
+    });
+    const id2 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 2 },
+    });
+    const jobs = await queue.getJobs(pool, { runAt });
+    expect(jobs.map((j) => j.id)).toContain(id1);
+    expect(jobs.map((j) => j.id)).not.toContain(id2);
+  });
+
+  it('should filter jobs using runAt with gt/gte/lt/lte/eq', async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 1 day ago
+    const future = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 1 day ahead
+    const jobIdPast = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'past@example.com' },
+        runAt: past,
+      },
+    );
+    const jobIdNow = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'now@example.com' },
+        runAt: now,
+      },
+    );
+    const jobIdFuture = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future@example.com' },
+        runAt: future,
+      },
+    );
+    // eq
+    let jobs = await queue.getJobs(pool, { runAt: now });
+    expect(jobs.map((j) => j.id)).toContain(jobIdNow);
+    // gt
+    jobs = await queue.getJobs(pool, { runAt: { gt: now } });
+    expect(jobs.map((j) => j.id)).toContain(jobIdFuture);
+    expect(jobs.map((j) => j.id)).not.toContain(jobIdNow);
+    // gte
+    jobs = await queue.getJobs(pool, { runAt: { gte: now } });
+    expect(jobs.map((j) => j.id)).toContain(jobIdNow);
+    expect(jobs.map((j) => j.id)).toContain(jobIdFuture);
+    // lt
+    jobs = await queue.getJobs(pool, { runAt: { lt: now } });
+    expect(jobs.map((j) => j.id)).toContain(jobIdPast);
+    expect(jobs.map((j) => j.id)).not.toContain(jobIdNow);
+    // lte
+    jobs = await queue.getJobs(pool, { runAt: { lte: now } });
+    expect(jobs.map((j) => j.id)).toContain(jobIdPast);
+    expect(jobs.map((j) => j.id)).toContain(jobIdNow);
+  });
+
+  it('should filter by tags (all mode)', async () => {
+    const id1 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 1 },
+      tags: ['foo', 'bar'],
+    });
+    const id2 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 2 },
+      tags: ['foo'],
+    });
+    const jobs = await queue.getJobs(pool, {
+      tags: { values: ['foo', 'bar'], mode: 'all' },
+    });
+    expect(jobs.map((j) => j.id)).toContain(id1);
+    expect(jobs.map((j) => j.id)).not.toContain(id2);
+  });
+
+  it('should filter by tags (any mode)', async () => {
+    const id1 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 1 },
+      tags: ['foo'],
+    });
+    const id2 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 2 },
+      tags: ['bar'],
+    });
+    const jobs = await queue.getJobs(pool, {
+      tags: { values: ['foo', 'bar'], mode: 'any' },
+    });
+    expect(jobs.map((j) => j.id)).toContain(id1);
+    expect(jobs.map((j) => j.id)).toContain(id2);
+  });
+
+  it('should filter by tags (exact mode)', async () => {
+    const id1 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 1 },
+      tags: ['foo', 'bar'],
+    });
+    const id2 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 2 },
+      tags: ['foo', 'bar', 'baz'],
+    });
+    const jobs = await queue.getJobs(pool, {
+      tags: { values: ['foo', 'bar'], mode: 'exact' },
+    });
+    expect(jobs.map((j) => j.id)).toContain(id1);
+    expect(jobs.map((j) => j.id)).not.toContain(id2);
+  });
+
+  it('should filter by tags (none mode)', async () => {
+    const id1 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 1 },
+      tags: ['foo'],
+    });
+    const id2 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 2 },
+      tags: ['bar'],
+    });
+    const id3 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 3 },
+      tags: ['baz'],
+    });
+    const jobs = await queue.getJobs(pool, {
+      tags: { values: ['foo', 'bar'], mode: 'none' },
+    });
+    expect(jobs.map((j) => j.id)).toContain(id3);
+    expect(jobs.map((j) => j.id)).not.toContain(id1);
+    expect(jobs.map((j) => j.id)).not.toContain(id2);
+  });
+
+  it('should support pagination', async () => {
+    const ids = [];
+    for (let i = 0; i < 5; i++) {
+      ids.push(
+        await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+          jobType: 'a',
+          payload: { n: i },
+        }),
+      );
+    }
+    const firstTwo = await queue.getJobs(pool, {}, 2, 0);
+    const nextTwo = await queue.getJobs(pool, {}, 2, 2);
+    expect(firstTwo.length).toBe(2);
+    expect(nextTwo.length).toBe(2);
+    const firstIds = firstTwo.map((j) => j.id);
+    const nextIds = nextTwo.map((j) => j.id);
+    expect(firstIds.some((id) => nextIds.includes(id))).toBe(false);
+  });
+
+  it('should filter by a combination of filters', async () => {
+    const runAt = new Date(Date.UTC(2030, 0, 1, 12, 0, 0, 0));
+    const id1 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 1 },
+      priority: 1,
+      runAt,
+      tags: ['foo', 'bar'],
+    });
+    const id2 = await queue.addJob<{ a: { n: number } }, 'a'>(pool, {
+      jobType: 'a',
+      payload: { n: 2 },
+      priority: 2,
+      tags: ['foo'],
+    });
+    const jobs = await queue.getJobs(pool, {
+      jobType: 'a',
+      priority: 1,
+      runAt,
+      tags: { values: ['foo', 'bar'], mode: 'all' },
+    });
+    expect(jobs.map((j) => j.id)).toContain(id1);
+    expect(jobs.map((j) => j.id)).not.toContain(id2);
+  });
+});

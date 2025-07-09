@@ -226,6 +226,17 @@ export interface JobQueue<PayloadMap> {
     offset?: number,
   ) => Promise<JobRecord<PayloadMap, T>[]>;
   /**
+   * Get jobs by filters.
+  /**
+   * Get jobs by filters.
+   */
+  getJobs: <T extends JobType<PayloadMap>>(filters?: {
+    jobType?: string;
+    priority?: number;
+    runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+    tags?: { values: string[]; mode?: TagQueryMode };
+  }) => Promise<JobRecord<PayloadMap, T>[]>;
+  /**
    * Retry a job given its ID.
    * - This will set the job status back to 'pending', clear the locked_at and locked_by, and allow it to be picked up by other workers.
    */
@@ -253,13 +264,13 @@ export interface JobQueue<PayloadMap> {
    * - The filters are:
    *   - jobType: The job type to cancel.
    *   - priority: The priority of the job to cancel.
-   *   - runAt: The time the job is scheduled to run at.
+   *   - runAt: The time the job is scheduled to run at (now supports gt/gte/lt/lte/eq).
    *   - tags: An object with 'values' (string[]) and 'mode' (TagQueryMode) for tag-based cancellation.
    */
   cancelAllUpcomingJobs: (filters?: {
     jobType?: string;
     priority?: number;
-    runAt?: Date;
+    runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
     tags?: { values: string[]; mode?: TagQueryMode };
   }) => Promise<number>;
   /**
