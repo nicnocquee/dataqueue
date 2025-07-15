@@ -20,17 +20,9 @@ function loadPemOrFile(value?: string): string | undefined {
  *
  * SSL config example (for local file paths):
  *   ssl: {
- *     ca: 'file:///absolute/path/to/ca.crt',
- *     cert: 'file:///absolute/path/to/client.crt',
- *     key: 'file:///absolute/path/to/client.key',
- *     rejectUnauthorized: true
- *   }
- *
- * SSL config example (for Vercel or env PEM strings):
- *   ssl: {
- *     ca: process.env.PG_CA, // PEM string
- *     cert: process.env.PG_CERT, // PEM string
- *     key: process.env.PG_KEY, // PEM string
+ *     ca: process.env.PGSSLROOTCERT, // PEM string or 'file://...'
+ *     cert: process.env.PGSSLCERT,   // optional, PEM string or 'file://...'
+ *     key: process.env.PGSSLKEY,     // optional, PEM string or 'file://...'
  *     rejectUnauthorized: true
  *   }
  */
@@ -63,9 +55,9 @@ export const createPool = (config: JobQueueConfig['databaseConfig']): Pool => {
   if (config.ssl) {
     ssl = {
       ...ssl,
-      ca: loadPemOrFile(config.ssl.ca),
-      cert: loadPemOrFile(config.ssl.cert),
-      key: loadPemOrFile(config.ssl.key),
+      ca: loadPemOrFile(config.ssl.ca ?? process.env.PGSSLROOTCERT),
+      cert: loadPemOrFile(config.ssl.cert ?? process.env.PGSSLCERT),
+      key: loadPemOrFile(config.ssl.key ?? process.env.PGSSLKEY),
       rejectUnauthorized:
         config.ssl.rejectUnauthorized !== undefined
           ? config.ssl.rejectUnauthorized

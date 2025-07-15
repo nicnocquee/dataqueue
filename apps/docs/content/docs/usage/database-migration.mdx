@@ -31,6 +31,33 @@ This will apply all the necessary schema migrations so your Postgres database is
   with this process.
 </Callout>
 
+### Running migrations with SSL (Managed Postgres)
+
+Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections using a CA certificate (`.crt` file). You typically only need to provide the CA cert, but if your provider requires client authentication, you can also provide a client certificate and key.
+
+Set the following environment variables before running the migration:
+
+```bash
+PGSSLMODE=require \
+PGSSLROOTCERT=/absolute/path/to/ca.crt \
+PG_DATAQUEUE_DATABASE=your_connection_string \
+npm run migrate-dataqueue
+```
+
+- `PGSSLMODE=require` enforces SSL.
+- `PGSSLROOTCERT` should point to your provider's CA `.crt` file.
+- If your provider requires client authentication, you can also set:
+  - `PGSSLCERT=/absolute/path/to/client.crt`
+  - `PGSSLKEY=/absolute/path/to/client.key`
+
+You can also add these variables to your `.env` file:
+
+```
+PGSSLMODE=require
+PGSSLROOTCERT=/absolute/path/to/ca.crt
+PG_DATAQUEUE_DATABASE=your_connection_string
+```
+
 ### Using a custom .env file
 
 You can use the `--envPath` option to specify a custom path to your environment file. For example:

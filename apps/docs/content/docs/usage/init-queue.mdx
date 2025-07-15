@@ -45,11 +45,13 @@ const sendEmail = async () => {
 
 ## SSL Configuration
 
+Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require you to use a CA certificate (`.crt` file) to verify the server's identity when connecting over SSL. You typically do **not** need a client certificate or key—just the CA `.crt` file provided by your provider. **However, if your provider or security policy requires client authentication, you can also provide a client certificate and key.**
+
 You can configure SSL for your database connection in several ways, depending on your environment and security requirements.
 
 ### Using PEM Strings from Environment Variables
 
-This is ideal for serverless environments where you cannot mount files. Store your certificate contents as environment variables. If the value of `ca`, `cert`, or `key` does not start with `file://`, it will be used directly as a PEM string.
+This is ideal for serverless environments where you cannot mount files. Store your CA certificate, and optionally client certificate and key, as environment variables. Use the standard Postgres environment variables: `PGSSLROOTCERT`, `PGSSLCERT`, and `PGSSLKEY`. If the value does not start with `file://`, it will be used directly as a PEM string.
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -63,9 +65,9 @@ export const getJobQueue = () => {
       databaseConfig: {
         connectionString: process.env.PG_DATAQUEUE_DATABASE, // Set this in your environment
         ssl: {
-          ca: process.env.PG_CA, // PEM string
-          cert: process.env.PG_CERT, // PEM string (optional, for client auth)
-          key: process.env.PG_KEY, // PEM string (optional, for client auth)
+          ca: process.env.PGSSLROOTCERT, // PEM string: the content of your .crt file
+          cert: process.env.PGSSLCERT, // PEM string (optional, for client authentication)
+          key: process.env.PGSSLKEY, // PEM string (optional, for client authentication)
           rejectUnauthorized: true, // Always true for CA-signed certs
         },
       },
@@ -78,7 +80,7 @@ export const getJobQueue = () => {
 
 ### Using File Paths
 
-If you have certificate files on disk, provide their absolute paths using the `file://` prefix. Only values starting with `file://` will be loaded from the file system; all others are treated as PEM strings.
+If you have the CA certificate, client certificate, or key on disk, provide their absolute paths using the `file://` prefix. Only values starting with `file://` will be loaded from the file system; all others are treated as PEM strings. You can also set the environment variables `PGSSLROOTCERT`, `PGSSLCERT`, and `PGSSLKEY` to `file://` paths.
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -92,9 +94,9 @@ export const getJobQueue = () => {
       databaseConfig: {
         connectionString: process.env.PG_DATAQUEUE_DATABASE,
         ssl: {
-          ca: 'file:///absolute/path/to/ca.crt',
-          cert: 'file:///absolute/path/to/client.crt', // optional
-          key: 'file:///absolute/path/to/client.key', // optional
+          ca: 'file:///absolute/path/to/ca.crt', // Path to your provider's CA cert
+          cert: 'file:///absolute/path/to/client.crt', // optional, for client authentication
+          key: 'file:///absolute/path/to/client.key', // optional, for client authentication
           rejectUnauthorized: true,
         },
       },
@@ -107,7 +109,7 @@ export const getJobQueue = () => {
 
 ### Using Self-Signed Certificates
 
-If you are using a self-signed certificate and want to skip certificate validation (not recommended for production), set `rejectUnauthorized` to `false`. You can use either a PEM string or a `file://` path for `ca` as described above.
+If you are using a self-signed certificate and want to skip certificate validation (not recommended for production), set `rejectUnauthorized` to `false`. You can use either a PEM string or a `file://` path for `ca`, `cert`, and `key` as described above, or set the corresponding environment variables.
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -121,7 +123,9 @@ export const getJobQueue = () => {
       databaseConfig: {
         connectionString: process.env.PG_DATAQUEUE_DATABASE,
         ssl: {
-          ca: process.env.PG_CA, // PEM string or 'file://' path
+          ca: process.env.PGSSLROOTCERT, // PEM string or 'file://' path
+          cert: process.env.PGSSLCERT, // optional, PEM string or 'file://' path
+          key: process.env.PGSSLKEY, // optional, PEM string or 'file://' path
           rejectUnauthorized: false, // Accept self-signed certs (dev only)
         },
       },
@@ -133,8 +137,18 @@ export const getJobQueue = () => {
 ```
 
 <Callout type="warn">
-  **Note:**
+  <strong>Note:</strong>
   <ul>
+    <li>
+      For most managed Postgres (like DigitalOcean), you only need the CA{' '}
+      <code>.crt</code> file. Use <code>PGSSLROOTCERT</code> in your config as
+      shown above.
+    </li>
+    <li>
+      If your provider or security policy requires client authentication, you
+      can also provide <code>PGSSLCERT</code> and <code>PGSSLKEY</code> as PEM
+      strings or <code>file://</code> paths.
+    </li>
     <li>
       Only values starting with <code>file://</code> are loaded from the file
       system. All other values are treated as PEM strings.
@@ -147,5 +161,9 @@ export const getJobQueue = () => {
       For local development, <code>file://</code> paths are convenient.
     </li>
     <li>For serverless/cloud, use PEM strings via environment variables.</li>
+    <li>
+      These are the standard Postgres environment variables for SSL and are
+      supported by both the CLI and the library.
+    </li>
   </ul>
 </Callout>

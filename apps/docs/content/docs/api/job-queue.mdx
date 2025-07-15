@@ -42,7 +42,7 @@ interface DatabaseSSLConfig {
 }
 ```
 
-- `ca` - Client certificate authority as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
+- `ca` - Client certificate authority (CA) as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
 - `cert` - Client certificate as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
 - `key` - Client private key as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
 - `rejectUnauthorized` - Whether to reject unauthorized certificates (default: true)
