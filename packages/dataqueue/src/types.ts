@@ -164,6 +164,25 @@ export interface Processor {
   start: () => Promise<number>;
 }
 
+export interface DatabaseSSLConfig {
+  /**
+   * CA certificate as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
+   */
+  ca?: string;
+  /**
+   * Client certificate as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
+   */
+  cert?: string;
+  /**
+   * Client private key as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
+   */
+  key?: string;
+  /**
+   * Whether to reject unauthorized certificates (default: true)
+   */
+  rejectUnauthorized?: boolean;
+}
+
 export interface JobQueueConfig {
   databaseConfig: {
     connectionString?: string;
@@ -172,7 +191,7 @@ export interface JobQueueConfig {
     database?: string;
     user?: string;
     password?: string;
-    ssl?: any;
+    ssl?: DatabaseSSLConfig;
   };
   verbose?: boolean;
 }
