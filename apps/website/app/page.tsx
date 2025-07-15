@@ -271,7 +271,7 @@ queue.process<EmailJob>('email', async (job) => {
             <p className="mb-8 text-xl text-muted-foreground sm:text-2xl">
               DataQueue allows you to utilize your existing PostgreSQL database
               to process background jobs. No need for additional infra or
-              services.
+              services. <span className="highlight-marker">Open Source.</span>
             </p>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <a
