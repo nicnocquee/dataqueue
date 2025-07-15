@@ -31,9 +31,9 @@ This will apply all the necessary schema migrations so your Postgres database is
   with this process.
 </Callout>
 
-### Running migrations with SSL (Managed Postgres)
+### Running migrations with SSL and a custom CA
 
-Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections using a CA certificate (`.crt` file). You must set the `NODE_EXTRA_CA_CERTS` environment variable to the path of your CA certificate. This tells Node.js to trust your provider's CA for outgoing TLS connections, including Postgres.
+Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections and provide a CA certificate (`.crt` file). You can use the CA certificate to validate the server's identity. In order to successfully run the migration with custom CA, you must set the `NODE_EXTRA_CA_CERTS` environment variable to the path of your CA certificate. This tells Node.js to trust your provider's CA for outgoing TLS connections, including Postgres.
 
 ```bash
 NODE_EXTRA_CA_CERTS=/absolute/path/to/ca.crt \
@@ -41,11 +41,19 @@ PG_DATAQUEUE_DATABASE=your_connection_string \
 npm run migrate-dataqueue
 ```
 
+#### Migration without Certificate Validation
+
+For convenience, you can run the migration without certificate validation by adding the `--no-reject-unauthorized` flag to the command.
+
+```package-install
+npm run migrate-dataqueue -- --no-reject-unauthorized
+```
+
 #### Using a CA certificate in environments where you cannot upload files
 
 In some serverless or cloud environments (like Vercel, AWS Lambda, etc.), you cannot upload files directly, but you still need Node.js to trust your managed Postgres provider's CA certificate.
 
-**Solution:** Store the CA certificate as an environment variable and write it to a temporary file in your pipeline shell script before running the migration.
+In this case, you can store the CA certificate as an environment variable and write it to a temporary file in your pipeline shell script before running the migration.
 
 1. **Store the PEM content as an environment variable**
    - Copy the full contents of your `.crt` file into a new environment variable, e.g. `PGSSLROOTCERT_CONTENT`.
@@ -89,3 +97,13 @@ npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue
   You have to use the `--schema` option even when `PG_DATAQUEUE_DATABASE`
   contains the schema name in `search_path`.
 </Callout>
+
+### Other options
+
+You can pass other options supported by `node-pg-migrate` to the migration command. For example:
+
+```package-install
+npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue --verbose
+```
+
+For more information, see the [node-pg-migrate documentation](https://salsita.github.io/node-pg-migrate/cli).
