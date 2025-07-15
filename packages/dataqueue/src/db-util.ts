@@ -29,12 +29,15 @@ function loadPemOrFile(value?: string): string | undefined {
 export const createPool = (config: JobQueueConfig['databaseConfig']): Pool => {
   let searchPath: string | undefined;
   let ssl: any = undefined;
+  let customCA: string | undefined;
+  let sslmode: string | undefined;
 
   if (config.connectionString) {
     try {
       const url = new URL(config.connectionString);
       searchPath = url.searchParams.get('search_path') || undefined;
-      if (url.searchParams.get('sslmode') === 'no-verify') {
+      sslmode = url.searchParams.get('sslmode') || undefined;
+      if (sslmode === 'no-verify') {
         ssl = { rejectUnauthorized: false };
       }
     } catch (e) {
@@ -45,7 +48,8 @@ export const createPool = (config: JobQueueConfig['databaseConfig']): Pool => {
           searchPath = match[1];
         }
       }
-      if (parsed.sslmode === 'no-verify') {
+      sslmode = typeof parsed.sslmode === 'string' ? parsed.sslmode : undefined;
+      if (sslmode === 'no-verify') {
         ssl = { rejectUnauthorized: false };
       }
     }
@@ -53,16 +57,39 @@ export const createPool = (config: JobQueueConfig['databaseConfig']): Pool => {
 
   // Flexible SSL loading: only support file:// for file loading
   if (config.ssl) {
+    if (typeof config.ssl.ca === 'string') {
+      customCA = config.ssl.ca;
+    } else if (typeof process.env.PGSSLROOTCERT === 'string') {
+      customCA = process.env.PGSSLROOTCERT;
+    } else {
+      customCA = undefined;
+    }
+    const caValue =
+      typeof customCA === 'string' ? loadPemOrFile(customCA) : undefined;
     ssl = {
       ...ssl,
-      ca: loadPemOrFile(config.ssl.ca ?? process.env.PGSSLROOTCERT),
-      cert: loadPemOrFile(config.ssl.cert ?? process.env.PGSSLCERT),
-      key: loadPemOrFile(config.ssl.key ?? process.env.PGSSLKEY),
+      ...(caValue ? { ca: caValue } : {}),
+      cert: loadPemOrFile(
+        typeof config.ssl.cert === 'string'
+          ? config.ssl.cert
+          : process.env.PGSSLCERT,
+      ),
+      key: loadPemOrFile(
+        typeof config.ssl.key === 'string'
+          ? config.ssl.key
+          : process.env.PGSSLKEY,
+      ),
       rejectUnauthorized:
         config.ssl.rejectUnauthorized !== undefined
           ? config.ssl.rejectUnauthorized
           : true,
     };
+  }
+
+  // Warn if both sslmode (any value) and a custom CA are set
+  if (sslmode && customCA) {
+    const warning = `\n\n\x1b[33m**************************************************\n\u26A0\uFE0F  WARNING: SSL CONFIGURATION ISSUE\n**************************************************\nBoth sslmode ('${sslmode}') is set in the connection string\nand a custom CA is provided (via config.ssl.ca or PGSSLROOTCERT).\nThis combination may cause connection failures or unexpected behavior.\n\nRecommended: Remove sslmode from the connection string when using a custom CA.\n**************************************************\x1b[0m\n`;
+    console.warn(warning);
   }
 
   const pool = new Pool({
