@@ -33,29 +33,30 @@ This will apply all the necessary schema migrations so your Postgres database is
 
 ### Running migrations with SSL (Managed Postgres)
 
-Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections using a CA certificate (`.crt` file). You typically only need to provide the CA cert, but if your provider requires client authentication, you can also provide a client certificate and key.
-
-Set the following environment variables before running the migration:
+Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections using a CA certificate (`.crt` file). You must set the `NODE_EXTRA_CA_CERTS` environment variable to the path of your CA certificate. This tells Node.js to trust your provider's CA for outgoing TLS connections, including Postgres.
 
 ```bash
-PGSSLMODE=require \
-PGSSLROOTCERT=/absolute/path/to/ca.crt \
+NODE_EXTRA_CA_CERTS=/absolute/path/to/ca.crt \
 PG_DATAQUEUE_DATABASE=your_connection_string \
 npm run migrate-dataqueue
 ```
 
-- `PGSSLMODE=require` enforces SSL.
-- `PGSSLROOTCERT` should point to your provider's CA `.crt` file.
-- If your provider requires client authentication, you can also set:
-  - `PGSSLCERT=/absolute/path/to/client.crt`
-  - `PGSSLKEY=/absolute/path/to/client.key`
+#### Using a CA certificate in environments where you cannot upload files
 
-You can also add these variables to your `.env` file:
+In some serverless or cloud environments (like Vercel, AWS Lambda, etc.), you cannot upload files directly, but you still need Node.js to trust your managed Postgres provider's CA certificate.
 
-```
-PGSSLMODE=require
-PGSSLROOTCERT=/absolute/path/to/ca.crt
-PG_DATAQUEUE_DATABASE=your_connection_string
+**Solution:** Store the CA certificate as an environment variable and write it to a temporary file in your pipeline shell script before running the migration.
+
+1. **Store the PEM content as an environment variable**
+   - Copy the full contents of your `.crt` file into a new environment variable, e.g. `PGSSLROOTCERT_CONTENT`.
+   - Make sure your environment supports multi-line secrets.
+2. **Write the CA certificate to a file and set NODE_EXTRA_CA_CERTS in your pipeline script**
+
+```sh
+# Write the CA cert to a file
+printf "%s" "$PGSSLROOTCERT_CONTENT" > /tmp/ca.crt
+# Set NODE_EXTRA_CA_CERTS and run the migration
+NODE_EXTRA_CA_CERTS=/tmp/ca.crt npm run migrate-dataqueue
 ```
 
 ### Using a custom .env file
@@ -83,4 +84,8 @@ npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue
   the schema, the CLI will use the default schema which is `public`. If you use
   [Prisma](https://www.prisma.io), the prisma migration will fail because of the
   additional tables added by DataQueue.
+</Callout>
+<Callout type="warn">
+  You have to use the `--schema` option even when `PG_DATAQUEUE_DATABASE`
+  contains the schema name in `search_path`.
 </Callout>
