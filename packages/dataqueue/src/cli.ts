@@ -46,7 +46,7 @@ export function runCli(
       '  - For managed Postgres (e.g., DigitalOcean) with SSL, set PGSSLMODE=require and PGSSLROOTCERT to your CA .crt file.',
     );
     log(
-      '    Example: PGSSLMODE=require PGSSLROOTCERT=/absolute/path/to/ca.crt PG_DATAQUEUE_DATABASE=... npx dataqueue-cli migrate',
+      '    Example: PGSSLMODE=require NODE_EXTRA_CA_CERTS=/absolute/path/to/ca.crt PG_DATAQUEUE_DATABASE=... npx dataqueue-cli migrate',
     );
     exit(1);
   }
