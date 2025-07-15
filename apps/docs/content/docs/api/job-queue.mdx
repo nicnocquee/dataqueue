@@ -25,11 +25,27 @@ interface JobQueueConfig {
     database?: string;
     user?: string;
     password?: string;
-    ssl?: any;
+    ssl?: DatabaseSSLConfig;
   };
   verbose?: boolean;
 }
 ```
+
+#### DatabaseSSLConfig
+
+```ts
+interface DatabaseSSLConfig {
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
+}
+```
+
+- `ca` - Client certificate authority as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
+- `cert` - Client certificate as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
+- `key` - Client private key as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
+- `rejectUnauthorized` - Whether to reject unauthorized certificates (default: true)
 
 ---
 

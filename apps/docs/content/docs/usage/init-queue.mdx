@@ -42,3 +42,110 @@ const sendEmail = async () => {
   });
 };
 ```
+
+## SSL Configuration
+
+You can configure SSL for your database connection in several ways, depending on your environment and security requirements.
+
+### Using PEM Strings from Environment Variables
+
+This is ideal for serverless environments where you cannot mount files. Store your certificate contents as environment variables. If the value of `ca`, `cert`, or `key` does not start with `file://`, it will be used directly as a PEM string.
+
+```typescript title="@lib/queue.ts"
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+let jobQueue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
+
+export const getJobQueue = () => {
+  if (!jobQueue) {
+    jobQueue = initJobQueue<JobPayloadMap>({
+      databaseConfig: {
+        connectionString: process.env.PG_DATAQUEUE_DATABASE, // Set this in your environment
+        ssl: {
+          ca: process.env.PG_CA, // PEM string
+          cert: process.env.PG_CERT, // PEM string (optional, for client auth)
+          key: process.env.PG_KEY, // PEM string (optional, for client auth)
+          rejectUnauthorized: true, // Always true for CA-signed certs
+        },
+      },
+      verbose: process.env.NODE_ENV === 'development',
+    });
+  }
+  return jobQueue;
+};
+```
+
+### Using File Paths
+
+If you have certificate files on disk, provide their absolute paths using the `file://` prefix. Only values starting with `file://` will be loaded from the file system; all others are treated as PEM strings.
+
+```typescript title="@lib/queue.ts"
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+let jobQueue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
+
+export const getJobQueue = () => {
+  if (!jobQueue) {
+    jobQueue = initJobQueue<JobPayloadMap>({
+      databaseConfig: {
+        connectionString: process.env.PG_DATAQUEUE_DATABASE,
+        ssl: {
+          ca: 'file:///absolute/path/to/ca.crt',
+          cert: 'file:///absolute/path/to/client.crt', // optional
+          key: 'file:///absolute/path/to/client.key', // optional
+          rejectUnauthorized: true,
+        },
+      },
+      verbose: process.env.NODE_ENV === 'development',
+    });
+  }
+  return jobQueue;
+};
+```
+
+### Using Self-Signed Certificates
+
+If you are using a self-signed certificate and want to skip certificate validation (not recommended for production), set `rejectUnauthorized` to `false`. You can use either a PEM string or a `file://` path for `ca` as described above.
+
+```typescript title="@lib/queue.ts"
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+let jobQueue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
+
+export const getJobQueue = () => {
+  if (!jobQueue) {
+    jobQueue = initJobQueue<JobPayloadMap>({
+      databaseConfig: {
+        connectionString: process.env.PG_DATAQUEUE_DATABASE,
+        ssl: {
+          ca: process.env.PG_CA, // PEM string or 'file://' path
+          rejectUnauthorized: false, // Accept self-signed certs (dev only)
+        },
+      },
+      verbose: process.env.NODE_ENV === 'development',
+    });
+  }
+  return jobQueue;
+};
+```
+
+<Callout type="warn">
+  **Note:**
+  <ul>
+    <li>
+      Only values starting with <code>file://</code> are loaded from the file
+      system. All other values are treated as PEM strings.
+    </li>
+    <li>
+      For production, always use <code>rejectUnauthorized: true</code> and a
+      valid CA-signed certificate.
+    </li>
+    <li>
+      For local development, <code>file://</code> paths are convenient.
+    </li>
+    <li>For serverless/cloud, use PEM strings via environment variables.</li>
+  </ul>
+</Callout>
