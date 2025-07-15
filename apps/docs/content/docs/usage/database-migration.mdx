@@ -21,7 +21,12 @@ This will apply all the necessary schema migrations so your Postgres database is
 <Callout type="warn">
   **Make sure the `PG_DATAQUEUE_DATABASE` environment variable is set to your
   Postgres connection string.** The CLI uses this environment variable to
-  connect to your database.
+  connect to your database. For example:
+
+```dotenv
+PG_DATAQUEUE_DATABASE=postgresql://postgres:password@localhost:5432/my_database
+```
+
 </Callout>
 
 <Callout type="warn">
@@ -30,6 +35,48 @@ This will apply all the necessary schema migrations so your Postgres database is
   Vercel's pipeline. If you have used Prisma or other ORMs, you may be familiar
   with this process.
 </Callout>
+
+### Using a custom .env file
+
+You can use the `--envPath` option to specify a custom path to your environment file. For example:
+
+```package-install
+npm run migrate-dataqueue -- --envPath .env.local
+```
+
+This will load environment variables from `.env.local` before running the migration.
+
+### Schema selection
+
+You can explicitly set the schema for migrations using the `-s` or `--schema` CLI option. This option is passed directly to `node-pg-migrate` and will ensure the schema is created if it does not exist.
+
+**Example CLI usage with explicit schema:**
+
+```package-install
+npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue
+```
+
+<Callout>
+  Specifying the schema is optional but **recommended** when you're using the
+  same database as your main application. If you don't specify the schema, the
+  CLI will use the default schema which is `public`. If you use
+  [Prisma](https://www.prisma.io), the prisma migration will fail because of the
+  additional tables added by DataQueue.
+</Callout>
+<Callout type="warn">
+  You have to use the `--schema` option even when `PG_DATAQUEUE_DATABASE`
+  contains the schema name in `search_path`.
+</Callout>
+
+### Other options
+
+You can pass other options supported by `node-pg-migrate` to the migration command. For example:
+
+```package-install
+npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue --verbose
+```
+
+For more information, see the [node-pg-migrate documentation](https://salsita.github.io/node-pg-migrate/cli).
 
 ### Running migrations with SSL and a custom CA
 
@@ -66,44 +113,3 @@ printf "%s" "$PGSSLROOTCERT_CONTENT" > /tmp/ca.crt
 # Set NODE_EXTRA_CA_CERTS and run the migration
 NODE_EXTRA_CA_CERTS=/tmp/ca.crt npm run migrate-dataqueue
 ```
-
-### Using a custom .env file
-
-You can use the `--envPath` option to specify a custom path to your environment file. For example:
-
-```package-install
-npm run migrate-dataqueue -- --envPath .env.local
-```
-
-This will load environment variables from `.env.local` before running the migration.
-
-### Schema selection
-
-You can explicitly set the schema for migrations using the `-s` or `--schema` CLI option. This option is passed directly to `node-pg-migrate` and will ensure the schema is created if it does not exist.
-
-**Example CLI usage with explicit schema:**
-
-```package-install
-npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue
-```
-
-<Callout>
-  Specifying the schema is optional but **recommended**. If you don't specify
-  the schema, the CLI will use the default schema which is `public`. If you use
-  [Prisma](https://www.prisma.io), the prisma migration will fail because of the
-  additional tables added by DataQueue.
-</Callout>
-<Callout type="warn">
-  You have to use the `--schema` option even when `PG_DATAQUEUE_DATABASE`
-  contains the schema name in `search_path`.
-</Callout>
-
-### Other options
-
-You can pass other options supported by `node-pg-migrate` to the migration command. For example:
-
-```package-install
-npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue --verbose
-```
-
-For more information, see the [node-pg-migrate documentation](https://salsita.github.io/node-pg-migrate/cli).

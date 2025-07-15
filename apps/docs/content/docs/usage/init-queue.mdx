@@ -24,6 +24,17 @@ export const getJobQueue = () => {
 };
 ```
 
+<Callout>
+  The value of `connectionString` must be a [valid Postgres connection
+  string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS).
+  For example:
+
+```dotenv
+PG_DATAQUEUE_DATABASE=postgresql://postgres:password@localhost:5432/my_database?search_path=my_schema
+```
+
+</Callout>
+
 You can now use this queue instance throughout your app to add jobs, process jobs, and more.
 
 ```typescript title="@/app/actions/send-email.ts"
@@ -45,13 +56,13 @@ const sendEmail = async () => {
 
 ## SSL Configuration
 
-Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require you to use a CA certificate (`.crt` file) to verify the server's identity when connecting over SSL. You typically do **not** need a client certificate or key—just the CA `.crt` file provided by your provider. **However, if your provider or security policy requires client authentication, you can also provide a client certificate and key.**
+Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections and use their own CA certificate (.crt file) to sign the server’s certificate. To securely verify the server’s identity, you must configure your client to trust this CA certificate.
 
 You can configure SSL for your database connection in several ways, depending on your environment and security requirements.
 
 ### Using PEM Strings from Environment Variables
 
-This is ideal for serverless environments where you cannot mount files. Store your CA certificate, and optionally client certificate and key, as environment variables. Use the standard Postgres environment variables: `PGSSLCERT` and `PGSSLKEY` for client authentication if needed. If the value does not start with `file://`, it will be used directly as a PEM string.
+This is ideal for serverless environments where you cannot mount files. Store your CA certificate, and optionally client certificate and key, as environment variables then pass them to the `ssl` property of the `databaseConfig` object.
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -78,9 +89,15 @@ export const getJobQueue = () => {
 };
 ```
 
+<Callout type="warn">
+  When using a custom CA certificate and `connectionString`, you must remove the
+  `sslmode` parameter from the connection string. Otherwise, the connection will
+  fail.
+</Callout>
+
 ### Using File Paths
 
-If you have the CA certificate, client certificate, or key on disk, provide their absolute paths using the `file://` prefix. Only values starting with `file://` will be loaded from the file system; all others are treated as PEM strings. You can also set the environment variables `PGSSLROOTCERT`, `PGSSLCERT`, and `PGSSLKEY` to `file://` paths.
+If you have the CA certificate, client certificate, or key on disk, provide their absolute paths using the `file://` prefix. Only values starting with `file://` will be loaded from the file system; all others are treated as PEM strings.
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -107,9 +124,15 @@ export const getJobQueue = () => {
 };
 ```
 
-### Using Self-Signed Certificates
+<Callout type="warn">
+  When using a custom CA certificate and `connectionString`, you must remove the
+  `sslmode` parameter from the connection string. Otherwise, the connection will
+  fail.
+</Callout>
 
-If you are using a self-signed certificate and want to skip certificate validation (not recommended for production), set `rejectUnauthorized` to `false`. You can use either a PEM string or a `file://` path for `ca`, `cert`, and `key` as described above, or set the corresponding environment variables.
+### Skipping Certificate Validation
+
+For convenience, you can skip certificate validation (not recommended for production) by setting `rejectUnauthorized` to `false` and without providing a custom CA certificate.
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -123,10 +146,7 @@ export const getJobQueue = () => {
       databaseConfig: {
         connectionString: process.env.PG_DATAQUEUE_DATABASE,
         ssl: {
-          ca: process.env.PGSSLROOTCERT, // PEM string or 'file://' path
-          cert: process.env.PGSSLCERT, // optional, PEM string or 'file://' path
-          key: process.env.PGSSLKEY, // optional, PEM string or 'file://' path
-          rejectUnauthorized: false, // Accept self-signed certs (dev only)
+          rejectUnauthorized: false,
         },
       },
       verbose: process.env.NODE_ENV === 'development',
@@ -137,32 +157,7 @@ export const getJobQueue = () => {
 ```
 
 <Callout type="warn">
-  <strong>Note:</strong>
-  <ul>
-    <li>
-      When using a custom CA, you must remove the <code>sslmode</code> parameter
-      from the connection string. Otherwise, the connection may fail.
-    </li>
-    <li>
-      If your provider or security policy requires client authentication, you
-      can also provide <code>PGSSLCERT</code> and <code>PGSSLKEY</code> as PEM
-      strings or <code>file://</code> paths.
-    </li>
-    <li>
-      Only values starting with <code>file://</code> are loaded from the file
-      system. All other values are treated as PEM strings.
-    </li>
-    <li>
-      For production, always use <code>rejectUnauthorized: true</code> and a
-      valid CA-signed certificate.
-    </li>
-    <li>
-      For local development, <code>file://</code> paths are convenient.
-    </li>
-    <li>For serverless/cloud, use PEM strings via environment variables.</li>
-    <li>
-      These are the standard Postgres environment variables for SSL and are
-      supported by both the CLI and the library.
-    </li>
-  </ul>
+  When using `rejectUnauthorized: false` and `connectionString`, you must remove
+  the `sslmode` parameter from the connection string. Otherwise, the connection
+  will fail.
 </Callout>
