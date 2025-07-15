@@ -51,7 +51,7 @@ You can configure SSL for your database connection in several ways, depending on
 
 ### Using PEM Strings from Environment Variables
 
-This is ideal for serverless environments where you cannot mount files. Store your CA certificate, and optionally client certificate and key, as environment variables. Use the standard Postgres environment variables: `PGSSLROOTCERT`, `PGSSLCERT`, and `PGSSLKEY`. If the value does not start with `file://`, it will be used directly as a PEM string.
+This is ideal for serverless environments where you cannot mount files. Store your CA certificate, and optionally client certificate and key, as environment variables. Use the standard Postgres environment variables: `PGSSLCERT` and `PGSSLKEY` for client authentication if needed. If the value does not start with `file://`, it will be used directly as a PEM string.
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -140,9 +140,8 @@ export const getJobQueue = () => {
   <strong>Note:</strong>
   <ul>
     <li>
-      For most managed Postgres (like DigitalOcean), you only need the CA{' '}
-      <code>.crt</code> file. Use <code>PGSSLROOTCERT</code> in your config as
-      shown above.
+      When using a custom CA, you must remove the <code>sslmode</code> parameter
+      from the connection string. Otherwise, the connection may fail.
     </li>
     <li>
       If your provider or security policy requires client authentication, you
