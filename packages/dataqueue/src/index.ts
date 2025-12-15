@@ -97,7 +97,10 @@ export const initJobQueue = <PayloadMap = any>(
               runAt?:
                 | Date
                 | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
-              tags?: { values: string[]; mode?: import('./types.js').TagQueryMode };
+              tags?: {
+                values: string[];
+                mode?: import('./types.js').TagQueryMode;
+              };
             }
           | undefined,
         updates: import('./types.js').EditJobOptions<PayloadMap, T>,

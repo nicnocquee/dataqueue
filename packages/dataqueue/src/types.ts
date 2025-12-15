@@ -312,7 +312,9 @@ export interface JobQueue<PayloadMap> {
       | {
           jobType?: string;
           priority?: number;
-          runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+          runAt?:
+            | Date
+            | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
           tags?: { values: string[]; mode?: TagQueryMode };
         }
       | undefined,

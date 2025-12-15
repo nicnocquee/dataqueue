@@ -406,17 +406,17 @@ describe('index integration', () => {
   });
 
   it('should edit a job and then process it correctly', async () => {
-    const handler = vi.fn(async (payload: { to: string }, _signal) => {
-      expect(payload.to).toBe('updated@example.com');
+    const handler = vi.fn(async (payload: { foo: string }, _signal) => {
+      expect(payload.foo).toBe('updated@example.com');
     });
     const jobId = await jobQueue.addJob({
       jobType: 'test',
-      payload: { to: 'original@example.com' },
+      payload: { foo: 'original@example.com' },
     });
 
     // Edit the job before processing
     await jobQueue.editJob(jobId, {
-      payload: { to: 'updated@example.com' },
+      payload: { foo: 'updated@example.com' },
     });
 
     const processor = jobQueue.createProcessor(
@@ -432,7 +432,7 @@ describe('index integration', () => {
     processor.stop();
 
     expect(handler).toHaveBeenCalledWith(
-      { to: 'updated@example.com' },
+      { foo: 'updated@example.com' },
       expect.any(Object),
     );
     const job = await jobQueue.getJob(jobId);
@@ -448,6 +448,8 @@ describe('index integration', () => {
     const processor = jobQueue.createProcessor(
       {
         email: vi.fn(async () => {}),
+        sms: vi.fn(async () => {}),
+        test: vi.fn(async () => {}),
       },
       { pollInterval: 100 },
     );
@@ -468,14 +470,17 @@ describe('index integration', () => {
 
     // Try to edit a processing job
     // Use a handler that takes longer to ensure job stays in processing state
-    const slowHandler = vi.fn(
-      async (payload: { to: string }, _signal) => {
-        await new Promise((r) => setTimeout(r, 200));
-      },
-    );
+    const slowHandler = vi.fn(async (payload: { to: string }, _signal) => {
+      await new Promise((r) => setTimeout(r, 200));
+    });
+    const slowHandlerTest = vi.fn(async (payload: { foo: string }, _signal) => {
+      await new Promise((r) => setTimeout(r, 200));
+    });
     const processor2 = jobQueue.createProcessor(
       {
         email: slowHandler,
+        sms: slowHandler,
+        test: slowHandlerTest,
       },
       { pollInterval: 100 },
     );

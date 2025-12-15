@@ -508,14 +508,21 @@ export const editJob = async <PayloadMap, T extends keyof PayloadMap & string>(
 /**
  * Edit all pending jobs matching the filters
  */
-export const editAllPendingJobs = async <PayloadMap, T extends keyof PayloadMap & string>(
+export const editAllPendingJobs = async <
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(
   pool: Pool,
-  filters: {
-    jobType?: string;
-    priority?: number;
-    runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
-    tags?: { values: string[]; mode?: TagQueryMode };
-  } | undefined = undefined,
+  filters:
+    | {
+        jobType?: string;
+        priority?: number;
+        runAt?:
+          | Date
+          | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+        tags?: { values: string[]; mode?: TagQueryMode };
+      }
+    | undefined = undefined,
   updates: {
     payload?: PayloadMap[T];
     maxAttempts?: number;
@@ -576,7 +583,7 @@ export const editAllPendingJobs = async <PayloadMap, T extends keyof PayloadMap 
       UPDATE job_queue
       SET ${updateFields.join(', ')}
       WHERE status = 'pending'`;
-    
+
     if (filters) {
       if (filters.jobType) {
         query += ` AND job_type = $${paramIdx++}`;
@@ -645,10 +652,10 @@ export const editAllPendingJobs = async <PayloadMap, T extends keyof PayloadMap 
       }
     }
     query += '\nRETURNING id';
-    
+
     const result = await client.query(query, params);
     const editedCount = result.rowCount || 0;
-    
+
     // Record edit event with metadata containing updated fields for each job
     const metadata: any = {};
     if (updates.payload !== undefined) metadata.payload = updates.payload;
@@ -663,7 +670,7 @@ export const editAllPendingJobs = async <PayloadMap, T extends keyof PayloadMap 
     for (const row of result.rows) {
       await recordJobEvent(pool, row.id, JobEventType.Edited, metadata);
     }
-    
+
     log(`Edited ${editedCount} pending jobs: ${JSON.stringify(metadata)}`);
     return editedCount;
   } catch (error) {
