@@ -2,7 +2,7 @@
 title: Job Timeout
 ---
 
-When you add a job to the queue, you can set a timeout for it. If the job doesn't finish before the timeout, it will be marked as failed.
+When you add a job to the queue, you can set a timeout for it. If the job doesn't finish before the timeout, it will be marked as `failed` and may be retried. See [Failed Jobs](/docs/usage/failed-jobs) for more information.
 
 When the timeout is reached, DataQueue does not actually stop the handler from running. You need to handle this in your handler by checking the `AbortSignal` at one or more points in your code. For example:
 
