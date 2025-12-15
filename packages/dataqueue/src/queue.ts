@@ -115,7 +115,7 @@ export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE id = $1`,
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags FROM job_queue WHERE id = $1`,
       [id],
     );
 
@@ -415,6 +415,274 @@ export const cancelJob = async (pool: Pool, jobId: number): Promise<void> => {
     throw error;
   } finally {
     log(`Cancelled job ${jobId}`);
+    client.release();
+  }
+};
+
+/**
+ * Edit a pending job (only if still pending)
+ */
+export const editJob = async <PayloadMap, T extends keyof PayloadMap & string>(
+  pool: Pool,
+  jobId: number,
+  updates: {
+    payload?: PayloadMap[T];
+    maxAttempts?: number;
+    priority?: number;
+    runAt?: Date | null;
+    timeoutMs?: number | null;
+    tags?: string[] | null;
+  },
+): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    const updateFields: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    // Build dynamic UPDATE query based on provided fields
+    if (updates.payload !== undefined) {
+      updateFields.push(`payload = $${paramIdx++}`);
+      params.push(updates.payload);
+    }
+    if (updates.maxAttempts !== undefined) {
+      updateFields.push(`max_attempts = $${paramIdx++}`);
+      params.push(updates.maxAttempts);
+    }
+    if (updates.priority !== undefined) {
+      updateFields.push(`priority = $${paramIdx++}`);
+      params.push(updates.priority);
+    }
+    if (updates.runAt !== undefined) {
+      if (updates.runAt === null) {
+        // null means run now (use current timestamp)
+        updateFields.push(`run_at = NOW()`);
+      } else {
+        updateFields.push(`run_at = $${paramIdx++}`);
+        params.push(updates.runAt);
+      }
+    }
+    if (updates.timeoutMs !== undefined) {
+      updateFields.push(`timeout_ms = $${paramIdx++}`);
+      params.push(updates.timeoutMs ?? null);
+    }
+    if (updates.tags !== undefined) {
+      updateFields.push(`tags = $${paramIdx++}`);
+      params.push(updates.tags ?? null);
+    }
+
+    // If no fields to update, return early
+    if (updateFields.length === 0) {
+      log(`No fields to update for job ${jobId}`);
+      return;
+    }
+
+    // Always update updated_at timestamp
+    updateFields.push(`updated_at = NOW()`);
+
+    // Add jobId as the last parameter for WHERE clause
+    params.push(jobId);
+
+    const query = `
+      UPDATE job_queue
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramIdx} AND status = 'pending'
+    `;
+
+    await client.query(query, params);
+
+    // Record edit event with metadata containing updated fields
+    const metadata: any = {};
+    if (updates.payload !== undefined) metadata.payload = updates.payload;
+    if (updates.maxAttempts !== undefined)
+      metadata.maxAttempts = updates.maxAttempts;
+    if (updates.priority !== undefined) metadata.priority = updates.priority;
+    if (updates.runAt !== undefined) metadata.runAt = updates.runAt;
+    if (updates.timeoutMs !== undefined) metadata.timeoutMs = updates.timeoutMs;
+    if (updates.tags !== undefined) metadata.tags = updates.tags;
+
+    await recordJobEvent(pool, jobId, JobEventType.Edited, metadata);
+    log(`Edited job ${jobId}: ${JSON.stringify(metadata)}`);
+  } catch (error) {
+    log(`Error editing job ${jobId}: ${error}`);
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Edit all pending jobs matching the filters
+ */
+export const editAllPendingJobs = async <
+  PayloadMap,
+  T extends keyof PayloadMap & string,
+>(
+  pool: Pool,
+  filters:
+    | {
+        jobType?: string;
+        priority?: number;
+        runAt?:
+          | Date
+          | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+        tags?: { values: string[]; mode?: TagQueryMode };
+      }
+    | undefined = undefined,
+  updates: {
+    payload?: PayloadMap[T];
+    maxAttempts?: number;
+    priority?: number;
+    runAt?: Date | null;
+    timeoutMs?: number;
+    tags?: string[];
+  },
+): Promise<number> => {
+  const client = await pool.connect();
+  try {
+    // Build SET clause from updates
+    const updateFields: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    if (updates.payload !== undefined) {
+      updateFields.push(`payload = $${paramIdx++}`);
+      params.push(updates.payload);
+    }
+    if (updates.maxAttempts !== undefined) {
+      updateFields.push(`max_attempts = $${paramIdx++}`);
+      params.push(updates.maxAttempts);
+    }
+    if (updates.priority !== undefined) {
+      updateFields.push(`priority = $${paramIdx++}`);
+      params.push(updates.priority);
+    }
+    if (updates.runAt !== undefined) {
+      if (updates.runAt === null) {
+        // null means run now (use current timestamp)
+        updateFields.push(`run_at = NOW()`);
+      } else {
+        updateFields.push(`run_at = $${paramIdx++}`);
+        params.push(updates.runAt);
+      }
+    }
+    if (updates.timeoutMs !== undefined) {
+      updateFields.push(`timeout_ms = $${paramIdx++}`);
+      params.push(updates.timeoutMs ?? null);
+    }
+    if (updates.tags !== undefined) {
+      updateFields.push(`tags = $${paramIdx++}`);
+      params.push(updates.tags ?? null);
+    }
+
+    // If no fields to update, return early
+    if (updateFields.length === 0) {
+      log(`No fields to update for batch edit`);
+      return 0;
+    }
+
+    // Always update updated_at timestamp
+    updateFields.push(`updated_at = NOW()`);
+
+    // Build WHERE clause from filters
+    let query = `
+      UPDATE job_queue
+      SET ${updateFields.join(', ')}
+      WHERE status = 'pending'`;
+
+    if (filters) {
+      if (filters.jobType) {
+        query += ` AND job_type = $${paramIdx++}`;
+        params.push(filters.jobType);
+      }
+      if (filters.priority !== undefined) {
+        query += ` AND priority = $${paramIdx++}`;
+        params.push(filters.priority);
+      }
+      if (filters.runAt) {
+        if (filters.runAt instanceof Date) {
+          query += ` AND run_at = $${paramIdx++}`;
+          params.push(filters.runAt);
+        } else if (typeof filters.runAt === 'object') {
+          const ops = filters.runAt;
+          if (ops.gt) {
+            query += ` AND run_at > $${paramIdx++}`;
+            params.push(ops.gt);
+          }
+          if (ops.gte) {
+            query += ` AND run_at >= $${paramIdx++}`;
+            params.push(ops.gte);
+          }
+          if (ops.lt) {
+            query += ` AND run_at < $${paramIdx++}`;
+            params.push(ops.lt);
+          }
+          if (ops.lte) {
+            query += ` AND run_at <= $${paramIdx++}`;
+            params.push(ops.lte);
+          }
+          if (ops.eq) {
+            query += ` AND run_at = $${paramIdx++}`;
+            params.push(ops.eq);
+          }
+        }
+      }
+      if (
+        filters.tags &&
+        filters.tags.values &&
+        filters.tags.values.length > 0
+      ) {
+        const mode = filters.tags.mode || 'all';
+        const tagValues = filters.tags.values;
+        switch (mode) {
+          case 'exact':
+            query += ` AND tags = $${paramIdx++}`;
+            params.push(tagValues);
+            break;
+          case 'all':
+            query += ` AND tags @> $${paramIdx++}`;
+            params.push(tagValues);
+            break;
+          case 'any':
+            query += ` AND tags && $${paramIdx++}`;
+            params.push(tagValues);
+            break;
+          case 'none':
+            query += ` AND NOT (tags && $${paramIdx++})`;
+            params.push(tagValues);
+            break;
+          default:
+            query += ` AND tags @> $${paramIdx++}`;
+            params.push(tagValues);
+        }
+      }
+    }
+    query += '\nRETURNING id';
+
+    const result = await client.query(query, params);
+    const editedCount = result.rowCount || 0;
+
+    // Record edit event with metadata containing updated fields for each job
+    const metadata: any = {};
+    if (updates.payload !== undefined) metadata.payload = updates.payload;
+    if (updates.maxAttempts !== undefined)
+      metadata.maxAttempts = updates.maxAttempts;
+    if (updates.priority !== undefined) metadata.priority = updates.priority;
+    if (updates.runAt !== undefined) metadata.runAt = updates.runAt;
+    if (updates.timeoutMs !== undefined) metadata.timeoutMs = updates.timeoutMs;
+    if (updates.tags !== undefined) metadata.tags = updates.tags;
+
+    // Record events for each affected job
+    for (const row of result.rows) {
+      await recordJobEvent(pool, row.id, JobEventType.Edited, metadata);
+    }
+
+    log(`Edited ${editedCount} pending jobs: ${JSON.stringify(metadata)}`);
+    return editedCount;
+  } catch (error) {
+    log(`Error editing pending jobs: ${error}`);
+    throw error;
+  } finally {
     client.release();
   }
 };

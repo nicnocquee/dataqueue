@@ -1,0 +1,268 @@
+---
+title: Edit Jobs
+---
+
+You can edit a pending job by its ID to update its properties before it is processed. Only jobs with status 'pending' can be edited. Attempting to edit a job with any other status (processing, completed, failed, cancelled) will silently fail.
+
+## Basic Usage
+
+```typescript title="@/app/api/edit-job/route.ts"
+import { NextRequest, NextResponse } from 'next/server';
+import { getJobQueue } from '@/lib/queue';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { jobId, updates } = await request.json();
+    // [!code highlight:2]
+    const jobQueue = getJobQueue();
+    await jobQueue.editJob(jobId, updates);
+    return NextResponse.json({ message: 'Job updated' });
+  } catch (error) {
+    console.error('Error editing job:', error);
+    return NextResponse.json(
+      { message: 'Failed to edit job' },
+      { status: 500 },
+    );
+  }
+}
+```
+
+## Editable Fields
+
+All fields in `EditJobOptions` are optional - only the fields you provide will be updated. The following fields can be edited:
+
+- `payload` - The job payload data
+- `priority` - Job priority (higher runs first)
+- `maxAttempts` - Maximum number of attempts
+- `runAt` - When to run the job (Date or null)
+- `timeoutMs` - Timeout for the job in milliseconds
+- `tags` - Tags for grouping, searching, or batch operations
+
+**Note:** `jobType` cannot be changed. If you need to change the job type, you should cancel the job and create a new one.
+
+## Examples
+
+### Edit Payload
+
+```typescript
+// Update the payload of a pending job
+await jobQueue.editJob(jobId, {
+  payload: { to: 'newemail@example.com', subject: 'Updated Subject' },
+});
+```
+
+### Edit Priority
+
+```typescript
+// Increase the priority of a job
+await jobQueue.editJob(jobId, {
+  priority: 10,
+});
+```
+
+### Edit Scheduled Time
+
+```typescript
+// Reschedule a job to run in 1 hour
+await jobQueue.editJob(jobId, {
+  runAt: new Date(Date.now() + 60 * 60 * 1000),
+});
+
+// Schedule a job to run immediately (or as soon as possible)
+await jobQueue.editJob(jobId, {
+  runAt: null,
+});
+```
+
+### Edit Multiple Fields
+
+```typescript
+// Update multiple fields at once
+await jobQueue.editJob(jobId, {
+  payload: { to: 'updated@example.com', subject: 'New Subject' },
+  priority: 5,
+  maxAttempts: 10,
+  timeoutMs: 30000,
+  tags: ['urgent', 'priority'],
+});
+```
+
+### Partial Updates
+
+```typescript
+// Only update what you need - other fields remain unchanged
+await jobQueue.editJob(jobId, {
+  priority: 10,
+  // payload, maxAttempts, runAt, timeoutMs, and tags remain unchanged
+});
+```
+
+### Clear Tags or Timeout
+
+```typescript
+// Remove tags by setting to undefined
+await jobQueue.editJob(jobId, {
+  tags: undefined,
+});
+
+// Remove timeout by setting to undefined
+await jobQueue.editJob(jobId, {
+  timeoutMs: undefined,
+});
+```
+
+## Batch Editing
+
+You can edit multiple pending jobs at once using `editAllPendingJobs`. This is useful when you need to update many jobs that match certain criteria. The function returns the number of jobs that were edited.
+
+### Basic Batch Edit
+
+```typescript
+// Edit all pending jobs
+const editedCount = await jobQueue.editAllPendingJobs(undefined, {
+  priority: 10,
+});
+console.log(`Edited ${editedCount} jobs`);
+```
+
+### Filter by Job Type
+
+```typescript
+// Edit all pending email jobs
+const editedCount = await jobQueue.editAllPendingJobs(
+  { jobType: 'email' },
+  {
+    priority: 5,
+  },
+);
+```
+
+### Filter by Priority
+
+```typescript
+// Edit all pending jobs with priority 1
+const editedCount = await jobQueue.editAllPendingJobs(
+  { priority: 1 },
+  {
+    priority: 5,
+  },
+);
+```
+
+### Filter by Tags
+
+```typescript
+// Edit all pending jobs with 'urgent' tag
+const editedCount = await jobQueue.editAllPendingJobs(
+  { tags: { values: ['urgent'], mode: 'any' } },
+  {
+    priority: 10,
+  },
+);
+```
+
+### Filter by Scheduled Time
+
+```typescript
+// Edit all pending jobs scheduled in the future
+const editedCount = await jobQueue.editAllPendingJobs(
+  { runAt: { gte: new Date() } },
+  {
+    priority: 10,
+  },
+);
+
+// Edit all pending jobs scheduled before a specific date
+const editedCount = await jobQueue.editAllPendingJobs(
+  { runAt: { lt: new Date('2024-12-31') } },
+  {
+    priority: 5,
+  },
+);
+```
+
+### Combined Filters
+
+```typescript
+// Edit all pending email jobs with 'urgent' tag
+const editedCount = await jobQueue.editAllPendingJobs(
+  {
+    jobType: 'email',
+    tags: { values: ['urgent'], mode: 'any' },
+  },
+  {
+    priority: 10,
+    maxAttempts: 5,
+  },
+);
+```
+
+### Batch Edit Notes
+
+- Only pending jobs are edited. Jobs with other statuses (processing, completed, failed, cancelled) are not affected.
+- The function returns the number of jobs that were successfully edited.
+- Edit events are recorded for each affected job, just like single job edits.
+- If no fields are provided in the updates object, the function returns 0 and no jobs are modified.
+
+## When to Use Edit vs Cancel vs Retry
+
+- **Edit**: Use when you want to modify a pending job's properties before it runs
+- **Cancel**: Use when you want to completely remove a pending job from the queue
+- **Retry**: Use when you want to retry a failed job (sets status back to pending)
+
+## Error Handling
+
+The `editJob` function silently fails if you try to edit a non-pending job. This means:
+
+- No error is thrown
+- The job remains unchanged
+- The operation completes successfully (but does nothing)
+
+To check if an edit was successful, you can:
+
+```typescript
+const job = await jobQueue.getJob(jobId);
+if (job?.status === 'pending') {
+  // Job is still pending, edit might have succeeded
+  // Check if the fields you wanted to update actually changed
+  if (job.priority === newPriority) {
+    console.log('Edit successful');
+  }
+} else {
+  console.log('Job is not pending, edit was ignored');
+}
+```
+
+## Event Tracking
+
+When a job is edited, an 'edited' event is recorded in the job's event history. The event metadata contains the fields that were updated:
+
+```typescript
+const events = await jobQueue.getJobEvents(jobId);
+const editEvent = events.find((e) => e.eventType === 'edited');
+if (editEvent) {
+  console.log('Updated fields:', editEvent.metadata);
+  // { payload: {...}, priority: 10, ... }
+}
+```
+
+## Best Practices
+
+1. **Check job status before editing**: If you're unsure whether a job is pending, check its status first:
+
+```typescript
+const job = await jobQueue.getJob(jobId);
+if (job?.status === 'pending') {
+  await jobQueue.editJob(jobId, updates);
+} else {
+  console.log('Job is not pending, cannot edit');
+}
+```
+
+2. **Use partial updates**: Only update the fields you need to change. This is more efficient and reduces the chance of accidentally overwriting other fields.
+
+3. **Validate updates**: Ensure the updated values are valid for your job handlers. For example, if your handler expects a specific payload structure, make sure the updated payload matches.
+
+4. **Consider race conditions**: If a job might be picked up for processing while you're editing it, be aware that the edit might not take effect if the job transitions to 'processing' status between your check and the edit operation.
+
+5. **Monitor events**: Use job events to track when and what was edited for audit purposes.
