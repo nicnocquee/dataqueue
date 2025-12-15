@@ -160,6 +160,185 @@ describe('queue integration', () => {
     expect(completedJob?.status).toBe('completed');
   });
 
+  it('should edit a pending job with all fields', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+      priority: 0,
+      maxAttempts: 3,
+      timeoutMs: 10000,
+      tags: ['original'],
+    });
+    const originalJob = await queue.getJob(pool, jobId);
+    const originalUpdatedAt = originalJob?.updatedAt;
+
+    // Wait a bit to ensure updated_at changes
+    await new Promise((r) => setTimeout(r, 10));
+
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {
+      payload: { to: 'updated@example.com' },
+      priority: 10,
+      maxAttempts: 5,
+      runAt: new Date(Date.now() + 60000),
+      timeoutMs: 20000,
+      tags: ['updated', 'priority'],
+    });
+
+    const updatedJob = await queue.getJob(pool, jobId);
+    expect(updatedJob?.payload).toEqual({ to: 'updated@example.com' });
+    expect(updatedJob?.priority).toBe(10);
+    expect(updatedJob?.maxAttempts).toBe(5);
+    expect(updatedJob?.timeoutMs).toBe(20000);
+    expect(updatedJob?.tags).toEqual(['updated', 'priority']);
+    expect(updatedJob?.status).toBe('pending');
+    expect(updatedJob?.updatedAt.getTime()).toBeGreaterThan(
+      originalUpdatedAt?.getTime() || 0,
+    );
+  });
+
+  it('should edit a pending job with partial fields', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+      priority: 0,
+      maxAttempts: 3,
+    });
+
+    // Only update payload
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {
+      payload: { to: 'updated@example.com' },
+    });
+
+    const updatedJob = await queue.getJob(pool, jobId);
+    expect(updatedJob?.payload).toEqual({ to: 'updated@example.com' });
+    expect(updatedJob?.priority).toBe(0); // Unchanged
+    expect(updatedJob?.maxAttempts).toBe(3); // Unchanged
+
+    // Only update priority
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {
+      priority: 5,
+    });
+
+    const updatedJob2 = await queue.getJob(pool, jobId);
+    expect(updatedJob2?.payload).toEqual({ to: 'updated@example.com' }); // Still updated
+    expect(updatedJob2?.priority).toBe(5); // Now updated
+  });
+
+  it('should silently fail when editing a non-pending job', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+    });
+    await queue.completeJob(pool, jobId);
+
+    // Try to edit a completed job - should silently fail
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {
+      payload: { to: 'updated@example.com' },
+    });
+
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.payload).toEqual({ to: 'original@example.com' }); // Unchanged
+
+    // Try to edit a processing job
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'processing@example.com' },
+      },
+    );
+    await queue.getNextBatch(pool, 'worker-edit', 1);
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId2, {
+      payload: { to: 'updated@example.com' },
+    });
+
+    const job2 = await queue.getJob(pool, jobId2);
+    expect(job2?.status).toBe('processing');
+    expect(job2?.payload).toEqual({ to: 'processing@example.com' }); // Unchanged
+  });
+
+  it('should record edited event when editing a job', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+    });
+
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {
+      payload: { to: 'updated@example.com' },
+      priority: 10,
+    });
+
+    const res = await pool.query(
+      'SELECT * FROM job_events WHERE job_id = $1 ORDER BY created_at ASC',
+      [jobId],
+    );
+    const events = res.rows.map((row) => objectKeysToCamelCase(row) as JobEvent);
+    const editEvent = events.find((e) => e.eventType === JobEventType.Edited);
+    expect(editEvent).not.toBeUndefined();
+    expect(editEvent?.metadata).toMatchObject({
+      payload: { to: 'updated@example.com' },
+      priority: 10,
+    });
+  });
+
+  it('should update updated_at timestamp when editing', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+    });
+    const originalJob = await queue.getJob(pool, jobId);
+    const originalUpdatedAt = originalJob?.updatedAt;
+
+    // Wait a bit to ensure timestamp difference
+    await new Promise((r) => setTimeout(r, 10));
+
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {
+      priority: 5,
+    });
+
+    const updatedJob = await queue.getJob(pool, jobId);
+    expect(updatedJob?.updatedAt.getTime()).toBeGreaterThan(
+      originalUpdatedAt?.getTime() || 0,
+    );
+  });
+
+  it('should handle editing with null values', async () => {
+    const futureDate = new Date(Date.now() + 60000);
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+      runAt: futureDate,
+      timeoutMs: 10000,
+      tags: ['original'],
+    });
+
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {
+      runAt: null,
+      timeoutMs: null,
+      tags: null,
+    });
+
+    const updatedJob = await queue.getJob(pool, jobId);
+    expect(updatedJob?.runAt).not.toBeNull(); // runAt null means use default (now)
+    expect(updatedJob?.timeoutMs).toBeNull();
+    expect(updatedJob?.tags).toBeNull();
+  });
+
+  it('should do nothing when editing with no fields', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+    });
+    const originalJob = await queue.getJob(pool, jobId);
+
+    await queue.editJob<{ email: { to: string } }, 'email'>(pool, jobId, {});
+
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.payload).toEqual(originalJob?.payload);
+    expect(job?.priority).toBe(originalJob?.priority);
+  });
+
   it('should cancel all upcoming jobs', async () => {
     // Add three pending jobs
     const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(

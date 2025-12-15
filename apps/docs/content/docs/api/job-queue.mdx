@@ -146,6 +146,53 @@ cancelJob(jobId: number): Promise<void>
 
 Cancels a job given its ID.
 
+### editJob
+
+```ts
+editJob(jobId: number, updates: EditJobOptions): Promise<void>
+```
+
+Edits a pending job given its ID. Only works for jobs with status 'pending'. Silently fails for other statuses (processing, completed, failed, cancelled).
+
+#### EditJobOptions
+
+```ts
+interface EditJobOptions {
+  payload?: any;
+  maxAttempts?: number;
+  priority?: number;
+  runAt?: Date | null;
+  timeoutMs?: number;
+  tags?: string[];
+}
+```
+
+All fields are optional - only provided fields will be updated. Note that `jobType` cannot be changed.
+
+#### Example
+
+```ts
+// Edit a pending job's payload and priority
+await jobQueue.editJob(jobId, {
+  payload: { to: 'newemail@example.com', subject: 'Updated' },
+  priority: 10,
+});
+
+// Edit only the scheduled run time
+await jobQueue.editJob(jobId, {
+  runAt: new Date(Date.now() + 60000), // Run in 1 minute
+});
+
+// Edit multiple fields at once
+await jobQueue.editJob(jobId, {
+  payload: { to: 'updated@example.com' },
+  priority: 5,
+  maxAttempts: 10,
+  timeoutMs: 30000,
+  tags: ['urgent', 'priority'],
+});
+```
+
 ### cancelAllUpcomingJobs
 
 ```ts
@@ -209,6 +256,7 @@ enum JobEventType {
   Failed = 'failed',
   Cancelled = 'cancelled',
   Retried = 'retried',
+  Edited = 'edited',
 }
 ```
 

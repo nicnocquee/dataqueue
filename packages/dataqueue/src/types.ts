@@ -19,6 +19,15 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
   tags?: string[];
 }
 
+/**
+ * Options for editing a pending job.
+ * All fields are optional and only provided fields will be updated.
+ * Note: jobType cannot be changed.
+ */
+export type EditJobOptions<PayloadMap, T extends JobType<PayloadMap>> = Partial<
+  Omit<JobOptions<PayloadMap, T>, 'jobType'>
+>;
+
 export enum JobEventType {
   Added = 'added',
   Processing = 'processing',
@@ -26,6 +35,7 @@ export enum JobEventType {
   Failed = 'failed',
   Cancelled = 'cancelled',
   Retried = 'retried',
+  Edited = 'edited',
 }
 
 export interface JobEvent {
@@ -269,6 +279,17 @@ export interface JobQueue<PayloadMap> {
    * - This will set the job status to 'cancelled' and clear the locked_at and locked_by.
    */
   cancelJob: (jobId: number) => Promise<void>;
+  /**
+   * Edit a pending job given its ID.
+   * - Only works for jobs with status 'pending'. Silently fails for other statuses.
+   * - All fields in EditJobOptions are optional - only provided fields will be updated.
+   * - jobType cannot be changed.
+   * - Records an 'edited' event with the updated fields in metadata.
+   */
+  editJob: <T extends JobType<PayloadMap>>(
+    jobId: number,
+    updates: EditJobOptions<PayloadMap, T>,
+  ) => Promise<void>;
   /**
    * Reclaim stuck jobs.
    * - If a process (e.g., API route or worker) crashes after marking a job as 'processing' but before completing it, the job can remain stuck in the 'processing' state indefinitely. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as 'completed' or 'failed'.

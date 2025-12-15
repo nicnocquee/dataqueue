@@ -302,4 +302,142 @@ describe('index integration', () => {
     expect(job1?.status).toBe('cancelled');
     expect(job2?.status).toBe('pending');
   });
+
+  it('should edit a pending job via JobQueue API', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+      priority: 0,
+      maxAttempts: 3,
+    });
+
+    await jobQueue.editJob(jobId, {
+      payload: { to: 'updated@example.com' },
+      priority: 10,
+      maxAttempts: 5,
+    });
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.payload).toEqual({ to: 'updated@example.com' });
+    expect(job?.priority).toBe(10);
+    expect(job?.maxAttempts).toBe(5);
+    expect(job?.status).toBe('pending');
+  });
+
+  it('should edit a job and then process it correctly', async () => {
+    const handler = vi.fn(async (payload: { to: string }, _signal) => {
+      expect(payload.to).toBe('updated@example.com');
+    });
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { to: 'original@example.com' },
+    });
+
+    // Edit the job before processing
+    await jobQueue.editJob(jobId, {
+      payload: { to: 'updated@example.com' },
+    });
+
+    const processor = jobQueue.createProcessor(
+      {
+        email: vi.fn(async () => {}),
+        sms: vi.fn(async () => {}),
+        test: handler,
+      },
+      { pollInterval: 100 },
+    );
+    processor.start();
+    await new Promise((r) => setTimeout(r, 300));
+    processor.stop();
+
+    expect(handler).toHaveBeenCalledWith(
+      { to: 'updated@example.com' },
+      expect.any(Object),
+    );
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+  });
+
+  it('should silently fail when editing non-pending jobs', async () => {
+    // Try to edit a completed job
+    const jobId1 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+    });
+    const processor = jobQueue.createProcessor(
+      {
+        email: vi.fn(async () => {}),
+      },
+      { pollInterval: 100 },
+    );
+    processor.start();
+    await new Promise((r) => setTimeout(r, 300));
+    processor.stop();
+
+    const originalJob = await jobQueue.getJob(jobId1);
+    expect(originalJob?.status).toBe('completed');
+
+    await jobQueue.editJob(jobId1, {
+      payload: { to: 'updated@example.com' },
+    });
+
+    const job = await jobQueue.getJob(jobId1);
+    expect(job?.status).toBe('completed');
+    expect(job?.payload).toEqual({ to: 'original@example.com' });
+
+    // Try to edit a processing job
+    // Use a handler that takes longer to ensure job stays in processing state
+    const slowHandler = vi.fn(
+      async (payload: { to: string }, _signal) => {
+        await new Promise((r) => setTimeout(r, 200));
+      },
+    );
+    const processor2 = jobQueue.createProcessor(
+      {
+        email: slowHandler,
+      },
+      { pollInterval: 100 },
+    );
+    const jobId2 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'processing@example.com' },
+    });
+    processor2.start();
+    // Wait a bit for job to be picked up
+    await new Promise((r) => setTimeout(r, 150));
+    // Job should be processing now
+    const processingJob = await jobQueue.getJob(jobId2);
+    if (processingJob?.status === 'processing') {
+      await jobQueue.editJob(jobId2, {
+        payload: { to: 'updated@example.com' },
+      });
+
+      const job2 = await jobQueue.getJob(jobId2);
+      // If still processing, payload should be unchanged
+      if (job2?.status === 'processing') {
+        expect(job2?.payload).toEqual({ to: 'processing@example.com' });
+      }
+    }
+    processor2.stop();
+  });
+
+  it('should record edited event when editing via JobQueue API', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'original@example.com' },
+    });
+
+    await jobQueue.editJob(jobId, {
+      payload: { to: 'updated@example.com' },
+      priority: 10,
+    });
+
+    const events = await jobQueue.getJobEvents(jobId);
+    const editEvent = events.find((e) => e.eventType === 'edited');
+    expect(editEvent).not.toBeUndefined();
+    expect(editEvent?.metadata).toMatchObject({
+      payload: { to: 'updated@example.com' },
+      priority: 10,
+    });
+  });
 });

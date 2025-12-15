@@ -11,6 +11,7 @@ import {
   getJobEvents,
   getJobsByTags,
   getJobs,
+  editJob,
 } from './queue.js';
 import { createProcessor } from './processor.js';
 import {
@@ -19,6 +20,7 @@ import {
   JobOptions,
   ProcessorOptions,
   JobHandlers,
+  JobType,
 } from './types.js';
 import { setLogContext } from './log-context.js';
 import { createPool } from './db-util.js';
@@ -76,6 +78,13 @@ export const initJobQueue = <PayloadMap = any>(
     cleanupOldJobs: (daysToKeep?: number) => cleanupOldJobs(pool, daysToKeep),
     cancelJob: withLogContext(
       (jobId: number) => cancelJob(pool, jobId),
+      config.verbose ?? false,
+    ),
+    editJob: withLogContext(
+      <T extends JobType<PayloadMap>>(
+        jobId: number,
+        updates: import('./types.js').EditJobOptions<PayloadMap, T>,
+      ) => editJob<PayloadMap, T>(pool, jobId, updates as any),
       config.verbose ?? false,
     ),
     cancelAllUpcomingJobs: withLogContext(
