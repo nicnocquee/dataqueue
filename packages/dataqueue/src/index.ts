@@ -123,3 +123,7 @@ const withLogContext =
   };
 
 export * from './types.js';
+export {
+  validateHandlerSerializable,
+  testHandlerSerialization,
+} from './handler-validation.js';

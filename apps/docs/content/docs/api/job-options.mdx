@@ -16,6 +16,9 @@ The `JobOptions` interface defines the options for creating a new job in the que
 - `runAt?`: _Date | null_ — When to run the job (default: now).
 - `timeoutMs?`: _number_ — Timeout for this job in milliseconds.
   If not set, uses the processor default or unlimited.
+- `forceKillOnTimeout?`: _boolean_ — If true, the job will be forcefully terminated (using Worker Threads) when timeout is reached. If false (default), the job will only receive an AbortSignal and must handle the abort gracefully.
+  
+  **⚠️ Runtime Requirements**: This option requires **Node.js** and will **not work** in Bun or other runtimes without worker thread support. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
 - `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
 
 ## Example
@@ -28,6 +31,7 @@ const job = {
   priority: 10,
   runAt: new Date(Date.now() + 60000), // run in 1 minute
   timeoutMs: 30000, // 30 seconds
+  forceKillOnTimeout: false, // Use graceful shutdown (default)
   tags: ['welcome', 'user'], // tags for grouping/searching
 };
 ```

@@ -44,6 +44,7 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     priority = 0,
     runAt = null,
     timeoutMs = undefined,
+    forceKillOnTimeout = false,
     tags = undefined,
   }: JobOptions<PayloadMap, T>,
 ): Promise<number> => {
@@ -53,8 +54,8 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     if (runAt) {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority, run_at, timeout_ms, tags) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7) 
+          (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
          RETURNING id`,
         [
           jobType,
@@ -63,6 +64,7 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
           priority,
           runAt,
           timeoutMs ?? null,
+          forceKillOnTimeout ?? false,
           tags ?? null,
         ],
       );
@@ -72,8 +74,8 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     } else {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority, timeout_ms, tags) 
-         VALUES ($1, $2, $3, $4, $5, $6) 
+          (job_type, payload, max_attempts, priority, timeout_ms, force_kill_on_timeout, tags) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7) 
          RETURNING id`,
         [
           jobType,
@@ -81,6 +83,7 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
           maxAttempts,
           priority,
           timeoutMs ?? null,
+          forceKillOnTimeout ?? false,
           tags ?? null,
         ],
       );
@@ -112,7 +115,7 @@ export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE id = $1`,
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE id = $1`,
       [id],
     );
 
@@ -129,6 +132,7 @@ export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
       ...job,
       payload: job.payload,
       timeoutMs: job.timeoutMs,
+      forceKillOnTimeout: job.forceKillOnTimeout,
       failureReason: job.failureReason,
     };
   } catch (error) {
@@ -154,7 +158,7 @@ export const getJobsByStatus = async <
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
       [status, limit, offset],
     );
 
@@ -164,6 +168,7 @@ export const getJobsByStatus = async <
       ...job,
       payload: job.payload,
       timeoutMs: job.timeoutMs,
+      forceKillOnTimeout: job.forceKillOnTimeout,
       failureReason: job.failureReason,
     }));
   } catch (error) {
@@ -230,7 +235,7 @@ export const getNextBatch = async <
         LIMIT $2
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason"
+      RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason"
     `,
       params,
     );
@@ -249,6 +254,7 @@ export const getNextBatch = async <
       ...job,
       payload: job.payload,
       timeoutMs: job.timeoutMs,
+      forceKillOnTimeout: job.forceKillOnTimeout,
     }));
   } catch (error) {
     log(`Error getting next batch: ${error}`);
@@ -526,7 +532,7 @@ export const getAllJobs = async <
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
       [limit, offset],
     );
     log(`Found ${result.rows.length} jobs (all)`);
@@ -534,6 +540,7 @@ export const getAllJobs = async <
       ...job,
       payload: job.payload,
       timeoutMs: job.timeoutMs,
+      forceKillOnTimeout: job.forceKillOnTimeout,
     }));
   } catch (error) {
     log(`Error getting all jobs: ${error}`);
@@ -674,6 +681,7 @@ export const getJobsByTags = async <
       ...job,
       payload: job.payload,
       timeoutMs: job.timeoutMs,
+      forceKillOnTimeout: job.forceKillOnTimeout,
       failureReason: job.failureReason,
     }));
   } catch (error) {
@@ -699,7 +707,7 @@ export const getJobs = async <PayloadMap, T extends keyof PayloadMap & string>(
 ): Promise<JobRecord<PayloadMap, T>[]> => {
   const client = await pool.connect();
   try {
-    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags FROM job_queue`;
+    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags FROM job_queue`;
     const params: any[] = [];
     let where: string[] = [];
     let paramIdx = 1;
@@ -796,6 +804,7 @@ export const getJobs = async <PayloadMap, T extends keyof PayloadMap & string>(
       ...job,
       payload: job.payload,
       timeoutMs: job.timeoutMs,
+      forceKillOnTimeout: job.forceKillOnTimeout,
       failureReason: job.failureReason,
     }));
   } catch (error) {
