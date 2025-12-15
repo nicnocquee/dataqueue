@@ -32,9 +32,9 @@ If the job times out, the signal will be aborted and your handler should exit ea
 
 If you need to forcefully terminate jobs that don't respond to the abort signal, you can use `forceKillOnTimeout: true`. This will run the handler in a Worker Thread and forcefully terminate it when the timeout is reached.
 
-**⚠️ Runtime Requirements**: `forceKillOnTimeout` requires **Node.js** and will **not work** in Bun or other runtimes without worker thread support. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
+**⚠️ Runtime Requirements**: `forceKillOnTimeout` requires **Node.js** and will **not work** in Bun or other runtimes without worker thread support. See [Force Kill on Timeout](/usage/force-kill-timeout) for details.
 
-**Important**: When using `forceKillOnTimeout`, your handler must be serializable. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
+**Important**: When using `forceKillOnTimeout`, your handler must be serializable. See [Force Kill on Timeout](/usage/force-kill-timeout) for details.
 
 ```typescript
 await queue.addJob({
