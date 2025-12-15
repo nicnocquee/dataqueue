@@ -228,6 +228,87 @@ describe('index integration', () => {
     expect(job2?.status).toBe('cancelled');
   });
 
+  it('should edit all pending jobs via JobQueue API', async () => {
+    // Add three pending jobs
+    const jobId1 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'batch1@example.com' },
+      priority: 0,
+    });
+    const jobId2 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'batch2@example.com' },
+      priority: 0,
+    });
+    const jobId3 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'batch3@example.com' },
+      priority: 0,
+    });
+    // Add a completed job
+    const jobId4 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'done@example.com' },
+      priority: 0,
+    });
+    await pool.query(
+      `UPDATE job_queue SET status = 'completed' WHERE id = $1`,
+      [jobId4],
+    );
+
+    // Edit all pending jobs
+    const editedCount = await jobQueue.editAllPendingJobs(undefined, {
+      priority: 10,
+    });
+    expect(editedCount).toBeGreaterThanOrEqual(3);
+
+    // Check that all pending jobs are updated
+    const job1 = await jobQueue.getJob(jobId1);
+    const job2 = await jobQueue.getJob(jobId2);
+    const job3 = await jobQueue.getJob(jobId3);
+    expect(job1?.priority).toBe(10);
+    expect(job2?.priority).toBe(10);
+    expect(job3?.priority).toBe(10);
+
+    // Completed job should remain unchanged
+    const completedJob = await jobQueue.getJob(jobId4);
+    expect(completedJob?.priority).toBe(0);
+  });
+
+  it('should edit pending jobs with filters via JobQueue API', async () => {
+    const emailJobId1 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'email1@example.com' },
+      priority: 0,
+    });
+    const emailJobId2 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'email2@example.com' },
+      priority: 0,
+    });
+    const smsJobId = await jobQueue.addJob({
+      jobType: 'sms',
+      payload: { to: 'sms@example.com' },
+      priority: 0,
+    });
+
+    // Edit only email jobs
+    const editedCount = await jobQueue.editAllPendingJobs(
+      { jobType: 'email' },
+      {
+        priority: 5,
+      },
+    );
+    expect(editedCount).toBeGreaterThanOrEqual(2);
+
+    const emailJob1 = await jobQueue.getJob(emailJobId1);
+    const emailJob2 = await jobQueue.getJob(emailJobId2);
+    const smsJob = await jobQueue.getJob(smsJobId);
+    expect(emailJob1?.priority).toBe(5);
+    expect(emailJob2?.priority).toBe(5);
+    expect(smsJob?.priority).toBe(0);
+  });
+
   it('should cancel all upcoming jobs by runAt', async () => {
     const runAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour in future
     const jobId1 = await jobQueue.addJob({

@@ -23,10 +23,14 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
  * Options for editing a pending job.
  * All fields are optional and only provided fields will be updated.
  * Note: jobType cannot be changed.
+ * timeoutMs and tags can be set to null to clear them.
  */
 export type EditJobOptions<PayloadMap, T extends JobType<PayloadMap>> = Partial<
   Omit<JobOptions<PayloadMap, T>, 'jobType'>
->;
+> & {
+  timeoutMs?: number | null;
+  tags?: string[] | null;
+};
 
 export enum JobEventType {
   Added = 'added',
@@ -290,6 +294,30 @@ export interface JobQueue<PayloadMap> {
     jobId: number,
     updates: EditJobOptions<PayloadMap, T>,
   ) => Promise<void>;
+  /**
+   * Edit all pending jobs that match the filters.
+   * - Only works for jobs with status 'pending'. Non-pending jobs are not affected.
+   * - All fields in EditJobOptions are optional - only provided fields will be updated.
+   * - jobType cannot be changed.
+   * - Records an 'edited' event with the updated fields in metadata for each affected job.
+   * - Returns the number of jobs that were edited.
+   * - The filters are:
+   *   - jobType: The job type to edit.
+   *   - priority: The priority of the job to edit.
+   *   - runAt: The time the job is scheduled to run at (now supports gt/gte/lt/lte/eq).
+   *   - tags: An object with 'values' (string[]) and 'mode' (TagQueryMode) for tag-based editing.
+   */
+  editAllPendingJobs: <T extends JobType<PayloadMap>>(
+    filters:
+      | {
+          jobType?: string;
+          priority?: number;
+          runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+          tags?: { values: string[]; mode?: TagQueryMode };
+        }
+      | undefined,
+    updates: EditJobOptions<PayloadMap, T>,
+  ) => Promise<number>;
   /**
    * Reclaim stuck jobs.
    * - If a process (e.g., API route or worker) crashes after marking a job as 'processing' but before completing it, the job can remain stuck in the 'processing' state indefinitely. This can happen if the process is killed or encounters an unhandled error after updating the job status but before marking it as 'completed' or 'failed'.

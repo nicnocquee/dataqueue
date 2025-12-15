@@ -193,6 +193,83 @@ await jobQueue.editJob(jobId, {
 });
 ```
 
+### editAllPendingJobs
+
+```ts
+editAllPendingJobs(
+  filters?: {
+    jobType?: string;
+    priority?: number;
+    runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+    tags?: { values: string[]; mode?: 'all' | 'any' | 'none' | 'exact' };
+  },
+  updates: EditJobOptions
+): Promise<number>
+```
+
+Edits all pending jobs that match the filters. Only works for jobs with status 'pending'. Non-pending jobs are not affected. Returns the number of jobs that were edited.
+
+#### Parameters
+
+- `filters` (optional): Filters to select which jobs to edit. If not provided, all pending jobs are edited.
+  - `jobType`: Filter by job type
+  - `priority`: Filter by priority
+  - `runAt`: Filter by scheduled run time (supports `gt`, `gte`, `lt`, `lte`, `eq` operators or exact Date match)
+  - `tags`: Filter by tags with mode ('all', 'any', 'none', 'exact')
+- `updates`: The fields to update (same as `EditJobOptions`). All fields are optional - only provided fields will be updated.
+
+#### Returns
+
+The number of jobs that were successfully edited.
+
+#### Examples
+
+```ts
+// Edit all pending jobs
+const editedCount = await jobQueue.editAllPendingJobs(undefined, {
+  priority: 10,
+});
+
+// Edit all pending email jobs
+const editedCount = await jobQueue.editAllPendingJobs(
+  { jobType: 'email' },
+  {
+    priority: 5,
+  },
+);
+
+// Edit all pending jobs with 'urgent' tag
+const editedCount = await jobQueue.editAllPendingJobs(
+  { tags: { values: ['urgent'], mode: 'any' } },
+  {
+    priority: 10,
+    maxAttempts: 5,
+  },
+);
+
+// Edit all pending jobs scheduled in the future
+const editedCount = await jobQueue.editAllPendingJobs(
+  { runAt: { gte: new Date() } },
+  {
+    priority: 10,
+  },
+);
+
+// Edit with combined filters
+const editedCount = await jobQueue.editAllPendingJobs(
+  {
+    jobType: 'email',
+    tags: { values: ['urgent'], mode: 'any' },
+  },
+  {
+    priority: 10,
+    maxAttempts: 5,
+  },
+);
+```
+
+**Note:** Only pending jobs are edited. Jobs with other statuses (processing, completed, failed, cancelled) are not affected. Edit events are recorded for each affected job, just like single job edits.
+
 ### cancelAllUpcomingJobs
 
 ```ts

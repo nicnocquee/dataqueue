@@ -273,7 +273,9 @@ describe('queue integration', () => {
       'SELECT * FROM job_events WHERE job_id = $1 ORDER BY created_at ASC',
       [jobId],
     );
-    const events = res.rows.map((row) => objectKeysToCamelCase(row) as JobEvent);
+    const events = res.rows.map(
+      (row) => objectKeysToCamelCase(row) as JobEvent,
+    );
     const editEvent = events.find((e) => e.eventType === JobEventType.Edited);
     expect(editEvent).not.toBeUndefined();
     expect(editEvent?.metadata).toMatchObject({
@@ -337,6 +339,347 @@ describe('queue integration', () => {
     const job = await queue.getJob(pool, jobId);
     expect(job?.payload).toEqual(originalJob?.payload);
     expect(job?.priority).toBe(originalJob?.priority);
+  });
+
+  it('should edit all pending jobs without filters', async () => {
+    // Add three pending jobs
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'batch1@example.com' },
+        priority: 0,
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'batch2@example.com' },
+        priority: 0,
+      },
+    );
+    const jobId3 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'batch3@example.com' },
+        priority: 0,
+      },
+    );
+    // Add a completed job
+    const jobId4 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'done@example.com' },
+      },
+    );
+    await queue.completeJob(pool, jobId4);
+
+    // Edit all pending jobs
+    const editedCount = await queue.editAllPendingJobs<
+      { email: { to: string } },
+      'email'
+    >(pool, undefined, {
+      priority: 10,
+    });
+    expect(editedCount).toBeGreaterThanOrEqual(3);
+
+    // Check that all pending jobs are updated
+    const job1 = await queue.getJob(pool, jobId1);
+    const job2 = await queue.getJob(pool, jobId2);
+    const job3 = await queue.getJob(pool, jobId3);
+    expect(job1?.priority).toBe(10);
+    expect(job2?.priority).toBe(10);
+    expect(job3?.priority).toBe(10);
+
+    // Completed job should remain unchanged
+    const completedJob = await queue.getJob(pool, jobId4);
+    expect(completedJob?.priority).toBe(0);
+  });
+
+  it('should edit pending jobs filtered by jobType', async () => {
+    const emailJobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'email1@example.com' },
+        priority: 0,
+      },
+    );
+    const emailJobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'email2@example.com' },
+        priority: 0,
+      },
+    );
+    const smsJobId = await queue.addJob<{ sms: { to: string } }, 'sms'>(pool, {
+      jobType: 'sms',
+      payload: { to: 'sms@example.com' },
+      priority: 0,
+    });
+
+    // Edit only email jobs
+    const editedCount = await queue.editAllPendingJobs<
+      { email: { to: string }; sms: { to: string } },
+      'email'
+    >(
+      pool,
+      { jobType: 'email' },
+      {
+        priority: 5,
+      },
+    );
+    expect(editedCount).toBeGreaterThanOrEqual(2);
+
+    const emailJob1 = await queue.getJob(pool, emailJobId1);
+    const emailJob2 = await queue.getJob(pool, emailJobId2);
+    const smsJob = await queue.getJob(pool, smsJobId);
+    expect(emailJob1?.priority).toBe(5);
+    expect(emailJob2?.priority).toBe(5);
+    expect(smsJob?.priority).toBe(0);
+  });
+
+  it('should edit pending jobs filtered by priority', async () => {
+    const lowPriorityJobId1 = await queue.addJob<
+      { email: { to: string } },
+      'email'
+    >(pool, {
+      jobType: 'email',
+      payload: { to: 'low1@example.com' },
+      priority: 1,
+    });
+    const lowPriorityJobId2 = await queue.addJob<
+      { email: { to: string } },
+      'email'
+    >(pool, {
+      jobType: 'email',
+      payload: { to: 'low2@example.com' },
+      priority: 1,
+    });
+    const highPriorityJobId = await queue.addJob<
+      { email: { to: string } },
+      'email'
+    >(pool, {
+      jobType: 'email',
+      payload: { to: 'high@example.com' },
+      priority: 10,
+    });
+
+    // Edit only low priority jobs
+    const editedCount = await queue.editAllPendingJobs<
+      { email: { to: string } },
+      'email'
+    >(
+      pool,
+      { priority: 1 },
+      {
+        priority: 5,
+      },
+    );
+    expect(editedCount).toBeGreaterThanOrEqual(2);
+
+    const lowJob1 = await queue.getJob(pool, lowPriorityJobId1);
+    const lowJob2 = await queue.getJob(pool, lowPriorityJobId2);
+    const highJob = await queue.getJob(pool, highPriorityJobId);
+    expect(lowJob1?.priority).toBe(5);
+    expect(lowJob2?.priority).toBe(5);
+    expect(highJob?.priority).toBe(10);
+  });
+
+  it('should edit pending jobs filtered by tags', async () => {
+    const taggedJobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'tagged1@example.com' },
+        tags: ['urgent', 'priority'],
+      },
+    );
+    const taggedJobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'tagged2@example.com' },
+        tags: ['urgent', 'priority'],
+      },
+    );
+    const untaggedJobId = await queue.addJob<
+      { email: { to: string } },
+      'email'
+    >(pool, {
+      jobType: 'email',
+      payload: { to: 'untagged@example.com' },
+      tags: ['other'],
+    });
+
+    // Edit only jobs with 'urgent' tag
+    const editedCount = await queue.editAllPendingJobs<
+      { email: { to: string } },
+      'email'
+    >(
+      pool,
+      { tags: { values: ['urgent'], mode: 'any' } },
+      {
+        priority: 10,
+      },
+    );
+    expect(editedCount).toBeGreaterThanOrEqual(2);
+
+    const taggedJob1 = await queue.getJob(pool, taggedJobId1);
+    const taggedJob2 = await queue.getJob(pool, taggedJobId2);
+    const untaggedJob = await queue.getJob(pool, untaggedJobId);
+    expect(taggedJob1?.priority).toBe(10);
+    expect(taggedJob2?.priority).toBe(10);
+    expect(untaggedJob?.priority).toBe(0);
+  });
+
+  it('should edit pending jobs filtered by runAt', async () => {
+    const futureDate = new Date(Date.now() + 60000);
+    const pastDate = new Date(Date.now() - 60000);
+
+    const futureJobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future1@example.com' },
+        runAt: futureDate,
+      },
+    );
+    const futureJobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'future2@example.com' },
+        runAt: futureDate,
+      },
+    );
+    const pastJobId = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'past@example.com' },
+        runAt: pastDate,
+      },
+    );
+
+    // Edit only jobs scheduled in the future
+    const editedCount = await queue.editAllPendingJobs<
+      { email: { to: string } },
+      'email'
+    >(
+      pool,
+      { runAt: { gte: new Date() } },
+      {
+        priority: 10,
+      },
+    );
+    expect(editedCount).toBeGreaterThanOrEqual(2);
+
+    const futureJob1 = await queue.getJob(pool, futureJobId1);
+    const futureJob2 = await queue.getJob(pool, futureJobId2);
+    const pastJob = await queue.getJob(pool, pastJobId);
+    expect(futureJob1?.priority).toBe(10);
+    expect(futureJob2?.priority).toBe(10);
+    expect(pastJob?.priority).toBe(0);
+  });
+
+  it('should not edit non-pending jobs', async () => {
+    // Create processingJobId first so it gets picked up by getNextBatch
+    const processingJobId = await queue.addJob<
+      { email: { to: string } },
+      'email'
+    >(pool, {
+      jobType: 'email',
+      payload: { to: 'processing@example.com' },
+      priority: 0,
+    });
+    const pendingJobId = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'pending@example.com' },
+        priority: 0,
+      },
+    );
+    // Mark as processing (this will pick up processingJobId since it was created first)
+    await queue.getNextBatch(pool, 'worker-batch', 1);
+    const completedJobId = await queue.addJob<
+      { email: { to: string } },
+      'email'
+    >(pool, {
+      jobType: 'email',
+      payload: { to: 'completed@example.com' },
+      priority: 0,
+    });
+    await queue.completeJob(pool, completedJobId);
+
+    // Edit all pending jobs
+    const editedCount = await queue.editAllPendingJobs<
+      { email: { to: string } },
+      'email'
+    >(pool, undefined, {
+      priority: 10,
+    });
+
+    const pendingJob = await queue.getJob(pool, pendingJobId);
+    const processingJob = await queue.getJob(pool, processingJobId);
+    const completedJob = await queue.getJob(pool, completedJobId);
+    expect(pendingJob?.priority).toBe(10);
+    expect(processingJob?.priority).toBe(0);
+    expect(completedJob?.priority).toBe(0);
+    expect(editedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should record edit events for each edited job', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'event1@example.com' },
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'event2@example.com' },
+      },
+    );
+
+    await queue.editAllPendingJobs<{ email: { to: string } }, 'email'>(
+      pool,
+      undefined,
+      {
+        priority: 10,
+      },
+    );
+
+    const events1 = await queue.getJobEvents(pool, jobId1);
+    const events2 = await queue.getJobEvents(pool, jobId2);
+    const editEvent1 = events1.find((e) => e.eventType === JobEventType.Edited);
+    const editEvent2 = events2.find((e) => e.eventType === JobEventType.Edited);
+    expect(editEvent1).not.toBeUndefined();
+    expect(editEvent2).not.toBeUndefined();
+    expect(editEvent1?.metadata).toMatchObject({ priority: 10 });
+    expect(editEvent2?.metadata).toMatchObject({ priority: 10 });
+  });
+
+  it('should return 0 when no fields to update', async () => {
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'empty@example.com' },
+    });
+
+    const editedCount = await queue.editAllPendingJobs<
+      { email: { to: string } },
+      'email'
+    >(pool, undefined, {});
+
+    expect(editedCount).toBe(0);
   });
 
   it('should cancel all upcoming jobs', async () => {
