@@ -27,3 +27,20 @@ const handler = async (payload, signal) => {
 ```
 
 If the job times out, the signal will be aborted and your handler should exit early. If your handler does not check for `signal.aborted`, it will keep running in the background even after the job is marked as failed due to timeout. For best results, always make your handlers abortable if they might run for a long time.
+
+## Force Kill on Timeout
+
+If you need to forcefully terminate jobs that don't respond to the abort signal, you can use `forceKillOnTimeout: true`. This will run the handler in a Worker Thread and forcefully terminate it when the timeout is reached.
+
+**⚠️ Runtime Requirements**: `forceKillOnTimeout` requires **Node.js** and will **not work** in Bun or other runtimes without worker thread support. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
+
+**Important**: When using `forceKillOnTimeout`, your handler must be serializable. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
+
+```typescript
+await queue.addJob({
+  jobType: 'longRunningTask',
+  payload: { data: '...' },
+  timeoutMs: 5000,
+  forceKillOnTimeout: true, // Forcefully terminate if timeout is reached
+});
+```

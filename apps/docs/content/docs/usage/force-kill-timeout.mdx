@@ -1,0 +1,139 @@
+---
+title: Force Kill on Timeout
+---
+
+When you set `forceKillOnTimeout: true` on a job, the handler will be forcefully terminated (using Worker Threads) when the timeout is reached, rather than just receiving an AbortSignal.
+
+## Runtime Requirements
+
+**⚠️ IMPORTANT**: `forceKillOnTimeout` requires **Node.js** and uses the `worker_threads` module. It will **not work** in Bun or other runtimes that don't support Node.js worker threads.
+
+- ✅ **Node.js**: Fully supported (Node.js v10.5.0+)
+- ❌ **Bun**: Not supported - use `forceKillOnTimeout: false` (default) and ensure your handler checks `signal.aborted`
+
+If you're using Bun or another runtime without worker thread support, use the default graceful shutdown approach (`forceKillOnTimeout: false`) and make sure your handlers check `signal.aborted` to exit gracefully when timed out.
+
+## Handler Serialization Requirements
+
+**IMPORTANT**: When using `forceKillOnTimeout`, your handler must be **serializable**. This means the handler function can be converted to a string and executed in a separate worker thread.
+
+### ✅ Serializable Handlers
+
+These handlers will work with `forceKillOnTimeout`:
+
+```typescript
+// Standalone function
+const handler = async (payload, signal) => {
+  await doSomething(payload);
+};
+
+// Function that imports dependencies inside
+const handler = async (payload, signal) => {
+  const { api } = await import('./api');
+  await api.call(payload);
+};
+
+// Function with local variables
+const handler = async (payload, signal) => {
+  const localVar = 'value';
+  await process(payload, localVar);
+};
+```
+
+### ❌ Non-Serializable Handlers
+
+These handlers will **NOT** work with `forceKillOnTimeout`:
+
+```typescript
+// ❌ Closure over external variable
+const db = getDatabase();
+const handler = async (payload, signal) => {
+  await db.query(payload); // 'db' is captured from closure
+};
+
+// ❌ Uses 'this' context
+class MyHandler {
+  async handle(payload, signal) {
+    await this.doSomething(payload); // 'this' won't work
+  }
+}
+
+// ❌ Closure over imported module
+import { someService } from './services';
+const handler = async (payload, signal) => {
+  await someService.process(payload); // 'someService' is from closure
+};
+```
+
+## Validating Handler Serialization
+
+You can validate that your handlers are serializable before using them:
+
+```typescript
+import {
+  validateHandlerSerializable,
+  testHandlerSerialization,
+} from '@nicnocquee/dataqueue';
+
+const handler = async (payload, signal) => {
+  await doSomething(payload);
+};
+
+// Quick validation (synchronous)
+const result = validateHandlerSerializable(handler, 'myJob');
+if (!result.isSerializable) {
+  console.error('Handler is not serializable:', result.error);
+}
+
+// Thorough test (asynchronous, actually tries to serialize)
+const testResult = await testHandlerSerialization(handler, 'myJob');
+if (!testResult.isSerializable) {
+  console.error('Handler failed serialization test:', testResult.error);
+}
+```
+
+## Best Practices
+
+1. **Use standalone functions**: Define handlers as standalone functions, not closures
+2. **Import dependencies inside**: If you need external dependencies, import them inside the handler function
+3. **Avoid 'this' context**: Don't use class methods as handlers unless they're bound
+4. **Test early**: Use `validateHandlerSerializable` during development to catch issues early
+5. **When in doubt, use graceful shutdown**: If your handler can't be serialized, use `forceKillOnTimeout: false` (default) and ensure your handler checks `signal.aborted`
+
+## Example: Converting a Non-Serializable Handler
+
+**Before** (not serializable):
+
+```typescript
+import { db } from './db';
+
+export const jobHandlers = {
+  processData: async (payload, signal) => {
+    // ❌ 'db' is captured from closure
+    await db.query('SELECT * FROM data WHERE id = $1', [payload.id]);
+  },
+};
+```
+
+**After** (serializable):
+
+```typescript
+export const jobHandlers = {
+  processData: async (payload, signal) => {
+    // ✅ Import inside the handler
+    const { db } = await import('./db');
+    await db.query('SELECT * FROM data WHERE id = $1', [payload.id]);
+  },
+};
+```
+
+## Runtime Validation
+
+The library automatically validates handlers when `forceKillOnTimeout` is enabled. If a handler cannot be serialized, you'll get a clear error message:
+
+```
+Handler for job type "myJob" uses 'this' context which cannot be serialized.
+Use a regular function or avoid 'this' references when forceKillOnTimeout is enabled.
+```
+
+This validation happens when the job is processed, so you'll catch serialization issues early in development.

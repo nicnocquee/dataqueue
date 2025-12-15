@@ -475,4 +475,59 @@ describe('per-job timeout', () => {
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
   });
+
+  it('should forcefully terminate job when forceKillOnTimeout is true', async () => {
+    // Create a handler that ignores the abort signal (simulating a handler that doesn't check signal.aborted)
+    // Note: We use a real function (not vi.fn) because vi.fn doesn't serialize properly for worker threads
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+    ) => {
+      // This handler will run indefinitely, ignoring the abort signal
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000); // Will never complete in time
+      });
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 50, // 50ms timeout
+      forceKillOnTimeout: true, // Force kill on timeout
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+    expect(job).not.toBeNull();
+    expect(job?.forceKillOnTimeout).toBe(true);
+    await processJobWithHandlers(pool, job!, handlers);
+    const failed = await queue.getJob(pool, jobId);
+    expect(failed?.status).toBe('failed');
+    expect(failed?.errorHistory?.[0]?.message).toContain('timed out');
+    expect(failed?.failureReason).toBe(FailureReason.Timeout);
+  });
+
+  it('should complete job with forceKillOnTimeout if handler finishes before timeout', async () => {
+    // Note: We use a real function (not vi.fn) because vi.fn doesn't serialize properly for worker threads
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+    ) => {
+      await new Promise((r) => setTimeout(r, 20));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 200, // 200ms
+      forceKillOnTimeout: true,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+    expect(job).not.toBeNull();
+    await processJobWithHandlers(pool, job!, handlers);
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+  });
 });

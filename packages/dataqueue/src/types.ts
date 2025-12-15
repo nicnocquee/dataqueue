@@ -14,6 +14,52 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    */
   timeoutMs?: number;
   /**
+   * If true, the job will be forcefully terminated (using Worker Threads) when timeout is reached.
+   * If false (default), the job will only receive an AbortSignal and must handle the abort gracefully.
+   *
+   * **⚠️ RUNTIME REQUIREMENTS**: This option requires **Node.js** and uses the `worker_threads` module.
+   * It will **not work** in Bun or other runtimes that don't support Node.js worker threads.
+   *
+   * **IMPORTANT**: When `forceKillOnTimeout` is true, the handler must be serializable. This means:
+   * - The handler should be a standalone function (not a closure over external variables)
+   * - It should not capture variables from outer scopes that reference external dependencies
+   * - It should not use 'this' context unless it's a bound method
+   * - All dependencies must be importable in the worker thread context
+   *
+   * **Examples of serializable handlers:**
+   * ```ts
+   * // ✅ Good - standalone function
+   * const handler = async (payload, signal) => {
+   *   await doSomething(payload);
+   * };
+   *
+   * // ✅ Good - function that imports dependencies
+   * const handler = async (payload, signal) => {
+   *   const { api } = await import('./api');
+   *   await api.call(payload);
+   * };
+   *
+   * // ❌ Bad - closure over external variable
+   * const db = getDatabase();
+   * const handler = async (payload, signal) => {
+   *   await db.query(payload); // 'db' is captured from closure
+   * };
+   *
+   * // ❌ Bad - uses 'this' context
+   * class MyHandler {
+   *   async handle(payload, signal) {
+   *     await this.doSomething(payload); // 'this' won't work
+   *   }
+   * }
+   * ```
+   *
+   * If your handler doesn't meet these requirements, use `forceKillOnTimeout: false` (default)
+   * and ensure your handler checks `signal.aborted` to exit gracefully.
+   *
+   * Note: forceKillOnTimeout requires timeoutMs to be set.
+   */
+  forceKillOnTimeout?: boolean;
+  /**
    * Tags for this job. Used for grouping, searching, or batch operations.
    */
   tags?: string[];
@@ -83,6 +129,11 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * Timeout for this job in milliseconds (null means no timeout).
    */
   timeoutMs?: number | null;
+  /**
+   * If true, the job will be forcefully terminated (using Worker Threads) when timeout is reached.
+   * If false (default), the job will only receive an AbortSignal and must handle the abort gracefully.
+   */
+  forceKillOnTimeout?: boolean | null;
   /**
    * The reason for the last failure, if any.
    */
