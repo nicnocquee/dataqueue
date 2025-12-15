@@ -17,8 +17,9 @@ The `JobOptions` interface defines the options for creating a new job in the que
 - `timeoutMs?`: _number_ — Timeout for this job in milliseconds.
   If not set, uses the processor default or unlimited.
 - `forceKillOnTimeout?`: _boolean_ — If true, the job will be forcefully terminated (using Worker Threads) when timeout is reached. If false (default), the job will only receive an AbortSignal and must handle the abort gracefully.
-  
+
   **⚠️ Runtime Requirements**: This option requires **Node.js** and will **not work** in Bun or other runtimes without worker thread support. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
+
 - `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
 
 ## Example
