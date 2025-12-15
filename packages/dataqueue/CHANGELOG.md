@@ -1,5 +1,12 @@
 # dataqueue
 
+## 1.24.0
+
+### Minor Changes
+
+- Added edit job feature.
+- Added force kill on timeout feature.
+
 ## 1.22.0
 
 ### Minor Changes
