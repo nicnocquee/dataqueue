@@ -4,6 +4,29 @@ title: Processor
 
 The `Processor` interface represents a job processor that can process jobs from the queue, either in the background or synchronously.
 
+## Creating a processor
+
+Create a processor by calling `createProcessor` on the queue.
+
+```ts
+const jobQueue = getJobQueue();
+const processor = queue.createProcessor(handlers, options);
+```
+
+### ProcessorOptions
+
+```ts
+interface ProcessorOptions {
+  workerId?: string;
+  batchSize?: number;
+  concurrency?: number;
+  pollInterval?: number;
+  onError?: (error: Error) => void;
+  verbose?: boolean;
+  jobType?: string | string[];
+}
+```
+
 ## Methods
 
 ### startInBackground

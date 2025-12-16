@@ -17,6 +17,8 @@ The processor has these responsibilities:
 
 The processor doesn't run in a separate process. It runs in the same process as your application. In a serverless environment, you can initiate and start the processor for example in an API route. In a long running process environment, you can start the processor when your application starts, and it will periodically check for jobs to process.
 
+For more information, see [Processor](/api/processor).
+
 ## Queue
 
 The queue is an abstraction over the Postgres database. It has these responsibilities:
@@ -24,6 +26,9 @@ The queue is an abstraction over the Postgres database. It has these responsibil
 - add jobs to the database
 - retrieve jobs from the database
 - cancel pending jobs
+- edit pending jobs
+
+For more information, see [Queue](/api/queue).
 
 ## Job
 
@@ -36,3 +41,5 @@ Once a job is added to the queue, it can be in one of these states:
 - `completed`: The job finished successfully.
 - `failed`: The job did not finish successfully. It can be retried up to `maxAttempts` times.
 - `cancelled`: The job was cancelled before it finished.
+
+For more information, see [Job](/api/job).
