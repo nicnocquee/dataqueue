@@ -48,3 +48,40 @@ In the example above, a job is added to the queue to send an email. The job type
 When adding a job, you can set its `priority`, schedule when it should run using `runAt`, and specify a timeout in milliseconds with `timeoutMs`.
 
 You can also add `tags` (an array of strings) to group, search, or batch jobs by category. See [Tags](/api/tags) for more details.
+
+## Idempotency
+
+You can provide an `idempotencyKey` when adding a job to prevent duplicate jobs. If a job with the same key already exists in the queue, `addJob` returns the existing job's ID instead of creating a new one.
+
+This is useful for preventing duplicates caused by retries, double-clicks, webhook replays, or serverless function re-invocations.
+
+```typescript title="@/app/actions/send-welcome.ts"
+'use server';
+
+import { getJobQueue } from '@/lib/queue';
+
+export const sendWelcomeEmail = async (userId: string, email: string) => {
+  const jobQueue = getJobQueue();
+  // [!code highlight:8]
+  const jobId = await jobQueue.addJob({
+    jobType: 'send_email',
+    payload: {
+      to: email,
+      subject: 'Welcome!',
+      body: `Welcome to our platform!`,
+    },
+    idempotencyKey: `welcome-email-${userId}`, // prevents duplicate welcome emails
+  });
+
+  return { jobId };
+};
+```
+
+In the example above, calling `sendWelcomeEmail` multiple times for the same `userId` will only create one job. Subsequent calls return the existing job's ID.
+
+### Behavior
+
+- **No key provided**: Works exactly as before, no uniqueness check is performed.
+- **Key provided, no conflict**: The job is inserted and its new ID is returned.
+- **Key provided, conflict**: The existing job's ID is returned. The existing job is **not** updated.
+- **Scope**: The key is unique across the entire `job_queue` table regardless of job status. Once a key exists, it cannot be reused until the job is cleaned up via [`cleanupOldJobs`](/docs/usage/cleanup-jobs).

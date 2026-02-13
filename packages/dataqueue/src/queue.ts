@@ -46,16 +46,22 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     timeoutMs = undefined,
     forceKillOnTimeout = false,
     tags = undefined,
+    idempotencyKey = undefined,
   }: JobOptions<PayloadMap, T>,
 ): Promise<number> => {
   const client = await pool.connect();
   try {
     let result;
+    const onConflict = idempotencyKey
+      ? `ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`
+      : '';
+
     if (runAt) {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+          (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+         ${onConflict}
          RETURNING id`,
         [
           jobType,
@@ -66,16 +72,15 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
           timeoutMs ?? null,
           forceKillOnTimeout ?? false,
           tags ?? null,
+          idempotencyKey ?? null,
         ],
-      );
-      log(
-        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, runAt ${runAt.toISOString()}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}, tags ${JSON.stringify(tags)}`,
       );
     } else {
       result = await client.query(
         `INSERT INTO job_queue 
-          (job_type, payload, max_attempts, priority, timeout_ms, force_kill_on_timeout, tags) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7) 
+          (job_type, payload, max_attempts, priority, timeout_ms, force_kill_on_timeout, tags, idempotency_key) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+         ${onConflict}
          RETURNING id`,
         [
           jobType,
@@ -85,18 +90,41 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
           timeoutMs ?? null,
           forceKillOnTimeout ?? false,
           tags ?? null,
+          idempotencyKey ?? null,
         ],
       );
-      log(
-        `Added job ${result.rows[0].id}: payload ${JSON.stringify(payload)}, priority ${priority}, maxAttempts ${maxAttempts} jobType ${jobType}, tags ${JSON.stringify(tags)}`,
+    }
+
+    // If ON CONFLICT DO NOTHING was triggered, no rows are returned.
+    // Look up the existing job by idempotency key.
+    if (result.rows.length === 0 && idempotencyKey) {
+      const existing = await client.query(
+        `SELECT id FROM job_queue WHERE idempotency_key = $1`,
+        [idempotencyKey],
+      );
+      if (existing.rows.length > 0) {
+        log(
+          `Job with idempotency key "${idempotencyKey}" already exists (id: ${existing.rows[0].id}), returning existing job`,
+        );
+        return existing.rows[0].id;
+      }
+      // Should not happen, but fall through to throw
+      throw new Error(
+        `Failed to insert job and could not find existing job with idempotency key "${idempotencyKey}"`,
       );
     }
-    await recordJobEvent(pool, result.rows[0].id, JobEventType.Added, {
+
+    const jobId = result.rows[0].id;
+    log(
+      `Added job ${jobId}: payload ${JSON.stringify(payload)}, ${runAt ? `runAt ${runAt.toISOString()}, ` : ''}priority ${priority}, maxAttempts ${maxAttempts}, jobType ${jobType}, tags ${JSON.stringify(tags)}${idempotencyKey ? `, idempotencyKey "${idempotencyKey}"` : ''}`,
+    );
+    await recordJobEvent(pool, jobId, JobEventType.Added, {
       jobType,
       payload,
       tags,
+      idempotencyKey,
     });
-    return result.rows[0].id;
+    return jobId;
   } catch (error) {
     log(`Error adding job: ${error}`);
     throw error;
@@ -115,7 +143,7 @@ export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags FROM job_queue WHERE id = $1`,
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey" FROM job_queue WHERE id = $1`,
       [id],
     );
 
@@ -158,7 +186,7 @@ export const getJobsByStatus = async <
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey" FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
       [status, limit, offset],
     );
 
@@ -235,7 +263,7 @@ export const getNextBatch = async <
         LIMIT $2
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason"
+      RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey"
     `,
       params,
     );
@@ -800,7 +828,7 @@ export const getAllJobs = async <
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason" FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey" FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
       [limit, offset],
     );
     log(`Found ${result.rows.length} jobs (all)`);
@@ -915,7 +943,7 @@ export const getJobsByTags = async <
 ): Promise<JobRecord<PayloadMap, T>[]> => {
   const client = await pool.connect();
   try {
-    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags
+    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey"
        FROM job_queue`;
     let params: any[] = [];
     switch (mode) {
@@ -975,7 +1003,7 @@ export const getJobs = async <PayloadMap, T extends keyof PayloadMap & string>(
 ): Promise<JobRecord<PayloadMap, T>[]> => {
   const client = await pool.connect();
   try {
-    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags FROM job_queue`;
+    let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey" FROM job_queue`;
     const params: any[] = [];
     let where: string[] = [];
     let paramIdx = 1;
