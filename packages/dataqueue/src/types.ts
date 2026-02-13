@@ -63,6 +63,18 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    * Tags for this job. Used for grouping, searching, or batch operations.
    */
   tags?: string[];
+  /**
+   * Optional idempotency key. When provided, ensures that only one job exists for a given key.
+   * If a job with the same idempotency key already exists, `addJob` returns the existing job's ID
+   * instead of creating a duplicate.
+   *
+   * Useful for preventing duplicate jobs caused by retries, double-clicks, webhook replays,
+   * or serverless function re-invocations.
+   *
+   * The key is unique across the entire `job_queue` table regardless of job status.
+   * Once a key exists, it cannot be reused until the job is cleaned up (via `cleanupOldJobs`).
+   */
+  idempotencyKey?: string;
 }
 
 /**
@@ -162,6 +174,10 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * Tags for this job. Used for grouping, searching, or batch operations.
    */
   tags?: string[];
+  /**
+   * The idempotency key for this job, if one was provided when the job was created.
+   */
+  idempotencyKey?: string | null;
 }
 
 export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (

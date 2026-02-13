@@ -1718,4 +1718,112 @@ describe('getJobs', () => {
     expect(jobs.map((j) => j.id)).toContain(id1);
     expect(jobs.map((j) => j.id)).not.toContain(id2);
   });
+
+  // --- Idempotency tests ---
+
+  it('should store and return idempotencyKey when provided', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'test@example.com' },
+      idempotencyKey: 'unique-key-1',
+    });
+    const job = await queue.getJob(pool, jobId);
+    expect(job).not.toBeNull();
+    expect(job?.idempotencyKey).toBe('unique-key-1');
+  });
+
+  it('should return the same job ID when adding a job with a duplicate idempotencyKey', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'first@example.com' },
+        idempotencyKey: 'dedup-key',
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'second@example.com' },
+        idempotencyKey: 'dedup-key',
+      },
+    );
+    expect(jobId1).toBe(jobId2);
+
+    // The original job's payload should be preserved (not updated)
+    const job = await queue.getJob(pool, jobId1);
+    expect(job?.payload).toEqual({ to: 'first@example.com' });
+  });
+
+  it('should create separate jobs when no idempotencyKey is provided', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'a@example.com' },
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'a@example.com' },
+      },
+    );
+    expect(jobId1).not.toBe(jobId2);
+  });
+
+  it('should create separate jobs when different idempotencyKeys are provided', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'same@example.com' },
+        idempotencyKey: 'key-a',
+      },
+    );
+    const jobId2 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'same@example.com' },
+        idempotencyKey: 'key-b',
+      },
+    );
+    expect(jobId1).not.toBe(jobId2);
+  });
+
+  it('should only record the added event once for duplicate idempotencyKey', async () => {
+    const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      {
+        jobType: 'email',
+        payload: { to: 'once@example.com' },
+        idempotencyKey: 'event-dedup-key',
+      },
+    );
+    // Add again with same key
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'twice@example.com' },
+      idempotencyKey: 'event-dedup-key',
+    });
+
+    const events = await queue.getJobEvents(pool, jobId1);
+    const addedEvents = events.filter(
+      (e: JobEvent) => e.eventType === JobEventType.Added,
+    );
+    expect(addedEvents.length).toBe(1);
+  });
+
+  it('should return null idempotencyKey for jobs created without one', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'nokey@example.com' },
+    });
+    const job = await queue.getJob(pool, jobId);
+    expect(job).not.toBeNull();
+    expect(job?.idempotencyKey).toBeNull();
+  });
 });

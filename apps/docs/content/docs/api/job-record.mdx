@@ -39,6 +39,7 @@ The `JobRecord` interface represents a job stored in the queue, including its st
 - `lastCancelledAt`: _Date | null_ — When the job was last
   cancelled.
 - `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
+- `idempotencyKey?`: _string | null_ — The idempotency key for this job, if one was provided when the job was created.
 
 ## Example
 
@@ -49,6 +50,7 @@ The `JobRecord` interface represents a job stored in the queue, including its st
   "payload": { "to": "user@example.com", "subject": "Hello" },
   "status": "pending",
   "createdAt": "2024-06-01T12:00:00Z",
-  "tags": ["welcome", "user"]
+  "tags": ["welcome", "user"],
+  "idempotencyKey": "welcome-email-user-123"
 }
 ```
