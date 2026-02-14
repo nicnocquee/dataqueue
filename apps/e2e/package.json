@@ -1,0 +1,28 @@
+{
+  "name": "e2e",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack --port 3099",
+    "build": "next build",
+    "start": "next start --port 3099",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "migrate-dataqueue": "dataqueue-cli migrate"
+  },
+  "dependencies": {
+    "@nicnocquee/dataqueue": "workspace:*",
+    "next": "15.3.8",
+    "node-pg-migrate": "^8.0.3",
+    "pg": "^8.16.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}
