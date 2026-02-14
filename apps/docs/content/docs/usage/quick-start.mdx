@@ -27,3 +27,16 @@ In this docs, we'll use a Next.js with App Router project which is deployed to V
   The Redis backend requires **no database migrations**. Just install `ioredis`,
   configure the connection, and you're ready to go.
 </Callout>
+
+## Long-Running Server
+
+If you're running a persistent server (Express, Fastify, plain Node.js, etc.) instead of a serverless environment, the setup is slightly different:
+
+1. [Run migrations](/usage/database-migration) (PostgreSQL) or [install `ioredis`](/intro/install) (Redis)
+2. [Define job handlers](/usage/job-handlers)
+3. [Initialize the job queue](/usage/init-queue)
+4. Start the processor in the background with `startInBackground()`
+5. Schedule maintenance tasks (`reclaimStuckJobs`, `cleanupOldJobs`) on intervals
+6. Handle `SIGTERM`/`SIGINT` for graceful shutdown with `stopAndDrain()`
+
+See [Long-Running Server](/usage/long-running-server) for a complete walkthrough and full example.

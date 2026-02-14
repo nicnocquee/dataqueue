@@ -43,7 +43,15 @@ Start the job processor in the background. This will run continuously and proces
 stop(): void
 ```
 
-Stop the job processor that runs in the background.
+Stop the job processor that runs in the background. Does not wait for in-flight jobs to finish.
+
+### stopAndDrain
+
+```ts
+stopAndDrain(timeoutMs?: number): Promise<void>
+```
+
+Stop the processor and wait for the current in-flight batch to finish before resolving. Accepts an optional timeout in milliseconds (default: `30000`). If the batch does not complete within the timeout, the promise resolves anyway so your process is not stuck indefinitely. Useful for graceful shutdown (e.g., SIGTERM handling). See [Long-Running Server](/usage/long-running-server) for a full example.
 
 ### isRunning
 

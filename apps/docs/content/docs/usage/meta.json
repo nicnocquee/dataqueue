@@ -8,6 +8,7 @@
     "init-queue",
     "add-job",
     "process-jobs",
+    "long-running-server",
     "failed-jobs",
     "job-timeout",
     "force-kill-timeout",
