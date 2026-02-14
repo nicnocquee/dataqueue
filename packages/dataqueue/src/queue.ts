@@ -318,6 +318,32 @@ export const completeJob = async (pool: Pool, jobId: number): Promise<void> => {
 };
 
 /**
+ * Prolong a running job by updating its locked_at timestamp.
+ * This prevents `reclaimStuckJobs` from reclaiming the job while it's still actively working.
+ * Also records a 'prolonged' event.
+ */
+export const prolongJob = async (pool: Pool, jobId: number): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `
+      UPDATE job_queue
+      SET locked_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND status = 'processing'
+    `,
+      [jobId],
+    );
+    await recordJobEvent(pool, jobId, JobEventType.Prolonged);
+  } catch (error) {
+    log(`Error prolonging job ${jobId}: ${error}`);
+    // Do not throw -- prolong is best-effort and should not kill the running job
+  } finally {
+    log(`Prolonged job ${jobId}`);
+    client.release();
+  }
+};
+
+/**
  * Mark a job as failed
  */
 export const failJob = async (

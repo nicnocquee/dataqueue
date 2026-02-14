@@ -2,7 +2,7 @@
 title: Job Events
 ---
 
-DataQueue keeps track of every change in a job's status. You can use `getJobEvents` to see all the events for a job, such as when it was added, started processing, completed, failed, cancelled, or retried.
+DataQueue keeps track of every change in a job's status. You can use `getJobEvents` to see all the events for a job, such as when it was added, started processing, completed, failed, cancelled, retried, edited, or prolonged.
 
 ```typescript tab="Code"
 const events = await jobQueue.getJobEvents(jobId);

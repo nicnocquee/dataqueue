@@ -92,6 +92,10 @@ if (!testResult.isSerializable) {
 }
 ```
 
+## Limitations
+
+- **`prolong` and `onTimeout` are not supported** with `forceKillOnTimeout: true`. Because the handler runs in a separate Worker Thread, the `JobContext` methods (`prolong` and `onTimeout`) are no-ops in force-kill mode. If you need to extend timeouts dynamically, use the default graceful shutdown (`forceKillOnTimeout: false`) instead. See [Job Timeout](/docs/usage/job-timeout) for details on extending timeouts.
+
 ## Best Practices
 
 1. **Use standalone functions**: Define handlers as standalone functions, not closures
@@ -99,6 +103,7 @@ if (!testResult.isSerializable) {
 3. **Avoid 'this' context**: Don't use class methods as handlers unless they're bound
 4. **Test early**: Use `validateHandlerSerializable` during development to catch issues early
 5. **When in doubt, use graceful shutdown**: If your handler can't be serialized, use `forceKillOnTimeout: false` (default) and ensure your handler checks `signal.aborted`
+6. **Use `prolong`/`onTimeout` instead**: If your main concern is jobs that are still working but slow, consider using `prolong` or `onTimeout` (with `forceKillOnTimeout: false`) instead of forcefully terminating
 
 ## Example: Converting a Non-Serializable Handler
 

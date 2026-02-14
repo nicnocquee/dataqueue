@@ -23,5 +23,9 @@ type JobEventType =
   | 'completed'
   | 'failed'
   | 'cancelled'
-  | 'retried';
+  | 'retried'
+  | 'edited'
+  | 'prolonged';
 ```
+
+The `prolonged` event is recorded when a running job extends its timeout via `prolong()` or `onTimeout()`. See [Job Timeout](/docs/usage/job-timeout) for details.

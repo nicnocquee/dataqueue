@@ -81,7 +81,11 @@ describe('index integration', () => {
     await new Promise((r) => setTimeout(r, 300));
     processor.stop();
     const job = await jobQueue.getJob(jobId);
-    expect(handler).toHaveBeenCalledWith({ foo: 'bar' }, expect.any(Object));
+    expect(handler).toHaveBeenCalledWith(
+      { foo: 'bar' },
+      expect.any(Object),
+      expect.any(Object),
+    );
     expect(job?.status).toBe('completed');
   });
 
@@ -433,6 +437,7 @@ describe('index integration', () => {
 
     expect(handler).toHaveBeenCalledWith(
       { foo: 'updated@example.com' },
+      expect.any(Object),
       expect.any(Object),
     );
     const job = await jobQueue.getJob(jobId);

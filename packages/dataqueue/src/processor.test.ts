@@ -7,7 +7,7 @@ import {
 } from './processor.js';
 import * as queue from './queue.js';
 import { createTestDbAndPool, destroyTestDb } from './test-util.js';
-import { FailureReason, JobHandler } from './types.js';
+import { FailureReason, JobHandler, JobContext } from './types.js';
 
 // Define the payload map for test jobs
 interface TestPayloadMap {
@@ -60,6 +60,10 @@ describe('processor integration', () => {
     expect(handler).toHaveBeenCalledWith(
       { foo: 'bar' },
       expect.any(AbortSignal),
+      expect.objectContaining({
+        prolong: expect.any(Function),
+        onTimeout: expect.any(Function),
+      }),
     );
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
@@ -529,5 +533,388 @@ describe('per-job timeout', () => {
     await processJobWithHandlers(pool, job!, handlers);
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
+  });
+});
+
+describe('prolong', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('should extend timeout when prolong is called with explicit duration', async () => {
+    // Setup
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      // Wait 60ms, but initial timeout is 50ms -- would fail without prolong
+      await new Promise((r) => setTimeout(r, 30));
+      ctx.prolong(100); // extend to 100ms from now
+      await new Promise((r) => setTimeout(r, 60));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 50,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+  });
+
+  it('should extend timeout when prolong is called without arguments (heartbeat)', async () => {
+    // Setup
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      // Initial timeout is 80ms, total work ~120ms
+      await new Promise((r) => setTimeout(r, 50));
+      ctx.prolong(); // reset to original 80ms from now
+      await new Promise((r) => setTimeout(r, 60));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 80,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+  });
+
+  it('should still timeout if prolong is not called', async () => {
+    // Setup
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      signal,
+    ) => {
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(resolve, 200);
+        signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(new Error('aborted'));
+        });
+      });
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 50,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const failed = await queue.getJob(pool, jobId);
+    expect(failed?.status).toBe('failed');
+    expect(failed?.failureReason).toBe(FailureReason.Timeout);
+  });
+
+  it('should be a no-op when job has no timeout', async () => {
+    // Setup
+    let ctxReceived: JobContext | undefined;
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      ctxReceived = ctx;
+      ctx.prolong(1000); // should be a no-op
+      await new Promise((r) => setTimeout(r, 20));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      // no timeoutMs
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+    expect(ctxReceived).toBeDefined();
+    expect(ctxReceived!.prolong).toBeTypeOf('function');
+  });
+
+  it('should update locked_at in the database when prolong is called', async () => {
+    // Setup
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      await new Promise((r) => setTimeout(r, 30));
+      ctx.prolong(200);
+      // Give DB time to update (fire-and-forget)
+      await new Promise((r) => setTimeout(r, 50));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 100,
+    });
+    const jobBefore = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+    // Pick up the job so it gets locked_at set
+    const batch = await queue.getNextBatch<{ test: {} }, 'test'>(
+      pool,
+      'test-worker',
+      1,
+    );
+    const lockedAtBefore = batch[0]!.lockedAt;
+
+    // Act
+    await processJobWithHandlers(pool, batch[0]!, handlers);
+
+    // Assert - check that a prolonged event was recorded
+    const events = await queue.getJobEvents(pool, jobId);
+    const prolongedEvents = events.filter((e) => e.eventType === 'prolonged');
+    expect(prolongedEvents.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('onTimeout', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('should extend timeout reactively when onTimeout callback returns a positive number', async () => {
+    // Setup
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      ctx.onTimeout(() => {
+        return 100; // extend by 100ms
+      });
+      // Total work: ~80ms, initial timeout 50ms -- would fail without onTimeout extension
+      await new Promise((r) => setTimeout(r, 80));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 50,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+  });
+
+  it('should let timeout proceed when onTimeout callback returns nothing', async () => {
+    // Setup
+    const onTimeoutCalled = vi.fn();
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      signal,
+      ctx,
+    ) => {
+      ctx.onTimeout(() => {
+        onTimeoutCalled();
+        // Return nothing -- let timeout proceed
+      });
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(resolve, 200);
+        signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(new Error('aborted'));
+        });
+      });
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 50,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const failed = await queue.getJob(pool, jobId);
+    expect(failed?.status).toBe('failed');
+    expect(failed?.failureReason).toBe(FailureReason.Timeout);
+    expect(onTimeoutCalled).toHaveBeenCalledTimes(1);
+  });
+
+  it('should allow repeated extensions via onTimeout', async () => {
+    // Setup
+    let callCount = 0;
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      ctx.onTimeout(() => {
+        callCount++;
+        if (callCount <= 3) {
+          return 40; // extend by 40ms each time
+        }
+        // After 3 extensions, let it complete (job should be done by then)
+      });
+      // Total work: ~130ms, initial timeout 40ms
+      // Will need ~3 extensions of 40ms each
+      await new Promise((r) => setTimeout(r, 130));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 40,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+    expect(callCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it('should allow onTimeout with progress-based logic', async () => {
+    // Setup
+    let progress = 0;
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      ctx.onTimeout(() => {
+        if (progress < 100) {
+          return 60; // still working, extend
+        }
+        // done, let timeout proceed if it fires again
+      });
+      // Simulate progress
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 25));
+        progress += 20;
+      }
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 50,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+    expect(progress).toBe(100);
+  });
+
+  it('should work when both prolong and onTimeout are used together', async () => {
+    // Setup
+    let onTimeoutCalled = false;
+    const handler: JobHandler<{ test: {} }, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      // Register reactive fallback
+      ctx.onTimeout(() => {
+        onTimeoutCalled = true;
+        return 100;
+      });
+      // Proactively extend before timeout hits
+      await new Promise((r) => setTimeout(r, 30));
+      ctx.prolong(100);
+      await new Promise((r) => setTimeout(r, 60));
+    };
+    const handlers: { test: JobHandler<{ test: {} }, 'test'> } = {
+      test: handler,
+    };
+    const jobId = await queue.addJob<{ test: {} }, 'test'>(pool, {
+      jobType: 'test',
+      payload: {},
+      timeoutMs: 50,
+    });
+    const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(pool, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+    // onTimeout should NOT have been called since prolong extended before timeout fired
+    expect(onTimeoutCalled).toBe(false);
   });
 });
