@@ -1,5 +1,5 @@
 -- Up Migration
-ALTER TABLE job_queue ADD COLUMN tags TEXT[];
+ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS tags TEXT[];
 CREATE INDEX IF NOT EXISTS idx_job_queue_tags ON job_queue USING GIN (tags);
 
 -- Down Migration

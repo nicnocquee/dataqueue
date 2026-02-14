@@ -1,54 +1,131 @@
-import Buttons from './buttons';
-import {
-  CancelledJobs,
-  CompletedJobs,
-  FailedJobs,
-  PendingJobs,
-  ProcessingJobs,
-  WillRetryFailedJobs,
-} from './queue/list';
-import { refresh } from './queue/refresh';
+export const dynamic = 'force-dynamic';
+
+import { FeaturePage } from '@/components/feature-page';
+import { JobMonitor } from '@/components/job-monitor';
+import { QuickActions } from '@/components/quick-actions';
 import { RefreshPeriodically } from './refresh-periodically';
+import { refresh } from './queue/refresh';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Plus,
+  Tags,
+  Settings,
+  Key,
+  Timer,
+  Pause,
+  Layers,
+  Activity,
+  Wrench,
+} from 'lucide-react';
+import Link from 'next/link';
+
+const features = [
+  {
+    title: 'Add & Process Jobs',
+    description: 'Create jobs with all options and trigger processing',
+    href: '/features/add-jobs',
+    icon: Plus,
+  },
+  {
+    title: 'Tags & Filtering',
+    description: 'Tag jobs and filter by tags with different modes',
+    href: '/features/tags',
+    icon: Tags,
+  },
+  {
+    title: 'Job Management',
+    description: 'Retry, cancel, and edit individual jobs',
+    href: '/features/management',
+    icon: Settings,
+  },
+  {
+    title: 'Idempotency',
+    description: 'Prevent duplicate jobs with idempotency keys',
+    href: '/features/idempotency',
+    icon: Key,
+  },
+  {
+    title: 'Timeouts',
+    description: 'Timeout handling, prolong, onTimeout, force kill',
+    href: '/features/timeouts',
+    icon: Timer,
+  },
+  {
+    title: 'Waitpoints & Tokens',
+    description:
+      'Pause jobs with waitFor/waitUntil and human-in-the-loop tokens',
+    href: '/features/waitpoints',
+    icon: Pause,
+  },
+  {
+    title: 'Step Memoization',
+    description: 'Multi-step jobs with ctx.run for durable execution',
+    href: '/features/steps',
+    icon: Layers,
+  },
+  {
+    title: 'Job Events',
+    description: 'View the full event history for any job',
+    href: '/features/events',
+    icon: Activity,
+  },
+  {
+    title: 'Maintenance',
+    description: 'Cleanup old jobs/events and reclaim stuck jobs',
+    href: '/features/maintenance',
+    icon: Wrench,
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col gap-2 p-4 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">Dataqueue Demo</h1>
-        <p className="text-lg">
-          This is a demo of the job queue. When run via <code>pnpm dev</code>{' '}
-          from the root, the <code>api/cron/process</code> endpoint will be
-          called every 10 seconds.
-        </p>
-        <RefreshPeriodically key="refresh" action={refresh} interval={10000} />
+    <FeaturePage
+      title="Dataqueue Feature Demo"
+      description="A lightweight, type-safe job queue for Node.js with PostgreSQL or Redis. Explore each feature using the sidebar navigation or the cards below."
+    >
+      <RefreshPeriodically key="refresh" action={refresh} interval={10000} />
+
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>
+              Add sample jobs or trigger processing to see the queue in action.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <QuickActions />
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {features.map((feature) => (
+            <Link key={feature.href} href={feature.href}>
+              <Card className="h-full hover:border-primary/50 transition-colors cursor-pointer">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <feature.icon className="h-4 w-4 text-primary" />
+                    <CardTitle className="text-sm">{feature.title}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground">
+                    {feature.description}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+
+        <JobMonitor />
       </div>
-      <Buttons />
-      <div className="flex flex-col gap-4">
-        <div>
-          <p className="text-lg font-bold">Pending Jobs</p>
-          <PendingJobs />
-        </div>
-        <div>
-          <p className="text-lg font-bold">Processing Jobs</p>
-          <ProcessingJobs />
-        </div>
-        <div>
-          <p className="text-lg font-bold">Will Retry Failed Jobs</p>
-          <WillRetryFailedJobs />
-        </div>
-        <div>
-          <p className="text-lg font-bold">Failed Jobs</p>
-          <FailedJobs />
-        </div>
-        <div>
-          <p className="text-lg font-bold">Cancelled Jobs</p>
-          <CancelledJobs />
-        </div>
-        <div>
-          <p className="text-lg font-bold">Completed Jobs</p>
-          <CompletedJobs />
-        </div>
-      </div>
-    </div>
+    </FeaturePage>
   );
 }
