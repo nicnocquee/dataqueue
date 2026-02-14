@@ -11,6 +11,7 @@
     "failed-jobs",
     "job-timeout",
     "force-kill-timeout",
+    "wait",
     "reclaim-jobs",
     "cleanup-jobs",
     "cancel-jobs",

@@ -13,6 +13,10 @@ import {
   getJobs,
   editJob,
   editAllPendingJobs,
+  createWaitpoint,
+  completeWaitpoint,
+  getWaitpoint,
+  expireTimedOutWaitpoints,
 } from './queue.js';
 import { createProcessor } from './processor.js';
 import {
@@ -134,13 +138,34 @@ export const initJobQueue = <PayloadMap = any>(
       handlers: JobHandlers<PayloadMap>,
       options?: ProcessorOptions,
     ) => createProcessor<PayloadMap>(pool, handlers, options),
-    // Advanced access (for custom operations)
-    getPool: () => pool,
+
     // Job events
     getJobEvents: withLogContext(
       (jobId: number) => getJobEvents(pool, jobId),
       config.verbose ?? false,
     ),
+
+    // Wait / Token support
+    createToken: withLogContext(
+      (options?: import('./types.js').CreateTokenOptions) =>
+        createWaitpoint(pool, null, options),
+      config.verbose ?? false,
+    ),
+    completeToken: withLogContext(
+      (tokenId: string, data?: any) => completeWaitpoint(pool, tokenId, data),
+      config.verbose ?? false,
+    ),
+    getToken: withLogContext(
+      (tokenId: string) => getWaitpoint(pool, tokenId),
+      config.verbose ?? false,
+    ),
+    expireTimedOutTokens: withLogContext(
+      () => expireTimedOutWaitpoints(pool),
+      config.verbose ?? false,
+    ),
+
+    // Advanced access (for custom operations)
+    getPool: () => pool,
   };
 };
 
