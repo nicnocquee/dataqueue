@@ -4,6 +4,12 @@ title: Process Jobs
 
 So far, we haven't actually performed any jobs—we've only added them to the queue. Now, let's process those jobs.
 
+<Callout>
+  This page covers processing jobs in a **serverless environment** using
+  cron-triggered API routes. If you're running a long-lived server (Express,
+  Fastify, etc.), see [Long-Running Server](/usage/long-running-server).
+</Callout>
+
 In a serverless environment, we can't have a long-running process that constantly monitors and processes the queue.
 
 Instead, we create an API endpoint that checks the queue and processes jobs in batches. This endpoint is then triggered by a cron job. For example, you can create an API endpoint at `app/api/cron/process` to process jobs in batches:
