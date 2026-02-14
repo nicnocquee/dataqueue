@@ -2,7 +2,7 @@
 title: About
 ---
 
-DataQueue is an open source lightweight job queue for Node.js/TypeScript projects, backed by PostgreSQL. It lets you easily schedule, process, and manage background jobs. It's ideal for serverless environments like Vercel, AWS Lambda, and more.
+DataQueue is an open source lightweight job queue for Node.js/TypeScript projects, backed by **PostgreSQL** or **Redis**. It lets you easily schedule, process, and manage background jobs. It's ideal for serverless environments like Vercel, AWS Lambda, and more.
 
 ## Features
 
@@ -12,6 +12,7 @@ DataQueue is an open source lightweight job queue for Node.js/TypeScript project
 - Supports job priorities, scheduling, canceling, and retries
 - Reclaims stuck jobs: No job will remain in the `processing` state indefinitely
 - Cleans up old jobs: Keeps only jobs from the last xxx days
+- **Choose your backend**: Use PostgreSQL or Redis -- same API, same features, your choice
 
 ## Who is this for?
 
@@ -22,12 +23,28 @@ This package is for you if all of the following apply:
 | ☁️  | You deploy web apps to serverless platforms like Vercel, AWS Lambda, etc.                      |
 | 📝  | You use TypeScript                                                                             |
 | ⚡  | You want your app to stay fast and responsive by offloading heavy tasks to the background      |
-| 💾  | You use PostgreSQL as your database                                                            |
-| 🤷‍♂️  | You don't want to set up or maintain another queue system like Redis                           |
+| 💾  | You use PostgreSQL or Redis                                                                    |
 | 💸  | You're on a budget and want to avoid paying for a job queue service or running your own server |
 
-## Why PostgreSQL?
+## Backend Options
 
-Many people use Redis for job queues, but adding another tool to your stack can increase costs and maintenance. If you already use PostgreSQL, it makes sense to use it for job queues, thanks to [SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html).
+### PostgreSQL
+
+If you already use PostgreSQL, it makes sense to use it for job queues, thanks to [SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html).
 
 The update process in DataQueue uses `FOR UPDATE SKIP LOCKED` to avoid race conditions and improve performance. If two jobs are scheduled at the same time, one will skip any jobs that are already being processed and work on other available jobs instead. This lets multiple workers handle different jobs at once without waiting or causing conflicts, making PostgreSQL a great choice for job queues and similar tasks.
+
+The PostgreSQL backend requires running [database migrations](/usage/database-migration) before use.
+
+### Redis
+
+If you already have a Redis instance in your stack, you can use it as the backend instead. The Redis backend uses Lua scripts for atomic operations and sorted sets for priority-based job claiming, providing the same guarantees as the PostgreSQL backend.
+
+The Redis backend requires **no migrations** -- it automatically creates the necessary keys when jobs are added.
+
+<Callout>
+  Both backends provide **full feature parity**. Tags, filters, idempotency
+  keys, job events, priority ordering, scheduling, and all other features work
+  identically regardless of which backend you choose. You can switch backends at
+  any time by changing a single configuration option.
+</Callout>

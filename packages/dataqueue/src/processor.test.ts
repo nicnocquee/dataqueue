@@ -6,6 +6,7 @@ import {
   processJobWithHandlers,
 } from './processor.js';
 import * as queue from './queue.js';
+import { PostgresBackend } from './backends/postgres.js';
 import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 import { FailureReason, JobHandler, JobContext } from './types.js';
 
@@ -26,11 +27,13 @@ interface TestPayloadMap {
 describe('processor integration', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -56,7 +59,7 @@ describe('processor integration', () => {
     });
     const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     expect(handler).toHaveBeenCalledWith(
       { foo: 'bar' },
       expect.any(AbortSignal),
@@ -89,7 +92,7 @@ describe('processor integration', () => {
     });
     const job = await queue.getJob<TestPayloadMap, 'fail'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.errorHistory?.[0]?.message).toBe('fail!');
@@ -116,7 +119,7 @@ describe('processor integration', () => {
     const job = await queue.getJob<TestPayloadMap, 'missing'>(pool, jobId);
     expect(job).not.toBeNull();
     // @ts-expect-error - test handler is missing
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.errorHistory?.[0]?.message).toContain(
@@ -148,7 +151,7 @@ describe('processor integration', () => {
       }),
     ]);
     const processed = await processBatchWithHandlers(
-      pool,
+      backend,
       'worker-batch',
       2,
       undefined,
@@ -179,7 +182,7 @@ describe('processor integration', () => {
       jobType: 'proc',
       payload: { x: 1 },
     });
-    const processor = createProcessor(pool, handlers, { pollInterval: 200 });
+    const processor = createProcessor(backend, handlers, { pollInterval: 200 });
     processor.start();
     // Wait for job to be processed
     await new Promise((r) => setTimeout(r, 500));
@@ -216,7 +219,7 @@ describe('processor integration', () => {
     });
     // Only process typeA
     const processed = await processBatchWithHandlers(
-      pool,
+      backend,
       'worker-typeA',
       10,
       'typeA',
@@ -263,7 +266,7 @@ describe('processor integration', () => {
     });
     // Only process typeA and typeC
     const processed = await processBatchWithHandlers(
-      pool,
+      backend,
       'worker-multi',
       10,
       ['typeA', 'typeC'],
@@ -304,7 +307,7 @@ describe('processor integration', () => {
       jobType: 'typeB',
       payload: { n: 2 },
     });
-    const processor = createProcessor(pool, handlers, {
+    const processor = createProcessor(backend, handlers, {
       pollInterval: 100,
       jobType: 'typeA',
     });
@@ -324,11 +327,13 @@ describe('processor integration', () => {
 describe('concurrency option', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -356,7 +361,7 @@ describe('concurrency option', () => {
     };
     const handlers = { test: handler };
     await addJobs(10);
-    const processor = createProcessor(pool, handlers, { batchSize: 10 });
+    const processor = createProcessor(backend, handlers, { batchSize: 10 });
     await processor.start();
     expect(maxParallel).toBeLessThanOrEqual(3);
   });
@@ -372,7 +377,7 @@ describe('concurrency option', () => {
     };
     const handlers = { test: handler };
     await addJobs(10);
-    const processor = createProcessor(pool, handlers, {
+    const processor = createProcessor(backend, handlers, {
       batchSize: 10,
       concurrency: 2,
     });
@@ -391,7 +396,7 @@ describe('concurrency option', () => {
     };
     const handlers = { test: handler };
     await addJobs(2);
-    const processor = createProcessor(pool, handlers, {
+    const processor = createProcessor(backend, handlers, {
       batchSize: 2,
       concurrency: 5,
     });
@@ -410,7 +415,7 @@ describe('concurrency option', () => {
     };
     const handlers = { test: handler };
     await addJobs(5);
-    const processor = createProcessor(pool, handlers, {
+    const processor = createProcessor(backend, handlers, {
       batchSize: 5,
       concurrency: 1,
     });
@@ -422,11 +427,13 @@ describe('concurrency option', () => {
 describe('per-job timeout', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -454,7 +461,7 @@ describe('per-job timeout', () => {
     });
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.errorHistory?.[0]?.message).toContain('timed out');
@@ -475,7 +482,7 @@ describe('per-job timeout', () => {
     });
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
   });
@@ -504,7 +511,7 @@ describe('per-job timeout', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
     expect(job?.forceKillOnTimeout).toBe(true);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     const failed = await queue.getJob(pool, jobId);
     expect(failed?.status).toBe('failed');
     expect(failed?.errorHistory?.[0]?.message).toContain('timed out');
@@ -530,7 +537,7 @@ describe('per-job timeout', () => {
     });
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
   });
@@ -539,11 +546,13 @@ describe('per-job timeout', () => {
 describe('prolong', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -575,7 +584,7 @@ describe('prolong', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const completed = await queue.getJob(pool, jobId);
@@ -605,7 +614,7 @@ describe('prolong', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const completed = await queue.getJob(pool, jobId);
@@ -637,7 +646,7 @@ describe('prolong', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const failed = await queue.getJob(pool, jobId);
@@ -668,7 +677,7 @@ describe('prolong', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const completed = await queue.getJob(pool, jobId);
@@ -707,7 +716,7 @@ describe('prolong', () => {
     const lockedAtBefore = batch[0]!.lockedAt;
 
     // Act
-    await processJobWithHandlers(pool, batch[0]!, handlers);
+    await processJobWithHandlers(backend, batch[0]!, handlers);
 
     // Assert - check that a prolonged event was recorded
     const events = await queue.getJobEvents(pool, jobId);
@@ -719,11 +728,13 @@ describe('prolong', () => {
 describe('onTimeout', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -756,7 +767,7 @@ describe('onTimeout', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const completed = await queue.getJob(pool, jobId);
@@ -794,7 +805,7 @@ describe('onTimeout', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const failed = await queue.getJob(pool, jobId);
@@ -833,7 +844,7 @@ describe('onTimeout', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const completed = await queue.getJob(pool, jobId);
@@ -872,7 +883,7 @@ describe('onTimeout', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const completed = await queue.getJob(pool, jobId);
@@ -909,7 +920,7 @@ describe('onTimeout', () => {
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Assert
     const completed = await queue.getJob(pool, jobId);

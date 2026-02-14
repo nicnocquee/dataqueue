@@ -4,10 +4,15 @@ title: Database Utility
 
 The `createPool` function creates a PostgreSQL connection pool for use with the job queue system.
 
+<Callout>
+  This utility is only relevant for the **PostgreSQL backend**. If you're using
+  the Redis backend, you don't need this function.
+</Callout>
+
 ## Function
 
 ```ts
-createPool(config: JobQueueConfig['databaseConfig']): Pool
+createPool(config: PostgresJobQueueConfig['databaseConfig']): Pool
 ```
 
 - `config`: The database connection configuration (connection string, host, port, database, user, password, ssl).
@@ -16,7 +21,7 @@ createPool(config: JobQueueConfig['databaseConfig']): Pool
 ## Example
 
 ```ts
-import { createPool } from 'dataqueue';
+import { createPool } from '@nicnocquee/dataqueue';
 
 const pool = createPool({
   host: 'localhost',

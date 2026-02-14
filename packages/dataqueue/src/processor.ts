@@ -1,4 +1,3 @@
-import { Pool } from 'pg';
 import { Worker } from 'worker_threads';
 import {
   JobRecord,
@@ -11,13 +10,7 @@ import {
   JobContext,
   OnTimeoutCallback,
 } from './types.js';
-import {
-  getNextBatch,
-  completeJob,
-  failJob,
-  prolongJob,
-  setPendingReasonForUnpickedJobs,
-} from './queue.js';
+import { QueueBackend } from './backend.js';
 import { log, setLogContext } from './log-context.js';
 
 /**
@@ -278,20 +271,18 @@ export async function processJobWithHandlers<
   PayloadMap,
   T extends keyof PayloadMap & string,
 >(
-  pool: Pool,
+  backend: QueueBackend,
   job: JobRecord<PayloadMap, T>,
   jobHandlers: JobHandlers<PayloadMap>,
 ): Promise<void> {
   const handler = jobHandlers[job.jobType];
 
   if (!handler) {
-    await setPendingReasonForUnpickedJobs(
-      pool,
+    await backend.setPendingReasonForUnpickedJobs(
       `No handler registered for job type: ${job.jobType}`,
       job.jobType,
     );
-    await failJob(
-      pool,
+    await backend.failJob(
       job.id,
       new Error(`No handler registered for job type: ${job.jobType}`),
       FailureReason.NoHandler,
@@ -330,7 +321,7 @@ export async function processJobWithHandlers<
             const extension = onTimeoutCallback();
             if (typeof extension === 'number' && extension > 0) {
               // Extend: re-arm timeout and update DB
-              prolongJob(pool, job.id).catch(() => {});
+              backend.prolongJob(job.id).catch(() => {});
               armTimeout(extension);
               return;
             }
@@ -355,7 +346,7 @@ export async function processJobWithHandlers<
               if (duration != null && duration > 0) {
                 armTimeout(duration);
                 // Update DB locked_at to prevent reclaimStuckJobs
-                prolongJob(pool, job.id).catch(() => {});
+                backend.prolongJob(job.id).catch(() => {});
               }
             },
             onTimeout: (callback: OnTimeoutCallback) => {
@@ -386,7 +377,7 @@ export async function processJobWithHandlers<
       }
     }
     if (timeoutId) clearTimeout(timeoutId);
-    await completeJob(pool, job.id);
+    await backend.completeJob(job.id);
   } catch (error) {
     if (timeoutId) clearTimeout(timeoutId);
     console.error(`Error processing job ${job.id}:`, error);
@@ -399,8 +390,7 @@ export async function processJobWithHandlers<
     ) {
       failureReason = FailureReason.Timeout;
     }
-    await failJob(
-      pool,
+    await backend.failJob(
       job.id,
       error instanceof Error ? error : new Error(String(error)),
       failureReason,
@@ -412,15 +402,14 @@ export async function processJobWithHandlers<
  * Process a batch of jobs using the provided handler map and concurrency limit
  */
 export async function processBatchWithHandlers<PayloadMap>(
-  pool: Pool,
+  backend: QueueBackend,
   workerId: string,
   batchSize: number,
   jobType: string | string[] | undefined,
   jobHandlers: JobHandlers<PayloadMap>,
   concurrency?: number,
 ): Promise<number> {
-  const jobs = await getNextBatch<PayloadMap, JobType<PayloadMap>>(
-    pool,
+  const jobs = await backend.getNextBatch<PayloadMap, JobType<PayloadMap>>(
     workerId,
     batchSize,
     jobType,
@@ -428,7 +417,7 @@ export async function processBatchWithHandlers<PayloadMap>(
   if (!concurrency || concurrency >= jobs.length) {
     // Default: all in parallel
     await Promise.all(
-      jobs.map((job) => processJobWithHandlers(pool, job, jobHandlers)),
+      jobs.map((job) => processJobWithHandlers(backend, job, jobHandlers)),
     );
     return jobs.length;
   }
@@ -442,7 +431,7 @@ export async function processBatchWithHandlers<PayloadMap>(
       while (running < concurrency && idx < jobs.length) {
         const job = jobs[idx++];
         running++;
-        processJobWithHandlers(pool, job, jobHandlers)
+        processJobWithHandlers(backend, job, jobHandlers)
           .then(() => {
             running--;
             finished++;
@@ -461,13 +450,13 @@ export async function processBatchWithHandlers<PayloadMap>(
 
 /**
  * Start a job processor that continuously processes jobs
- * @param pool - The database pool
+ * @param backend - The queue backend
  * @param handlers - The job handlers for this processor instance
  * @param options - The processor options. Leave pollInterval empty to run only once. Use jobType to filter jobs by type.
  * @returns {Processor} The processor instance
  */
 export const createProcessor = <PayloadMap = any>(
-  pool: Pool,
+  backend: QueueBackend,
   handlers: JobHandlers<PayloadMap>,
   options: ProcessorOptions = {},
 ): Processor => {
@@ -494,7 +483,7 @@ export const createProcessor = <PayloadMap = any>(
 
     try {
       const processed = await processBatchWithHandlers(
-        pool,
+        backend,
         workerId,
         batchSize,
         jobType,

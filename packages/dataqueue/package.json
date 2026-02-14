@@ -1,7 +1,7 @@
 {
   "name": "@nicnocquee/dataqueue",
   "version": "1.24.0",
-  "description": "PostgreSQL-based job queue for Node.js applications with support for serverless environments",
+  "description": "PostgreSQL or Redis-backed job queue for Node.js applications with support for serverless environments",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -33,6 +33,7 @@
   "keywords": [
     "nextjs",
     "postgresql",
+    "redis",
     "job-queue",
     "background-jobs",
     "vercel"
@@ -50,6 +51,7 @@
     "@types/node": "^24.0.4",
     "@types/pg": "^8.15.4",
     "@vitejs/plugin-react": "^4.6.0",
+    "ioredis": "^5.9.3",
     "jsdom": "^26.1.0",
     "node-pg-migrate": "^8.0.3",
     "pnpm": "^9.0.0",
@@ -61,8 +63,17 @@
     "vitest": "^3.2.4"
   },
   "peerDependencies": {
+    "ioredis": "^5.0.0",
     "node-pg-migrate": "^8.0.3",
     "pg": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": true
+    },
+    "node-pg-migrate": {
+      "optional": true
+    }
   },
   "bin": {
     "dataqueue-cli": "./cli.cjs"

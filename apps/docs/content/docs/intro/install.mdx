@@ -2,13 +2,29 @@
 title: Installation
 ---
 
-Before you begin, make sure you have Node.js and TypeScript installed in your environment. And obviously, you need a Postgres database.
+Before you begin, make sure you have Node.js and TypeScript installed in your environment.
 
-You can install the required libraries using your favorite package manager, such as npm:
+## PostgreSQL Backend
+
+If you're using PostgreSQL as your backend, you need a Postgres database. Install the required libraries:
 
 ```package-install
 npm install @nicnocquee/dataqueue
 npm install -D node-pg-migrate ts-node
 ```
 
-You need to install <code>node-pg-migrate</code> and <code>ts-node</code> as development dependencies to run database migrations.
+You need to install <code>node-pg-migrate</code> and <code>ts-node</code> as development dependencies to run [database migrations](/usage/database-migration).
+
+## Redis Backend
+
+If you're using Redis as your backend, you need a Redis server (v6+). Install the required libraries:
+
+```package-install
+npm install @nicnocquee/dataqueue ioredis
+```
+
+<Callout>
+  The `ioredis` package is an optional peer dependency. You only need to install
+  it if you choose Redis as your backend. No database migrations are required
+  for Redis.
+</Callout>
