@@ -608,6 +608,17 @@ export class RedisBackend implements QueueBackend {
     return Number(result);
   }
 
+  async cleanupOldJobEvents(daysToKeep = 30): Promise<number> {
+    // Redis events are stored per-job; cleaning up old events requires
+    // iterating event lists and filtering by date. For now, we skip
+    // events belonging to jobs that have been cleaned up (their keys are gone).
+    // A full implementation would iterate all events:* keys.
+    log(
+      `cleanupOldJobEvents is a no-op for Redis backend (events are cleaned up with their jobs)`,
+    );
+    return 0;
+  }
+
   async reclaimStuckJobs(maxProcessingTimeMinutes = 10): Promise<number> {
     const maxAgeMs = maxProcessingTimeMinutes * 60 * 1000;
     const now = this.nowMs();

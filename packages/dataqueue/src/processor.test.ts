@@ -22,6 +22,17 @@ interface TestPayloadMap {
   typeC: { n: number };
 }
 
+/**
+ * Claims a job by transitioning it to 'processing' status (simulates getNextBatch).
+ * Tests that call processJobWithHandlers directly need the job in 'processing' state.
+ */
+async function claimJob(p: Pool, jobId: number) {
+  await p.query(
+    `UPDATE job_queue SET status = 'processing', locked_by = 'test-worker', locked_at = NOW() WHERE id = $1`,
+    [jobId],
+  );
+}
+
 // Integration tests for processor
 
 describe('processor integration', () => {
@@ -57,7 +68,8 @@ describe('processor integration', () => {
       jobType: 'test',
       payload: { foo: 'bar' },
     });
-    const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
+    // Claim the job so it's in 'processing' status
+    const [job] = await queue.getNextBatch(pool, 'test-worker', 1);
     expect(job).not.toBeNull();
     await processJobWithHandlers(backend, job!, handlers);
     expect(handler).toHaveBeenCalledWith(
@@ -90,6 +102,7 @@ describe('processor integration', () => {
       jobType: 'fail',
       payload: {},
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<TestPayloadMap, 'fail'>(pool, jobId);
     expect(job).not.toBeNull();
     await processJobWithHandlers(backend, job!, handlers);
@@ -116,6 +129,7 @@ describe('processor integration', () => {
       jobType: 'missing',
       payload: {},
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<TestPayloadMap, 'missing'>(pool, jobId);
     expect(job).not.toBeNull();
     // @ts-expect-error - test handler is missing
@@ -459,6 +473,7 @@ describe('per-job timeout', () => {
       payload: {},
       timeoutMs: 50, // 50ms
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
     await processJobWithHandlers(backend, job!, handlers);
@@ -480,6 +495,7 @@ describe('per-job timeout', () => {
       payload: {},
       timeoutMs: 200, // 200ms
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
     await processJobWithHandlers(backend, job!, handlers);
@@ -508,6 +524,7 @@ describe('per-job timeout', () => {
       timeoutMs: 50, // 50ms timeout
       forceKillOnTimeout: true, // Force kill on timeout
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
     expect(job?.forceKillOnTimeout).toBe(true);
@@ -535,6 +552,7 @@ describe('per-job timeout', () => {
       timeoutMs: 200, // 200ms
       forceKillOnTimeout: true,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
     expect(job).not.toBeNull();
     await processJobWithHandlers(backend, job!, handlers);
@@ -581,6 +599,7 @@ describe('prolong', () => {
       payload: {},
       timeoutMs: 50,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -611,6 +630,7 @@ describe('prolong', () => {
       payload: {},
       timeoutMs: 80,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -643,6 +663,7 @@ describe('prolong', () => {
       payload: {},
       timeoutMs: 50,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -674,6 +695,7 @@ describe('prolong', () => {
       payload: {},
       // no timeoutMs
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -764,6 +786,7 @@ describe('onTimeout', () => {
       payload: {},
       timeoutMs: 50,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -802,6 +825,7 @@ describe('onTimeout', () => {
       payload: {},
       timeoutMs: 50,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -841,6 +865,7 @@ describe('onTimeout', () => {
       payload: {},
       timeoutMs: 40,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -880,6 +905,7 @@ describe('onTimeout', () => {
       payload: {},
       timeoutMs: 50,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act
@@ -917,6 +943,7 @@ describe('onTimeout', () => {
       payload: {},
       timeoutMs: 50,
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<{ test: {} }, 'test'>(pool, jobId);
 
     // Act

@@ -322,13 +322,25 @@ export class PostgresBackend implements QueueBackend {
               params.push(tagValues);
           }
         }
+        // Keyset pagination: use cursor (id < cursor) instead of OFFSET
+        if (filters.cursor !== undefined) {
+          where.push(`id < $${paramIdx++}`);
+          params.push(filters.cursor);
+        }
       }
       if (where.length > 0) {
         query += ` WHERE ${where.join(' AND ')}`;
       }
       paramIdx = params.length + 1;
-      query += ` ORDER BY created_at DESC LIMIT $${paramIdx++} OFFSET $${paramIdx}`;
-      params.push(limit, offset);
+      // Use ORDER BY id DESC for consistent keyset pagination
+      query += ` ORDER BY id DESC LIMIT $${paramIdx++}`;
+      // Only apply OFFSET when cursor is not used
+      if (!filters?.cursor) {
+        query += ` OFFSET $${paramIdx}`;
+        params.push(limit, offset);
+      } else {
+        params.push(limit);
+      }
       const result = await client.query(query, params);
       log(`Found ${result.rows.length} jobs`);
       return result.rows.map((job) => ({
@@ -464,8 +476,14 @@ export class PostgresBackend implements QueueBackend {
       log(`Found ${result.rows.length} jobs to process`);
       await client.query('COMMIT');
 
-      for (const row of result.rows) {
-        await this.recordJobEvent(row.id, JobEventType.Processing);
+      // Batch-insert processing events in a single query
+      if (result.rows.length > 0) {
+        await this.recordJobEventsBatch(
+          result.rows.map((row) => ({
+            jobId: row.id,
+            eventType: JobEventType.Processing,
+          })),
+        );
       }
 
       return result.rows.map((job) => ({
@@ -486,21 +504,26 @@ export class PostgresBackend implements QueueBackend {
   async completeJob(jobId: number): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await client.query(
+      const result = await client.query(
         `
         UPDATE job_queue
         SET status = 'completed', updated_at = NOW(), completed_at = NOW(),
             step_data = NULL, wait_until = NULL, wait_token_id = NULL
-        WHERE id = $1
+        WHERE id = $1 AND status = 'processing'
       `,
         [jobId],
       );
+      if (result.rowCount === 0) {
+        log(
+          `Job ${jobId} could not be completed (not in processing state or does not exist)`,
+        );
+      }
       await this.recordJobEvent(jobId, JobEventType.Completed);
+      log(`Completed job ${jobId}`);
     } catch (error) {
       log(`Error completing job ${jobId}: ${error}`);
       throw error;
     } finally {
-      log(`Completed job ${jobId}`);
       client.release();
     }
   }
@@ -512,7 +535,7 @@ export class PostgresBackend implements QueueBackend {
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await client.query(
+      const result = await client.query(
         `
         UPDATE job_queue
         SET status = 'failed', 
@@ -524,7 +547,7 @@ export class PostgresBackend implements QueueBackend {
             error_history = COALESCE(error_history, '[]'::jsonb) || $2::jsonb,
             failure_reason = $3,
             last_failed_at = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND status IN ('processing', 'pending')
       `,
         [
           jobId,
@@ -537,15 +560,20 @@ export class PostgresBackend implements QueueBackend {
           failureReason ?? null,
         ],
       );
+      if (result.rowCount === 0) {
+        log(
+          `Job ${jobId} could not be failed (not in processing/pending state or does not exist)`,
+        );
+      }
       await this.recordJobEvent(jobId, JobEventType.Failed, {
         message: error.message || String(error),
         failureReason,
       });
+      log(`Failed job ${jobId}`);
     } catch (err) {
       log(`Error failing job ${jobId}: ${err}`);
       throw err;
     } finally {
-      log(`Failed job ${jobId}`);
       client.release();
     }
   }
@@ -562,11 +590,11 @@ export class PostgresBackend implements QueueBackend {
         [jobId],
       );
       await this.recordJobEvent(jobId, JobEventType.Prolonged);
+      log(`Prolonged job ${jobId}`);
     } catch (error) {
       log(`Error prolonging job ${jobId}: ${error}`);
       // Do not throw -- prolong is best-effort
     } finally {
-      log(`Prolonged job ${jobId}`);
       client.release();
     }
   }
@@ -576,7 +604,7 @@ export class PostgresBackend implements QueueBackend {
   async retryJob(jobId: number): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await client.query(
+      const result = await client.query(
         `
         UPDATE job_queue
         SET status = 'pending', 
@@ -585,16 +613,21 @@ export class PostgresBackend implements QueueBackend {
             locked_by = NULL,
             next_attempt_at = NOW(),
             last_retried_at = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND status IN ('failed', 'processing')
       `,
         [jobId],
       );
+      if (result.rowCount === 0) {
+        log(
+          `Job ${jobId} could not be retried (not in failed/processing state or does not exist)`,
+        );
+      }
       await this.recordJobEvent(jobId, JobEventType.Retried);
+      log(`Retried job ${jobId}`);
     } catch (error) {
       log(`Error retrying job ${jobId}: ${error}`);
       throw error;
     } finally {
-      log(`Retried job ${jobId}`);
       client.release();
     }
   }
@@ -612,11 +645,11 @@ export class PostgresBackend implements QueueBackend {
         [jobId],
       );
       await this.recordJobEvent(jobId, JobEventType.Cancelled);
+      log(`Cancelled job ${jobId}`);
     } catch (error) {
       log(`Error cancelling job ${jobId}: ${error}`);
       throw error;
     } finally {
-      log(`Cancelled job ${jobId}`);
       client.release();
     }
   }
@@ -931,16 +964,40 @@ export class PostgresBackend implements QueueBackend {
   async cleanupOldJobs(daysToKeep = 30): Promise<number> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(`
+      const result = await client.query(
+        `
         DELETE FROM job_queue
         WHERE status = 'completed'
-        AND updated_at < NOW() - INTERVAL '${daysToKeep} days'
+        AND updated_at < NOW() - INTERVAL '1 day' * $1::int
         RETURNING id
-      `);
+      `,
+        [daysToKeep],
+      );
       log(`Deleted ${result.rowCount} old jobs`);
       return result.rowCount || 0;
     } catch (error) {
       log(`Error cleaning up old jobs: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async cleanupOldJobEvents(daysToKeep = 30): Promise<number> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        DELETE FROM job_events
+        WHERE created_at < NOW() - INTERVAL '1 day' * $1::int
+        RETURNING id
+      `,
+        [daysToKeep],
+      );
+      log(`Deleted ${result.rowCount} old job events`);
+      return result.rowCount || 0;
+    } catch (error) {
+      log(`Error cleaning up old job events: ${error}`);
       throw error;
     } finally {
       client.release();
@@ -955,9 +1012,10 @@ export class PostgresBackend implements QueueBackend {
         UPDATE job_queue
         SET status = 'pending', locked_at = NULL, locked_by = NULL, updated_at = NOW()
         WHERE status = 'processing'
-          AND locked_at < NOW() - INTERVAL '${maxProcessingTimeMinutes} minutes'
+          AND locked_at < NOW() - INTERVAL '1 minute' * $1::int
         RETURNING id
         `,
+        [maxProcessingTimeMinutes],
       );
       log(`Reclaimed ${result.rowCount} stuck jobs`);
       return result.rowCount || 0;
@@ -970,6 +1028,39 @@ export class PostgresBackend implements QueueBackend {
   }
 
   // ── Internal helpers ──────────────────────────────────────────────────
+
+  /**
+   * Batch-insert multiple job events in a single query.
+   * More efficient than individual recordJobEvent calls.
+   */
+  private async recordJobEventsBatch(
+    events: { jobId: number; eventType: JobEventType; metadata?: any }[],
+  ): Promise<void> {
+    if (events.length === 0) return;
+    const client = await this.pool.connect();
+    try {
+      const values: string[] = [];
+      const params: any[] = [];
+      let paramIdx = 1;
+      for (const event of events) {
+        values.push(`($${paramIdx++}, $${paramIdx++}, $${paramIdx++})`);
+        params.push(
+          event.jobId,
+          event.eventType,
+          event.metadata ? JSON.stringify(event.metadata) : null,
+        );
+      }
+      await client.query(
+        `INSERT INTO job_events (job_id, event_type, metadata) VALUES ${values.join(', ')}`,
+        params,
+      );
+    } catch (error) {
+      log(`Error recording batch job events: ${error}`);
+      // Do not throw, to avoid interfering with main job logic
+    } finally {
+      client.release();
+    }
+  }
 
   async setPendingReasonForUnpickedJobs(
     reason: string,

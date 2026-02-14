@@ -14,6 +14,17 @@ interface WaitPayloadMap {
   multiWait: { data: string };
 }
 
+/**
+ * Claims a job by transitioning it to 'processing' status (simulates getNextBatch).
+ * Tests that call processJobWithHandlers directly need the job in 'processing' state.
+ */
+async function claimJob(p: Pool, jobId: number) {
+  await p.query(
+    `UPDATE job_queue SET status = 'processing', locked_by = 'test-worker', locked_at = NOW() WHERE id = $1`,
+    [jobId],
+  );
+}
+
 // Full handlers object (all job types must be present)
 function makeHandlers(overrides: Partial<Record<keyof WaitPayloadMap, any>>) {
   return {
@@ -68,6 +79,7 @@ describe('ctx.run step tracking', () => {
       jobType: 'stepJob',
       payload: { value: 'test' },
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -110,6 +122,7 @@ describe('ctx.run step tracking', () => {
       jobType: 'stepJob',
       payload: { value: 'test' },
     });
+    await claimJob(pool, jobId);
     let job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -164,6 +177,7 @@ describe('ctx.run step tracking', () => {
     });
 
     // First invocation
+    await claimJob(pool, jobId);
     let job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -188,8 +202,6 @@ describe('ctx.run step tracking', () => {
     expect(batch.length).toBe(1);
 
     // The attempts should still be 0 (waiting jobs don't increment)
-    // Note: the first processJobWithHandlers was called directly (not via getNextBatch),
-    // so attempts was never incremented. When resuming from wait via getNextBatch, it should stay the same.
     expect(batch[0]!.attempts).toBe(0);
   });
 });
@@ -225,6 +237,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       jobType: 'waitJob',
       payload: { step: 0 },
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -253,6 +266,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       jobType: 'waitJob',
       payload: { step: 0 },
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -278,6 +292,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       jobType: 'waitJob',
       payload: { step: 0 },
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -301,6 +316,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       jobType: 'waitJob',
       payload: { step: 0 },
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -343,6 +359,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
     });
 
     // First invocation: phase1 runs, first waitFor triggers
+    await claimJob(pool, jobId);
     let job = await queue.getJob<WaitPayloadMap, 'multiWait'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
     expect(phase).toBe(1);
@@ -434,6 +451,7 @@ describe('ctx.waitForToken', () => {
       jobType: 'tokenJob',
       payload: { userId: 'user-123' },
     });
+    await claimJob(pool, jobId);
     let job = await queue.getJob<WaitPayloadMap, 'tokenJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -493,6 +511,7 @@ describe('ctx.waitForToken', () => {
       jobType: 'tokenJob',
       payload: { userId: 'user-456' },
     });
+    await claimJob(pool, jobId);
     let job = await queue.getJob<WaitPayloadMap, 'tokenJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -566,6 +585,7 @@ describe('cancel waiting job', () => {
       jobType: 'waitJob',
       payload: { step: 0 },
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 
@@ -668,6 +688,7 @@ describe('existing handlers without wait features', () => {
       jobType: 'stepJob',
       payload: { value: 'hello' },
     });
+    await claimJob(pool, jobId);
     const job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
     await processJobWithHandlers(backend, job!, handlers);
 

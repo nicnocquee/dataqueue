@@ -417,7 +417,7 @@ describe('Redis backend integration', () => {
   });
 
   it('getRedisClient should return the Redis client', () => {
-    const client = jobQueue.getRedisClient();
+    const client = jobQueue.getRedisClient() as { get: unknown };
     expect(client).toBeDefined();
     expect(typeof client.get).toBe('function');
   });
