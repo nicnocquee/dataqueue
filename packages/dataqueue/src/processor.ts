@@ -10,6 +10,9 @@ import {
   JobHandlers,
   JobContext,
   OnTimeoutCallback,
+  WaitSignal,
+  WaitDuration,
+  WaitTokenResult,
 } from './types.js';
 import {
   getNextBatch,
@@ -17,6 +20,10 @@ import {
   failJob,
   prolongJob,
   setPendingReasonForUnpickedJobs,
+  waitJob,
+  updateStepData,
+  createWaitpoint,
+  getWaitpoint,
 } from './queue.js';
 import { log, setLogContext } from './log-context.js';
 
@@ -257,6 +264,27 @@ async function runHandlerInWorker<
 }
 
 /**
+ * Convert a WaitDuration to a target Date.
+ */
+function calculateWaitUntil(duration: WaitDuration): Date {
+  const now = Date.now();
+  let ms = 0;
+  if (duration.seconds) ms += duration.seconds * 1000;
+  if (duration.minutes) ms += duration.minutes * 60 * 1000;
+  if (duration.hours) ms += duration.hours * 60 * 60 * 1000;
+  if (duration.days) ms += duration.days * 24 * 60 * 60 * 1000;
+  if (duration.weeks) ms += duration.weeks * 7 * 24 * 60 * 60 * 1000;
+  if (duration.months) ms += duration.months * 30 * 24 * 60 * 60 * 1000;
+  if (duration.years) ms += duration.years * 365 * 24 * 60 * 60 * 1000;
+  if (ms <= 0) {
+    throw new Error(
+      'waitFor duration must be positive. Provide at least one positive duration field.',
+    );
+  }
+  return new Date(now + ms);
+}
+
+/**
  * Create a no-op JobContext for cases where prolong/onTimeout are not supported
  * (e.g. forceKillOnTimeout mode or no timeout set).
  */
@@ -268,7 +296,203 @@ function createNoOpContext(reason: string): JobContext {
     onTimeout: () => {
       log(`onTimeout() called but ignored: ${reason}`);
     },
+    run: async <T>(_stepName: string, fn: () => Promise<T>): Promise<T> => {
+      // In no-op context (forceKillOnTimeout), just execute the function directly
+      return fn();
+    },
+    waitFor: async () => {
+      throw new Error(
+        `waitFor() is not supported when forceKillOnTimeout is enabled. ${reason}`,
+      );
+    },
+    waitUntil: async () => {
+      throw new Error(
+        `waitUntil() is not supported when forceKillOnTimeout is enabled. ${reason}`,
+      );
+    },
+    createToken: async () => {
+      throw new Error(
+        `createToken() is not supported when forceKillOnTimeout is enabled. ${reason}`,
+      );
+    },
+    waitForToken: async () => {
+      throw new Error(
+        `waitForToken() is not supported when forceKillOnTimeout is enabled. ${reason}`,
+      );
+    },
   };
+}
+
+/**
+ * Pre-process stepData before handler re-invocation.
+ * Marks pending waits as completed and fetches token outputs.
+ */
+async function resolveCompletedWaits(
+  pool: Pool,
+  stepData: Record<string, any>,
+): Promise<void> {
+  for (const key of Object.keys(stepData)) {
+    if (!key.startsWith('__wait_')) continue;
+    const entry = stepData[key];
+    if (!entry || typeof entry !== 'object' || entry.completed) continue;
+
+    if (entry.type === 'duration' || entry.type === 'date') {
+      // Time-based wait has elapsed (we got picked up, so it must have)
+      stepData[key] = { ...entry, completed: true };
+    } else if (entry.type === 'token' && entry.tokenId) {
+      // Token-based wait -- fetch the waitpoint result
+      const wp = await getWaitpoint(pool, entry.tokenId);
+      if (wp && wp.status === 'completed') {
+        stepData[key] = {
+          ...entry,
+          completed: true,
+          result: { ok: true, output: wp.output },
+        };
+      } else if (wp && wp.status === 'timed_out') {
+        stepData[key] = {
+          ...entry,
+          completed: true,
+          result: { ok: false, error: 'Token timed out' },
+        };
+      }
+      // If still waiting (shouldn't happen), leave as pending
+    }
+  }
+}
+
+/**
+ * Build the extended JobContext with step tracking and wait support.
+ */
+function buildWaitContext(
+  pool: Pool,
+  jobId: number,
+  stepData: Record<string, any>,
+  baseCtx: {
+    prolong: JobContext['prolong'];
+    onTimeout: JobContext['onTimeout'];
+  },
+): JobContext {
+  // Wait counter always starts at 0 per invocation.
+  // The handler replays from the top each time, so the counter position
+  // must match the order of waitFor/waitUntil/waitForToken calls in code.
+  let waitCounter = 0;
+
+  const ctx: JobContext = {
+    prolong: baseCtx.prolong,
+    onTimeout: baseCtx.onTimeout,
+
+    run: async <T>(stepName: string, fn: () => Promise<T>): Promise<T> => {
+      // Check if step was already completed in a previous invocation
+      const cached = stepData[stepName];
+      if (cached && typeof cached === 'object' && cached.__completed) {
+        log(`Step "${stepName}" replayed from cache for job ${jobId}`);
+        return cached.result as T;
+      }
+
+      // Execute the step
+      const result = await fn();
+
+      // Persist step result
+      stepData[stepName] = { __completed: true, result };
+      await updateStepData(pool, jobId, stepData);
+
+      return result;
+    },
+
+    waitFor: async (duration: WaitDuration): Promise<void> => {
+      const waitKey = `__wait_${waitCounter++}`;
+
+      // Check if this wait was already completed (from a previous invocation)
+      const cached = stepData[waitKey];
+      if (cached && typeof cached === 'object' && cached.completed) {
+        log(`Wait "${waitKey}" already completed for job ${jobId}, skipping`);
+        return;
+      }
+
+      // Calculate when to resume
+      const waitUntilDate = calculateWaitUntil(duration);
+
+      // Record this wait as pending in step data
+      stepData[waitKey] = { type: 'duration', completed: false };
+
+      // Throw WaitSignal to pause the handler
+      throw new WaitSignal('duration', waitUntilDate, undefined, stepData);
+    },
+
+    waitUntil: async (date: Date): Promise<void> => {
+      const waitKey = `__wait_${waitCounter++}`;
+
+      // Check if this wait was already completed
+      const cached = stepData[waitKey];
+      if (cached && typeof cached === 'object' && cached.completed) {
+        log(`Wait "${waitKey}" already completed for job ${jobId}, skipping`);
+        return;
+      }
+
+      // Record this wait as pending
+      stepData[waitKey] = { type: 'date', completed: false };
+
+      // Throw WaitSignal to pause the handler
+      throw new WaitSignal('date', date, undefined, stepData);
+    },
+
+    createToken: async (options?) => {
+      const token = await createWaitpoint(pool, jobId, options);
+      return token;
+    },
+
+    waitForToken: async <T = any>(
+      tokenId: string,
+    ): Promise<WaitTokenResult<T>> => {
+      const waitKey = `__wait_${waitCounter++}`;
+
+      // Check if this wait was already completed
+      const cached = stepData[waitKey];
+      if (cached && typeof cached === 'object' && cached.completed) {
+        log(
+          `Token wait "${waitKey}" already completed for job ${jobId}, returning cached result`,
+        );
+        return cached.result as WaitTokenResult<T>;
+      }
+
+      // Check if the token is already completed (e.g., completed while job was still processing)
+      const wp = await getWaitpoint(pool, tokenId);
+      if (wp && wp.status === 'completed') {
+        const result: WaitTokenResult<T> = {
+          ok: true,
+          output: wp.output as T,
+        };
+        stepData[waitKey] = {
+          type: 'token',
+          tokenId,
+          completed: true,
+          result,
+        };
+        await updateStepData(pool, jobId, stepData);
+        return result;
+      }
+      if (wp && wp.status === 'timed_out') {
+        const result: WaitTokenResult<T> = {
+          ok: false,
+          error: 'Token timed out',
+        };
+        stepData[waitKey] = {
+          type: 'token',
+          tokenId,
+          completed: true,
+          result,
+        };
+        await updateStepData(pool, jobId, stepData);
+        return result;
+      }
+
+      // Token not yet completed -- save pending state and throw WaitSignal
+      stepData[waitKey] = { type: 'token', tokenId, completed: false };
+      throw new WaitSignal('token', undefined, tokenId, stepData);
+    },
+  };
+
+  return ctx;
 }
 
 /**
@@ -299,6 +523,19 @@ export async function processJobWithHandlers<
     return;
   }
 
+  // Load step data (may contain completed steps from previous invocations)
+  const stepData: Record<string, any> = { ...(job.stepData || {}) };
+
+  // If resuming from a wait, resolve any pending wait entries
+  const hasStepHistory = Object.keys(stepData).some((k) =>
+    k.startsWith('__wait_'),
+  );
+  if (hasStepHistory) {
+    await resolveCompletedWaits(pool, stepData);
+    // Persist the resolved step data
+    await updateStepData(pool, job.id, stepData);
+  }
+
   // Per-job timeout logic
   const timeoutMs = job.timeoutMs ?? undefined;
   const forceKillOnTimeout = job.forceKillOnTimeout ?? false;
@@ -306,6 +543,7 @@ export async function processJobWithHandlers<
   const controller = new AbortController();
   try {
     // If forceKillOnTimeout is true, run handler in a worker thread
+    // Note: wait features are not available in forceKillOnTimeout mode
     if (forceKillOnTimeout && timeoutMs && timeoutMs > 0) {
       await runHandlerInWorker(handler, job.payload, timeoutMs, job.jobType);
     } else {
@@ -348,7 +586,8 @@ export async function processJobWithHandlers<
 
       const hasTimeout = timeoutMs != null && timeoutMs > 0;
 
-      const ctx: JobContext = hasTimeout
+      // Build base prolong/onTimeout context
+      const baseCtx = hasTimeout
         ? {
             prolong: (ms?: number) => {
               const duration = ms ?? timeoutMs;
@@ -362,7 +601,17 @@ export async function processJobWithHandlers<
               onTimeoutCallback = callback;
             },
           }
-        : createNoOpContext('job has no timeout set');
+        : {
+            prolong: () => {
+              log('prolong() called but ignored: job has no timeout set');
+            },
+            onTimeout: () => {
+              log('onTimeout() called but ignored: job has no timeout set');
+            },
+          };
+
+      // Build the full context with wait support
+      const ctx = buildWaitContext(pool, job.id, stepData, baseCtx);
 
       // If forceKillOnTimeout was set but timeoutMs was missing, warn
       if (forceKillOnTimeout && !hasTimeout) {
@@ -386,9 +635,26 @@ export async function processJobWithHandlers<
       }
     }
     if (timeoutId) clearTimeout(timeoutId);
+
+    // Job completed successfully -- clear step_data and complete
     await completeJob(pool, job.id);
   } catch (error) {
     if (timeoutId) clearTimeout(timeoutId);
+
+    // Check if this is a WaitSignal (not a real error)
+    if (error instanceof WaitSignal) {
+      log(
+        `Job ${job.id} entering wait: type=${error.type}, waitUntil=${error.waitUntil?.toISOString() ?? 'none'}, tokenId=${error.tokenId ?? 'none'}`,
+      );
+      await waitJob(pool, job.id, {
+        waitUntil: error.waitUntil,
+        waitTokenId: error.tokenId,
+        stepData: error.stepData,
+      });
+      return;
+    }
+
+    // Real error -- handle as failure
     console.error(`Error processing job ${job.id}:`, error);
     let failureReason = FailureReason.HandlerError;
     if (
