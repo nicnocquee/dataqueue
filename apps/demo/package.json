@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "cron": "bash cron.sh",
-    "migrate-dataqueue": "dataqueue-cli migrate"
+    "migrate-dataqueue": "dotenv -e .env.local -- dataqueue-cli migrate"
   },
   "dependencies": {
     "@nicnocquee/dataqueue": "workspace:*",

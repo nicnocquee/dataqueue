@@ -7,15 +7,19 @@ CREATE TABLE IF NOT EXISTS job_events (
   metadata JSONB
 );
 
-ALTER TABLE job_events ADD CONSTRAINT fk_job_events_job_queue FOREIGN KEY (job_id) REFERENCES job_queue(id) ON DELETE CASCADE;
-CREATE INDEX idx_job_events_job_id ON job_events(job_id);
-CREATE INDEX idx_job_events_event_type ON job_events(event_type);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_job_events_job_queue') THEN
+    ALTER TABLE job_events ADD CONSTRAINT fk_job_events_job_queue FOREIGN KEY (job_id) REFERENCES job_queue(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_job_events_job_id ON job_events(job_id);
+CREATE INDEX IF NOT EXISTS idx_job_events_event_type ON job_events(event_type);
 
-ALTER TABLE job_queue ADD COLUMN completed_at TIMESTAMPTZ;
-ALTER TABLE job_queue ADD COLUMN started_at TIMESTAMPTZ;
-ALTER TABLE job_queue ADD COLUMN last_retried_at TIMESTAMPTZ;
-ALTER TABLE job_queue ADD COLUMN last_failed_at TIMESTAMPTZ;
-ALTER TABLE job_queue ADD COLUMN last_cancelled_at TIMESTAMPTZ;
+ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS last_retried_at TIMESTAMPTZ;
+ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS last_failed_at TIMESTAMPTZ;
+ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS last_cancelled_at TIMESTAMPTZ;
 
 -- Down Migration
 DROP INDEX IF EXISTS idx_job_events_event_type;
