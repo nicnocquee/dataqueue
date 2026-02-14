@@ -10,12 +10,13 @@ title: JobQueue
 initJobQueue(config: JobQueueConfig): JobQueue
 ```
 
-Initializes the job queue system with the provided configuration.
+Initializes the job queue system with the provided configuration. The `JobQueueConfig` is a discriminated union -- you provide either a PostgreSQL or Redis configuration.
 
-#### JobQueueConfig
+#### PostgresJobQueueConfig
 
 ```ts
-interface JobQueueConfig {
+interface PostgresJobQueueConfig {
+  backend?: 'postgres'; // Optional, defaults to 'postgres'
   databaseConfig: {
     connectionString?: string;
     host?: string;
@@ -27,6 +28,30 @@ interface JobQueueConfig {
   };
   verbose?: boolean;
 }
+```
+
+#### RedisJobQueueConfig
+
+```ts
+interface RedisJobQueueConfig {
+  backend: 'redis'; // Required
+  redisConfig: {
+    url?: string;
+    host?: string;
+    port?: number;
+    password?: string;
+    db?: number;
+    tls?: RedisTLSConfig;
+    keyPrefix?: string; // Default: 'dq:'
+  };
+  verbose?: boolean;
+}
+```
+
+#### JobQueueConfig
+
+```ts
+type JobQueueConfig = PostgresJobQueueConfig | RedisJobQueueConfig;
 ```
 
 #### DatabaseSSLConfig
@@ -44,6 +69,17 @@ interface DatabaseSSLConfig {
 - `cert` - Client certificate as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
 - `key` - Client private key as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
 - `rejectUnauthorized` - Whether to reject unauthorized certificates (default: true)
+
+#### RedisTLSConfig
+
+```ts
+interface RedisTLSConfig {
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
+}
+```
 
 ---
 
@@ -366,7 +402,7 @@ interface ProcessorOptions {
 
 ---
 
-## Database Pool
+## Accessing the Underlying Client
 
 ### getPool
 
@@ -374,4 +410,20 @@ interface ProcessorOptions {
 getPool(): Pool
 ```
 
-Returns the database pool instance.
+Returns the PostgreSQL connection pool instance. Only available when using the PostgreSQL backend.
+
+<Callout type="warn">
+  Throws an error if called when using the Redis backend.
+</Callout>
+
+### getRedisClient
+
+```ts
+getRedisClient(): Redis
+```
+
+Returns the `ioredis` client instance. Only available when using the Redis backend.
+
+<Callout type="warn">
+  Throws an error if called when using the PostgreSQL backend.
+</Callout>

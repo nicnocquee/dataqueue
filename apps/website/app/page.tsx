@@ -13,29 +13,10 @@ import {
   Clock,
   Database,
   CheckCircle,
-  ExternalLink,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Image from 'next/image';
-
-const CodeBlock = ({
-  children,
-  className = '',
-}: {
-  children: string;
-  className?: string;
-}) => {
-  return (
-    <div
-      className={`relative overflow-hidden rounded-lg border bg-muted/50 ${className}`}
-    >
-      <pre className="overflow-x-auto p-4 text-sm">
-        <code className="text-foreground">{children}</code>
-      </pre>
-    </div>
-  );
-};
 
 const FeatureCard = ({
   icon: Icon,
@@ -149,9 +130,9 @@ queue.process<EmailJob>('email', async (job) => {
     },
     {
       icon: Server,
-      title: 'PostgreSQL Backed',
+      title: 'PostgreSQL or Redis',
       description:
-        'Leverages your existing PostgreSQL database. No additional infrastructure or Redis required.',
+        'Choose the backend that fits your stack. Same API, full feature parity — just change a config option.',
     },
     {
       icon: Clock,
@@ -183,9 +164,9 @@ queue.process<EmailJob>('email', async (job) => {
       description: 'Offload heavy tasks to keep your app lightning fast',
     },
     {
-      title: 'PostgreSQL Integration',
+      title: 'PostgreSQL or Redis',
       description:
-        'Uses your existing database - no additional services needed',
+        'Works with your existing database — no additional services needed',
     },
     {
       title: 'Budget Friendly',
@@ -269,9 +250,11 @@ queue.process<EmailJob>('email', async (job) => {
               with ease
             </h1>
             <p className="mb-8 text-xl text-muted-foreground sm:text-2xl">
-              DataQueue allows you to utilize your existing PostgreSQL database
-              to process background jobs. No need for additional infra or
-              services. <span className="highlight-marker">Open Source.</span>
+              A lightweight job queue backed by{' '}
+              <span className="font-semibold text-foreground">PostgreSQL</span>{' '}
+              or <span className="font-semibold text-foreground">Redis</span>.
+              Use your existing database — no extra infra needed.{' '}
+              <span className="highlight-marker">Open Source.</span>
             </p>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <a

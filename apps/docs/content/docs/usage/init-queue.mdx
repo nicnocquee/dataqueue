@@ -2,7 +2,9 @@
 title: Initialize Queue
 ---
 
-After defining your job types, payloads, and handlers, you need to initialize the job queue which basically sets up the connection pool to the Postgres database.
+After defining your job types, payloads, and handlers, you need to initialize the job queue which sets up the connection to your database backend.
+
+## PostgreSQL
 
 ```typescript title="@lib/queue.ts"
 import { initJobQueue } from '@nicnocquee/dataqueue';
@@ -35,7 +37,58 @@ PG_DATAQUEUE_DATABASE=postgresql://postgres:password@localhost:5432/my_database?
 
 </Callout>
 
-You can now use this queue instance throughout your app to add jobs, process jobs, and more.
+## Redis
+
+To use Redis as the backend, set `backend: 'redis'` and provide `redisConfig` instead of `databaseConfig`:
+
+```typescript title="@lib/queue.ts"
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+let jobQueue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
+
+export const getJobQueue = () => {
+  if (!jobQueue) {
+    // [!code highlight:7]
+    jobQueue = initJobQueue<JobPayloadMap>({
+      backend: 'redis',
+      redisConfig: {
+        url: process.env.REDIS_URL, // e.g. redis://localhost:6379
+      },
+      verbose: process.env.NODE_ENV === 'development',
+    });
+  }
+  return jobQueue;
+};
+```
+
+You can also connect using individual connection options instead of a URL:
+
+```typescript title="@lib/queue.ts"
+jobQueue = initJobQueue<JobPayloadMap>({
+  backend: 'redis',
+  redisConfig: {
+    host: 'localhost',
+    port: 6379,
+    password: process.env.REDIS_PASSWORD,
+    db: 0,
+    keyPrefix: 'myapp:', // Optional, defaults to 'dq:'
+  },
+  verbose: process.env.NODE_ENV === 'development',
+});
+```
+
+<Callout>
+  The `keyPrefix` option lets you namespace all Redis keys. This is useful when
+  sharing a Redis instance between multiple applications or multiple queues. The
+  default prefix is `dq:`.
+</Callout>
+
+---
+
+## Using the Queue
+
+Once initialized, you use the queue instance identically regardless of backend. The API is the same for both PostgreSQL and Redis.
 
 ```typescript title="@/app/actions/send-email.ts"
 import { getJobQueue } from '@/lib/queue';
@@ -54,9 +107,11 @@ const sendEmail = async () => {
 };
 ```
 
-## SSL Configuration
+---
 
-Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections and use their own CA certificate (.crt file) to sign the server’s certificate. To securely verify the server’s identity, you must configure your client to trust this CA certificate.
+## SSL Configuration (PostgreSQL)
+
+Most managed Postgres providers (like DigitalOcean, Supabase, etc.) require SSL connections and use their own CA certificate (.crt file) to sign the server's certificate. To securely verify the server's identity, you must configure your client to trust this CA certificate.
 
 You can configure SSL for your database connection in several ways, depending on your environment and security requirements.
 
@@ -161,3 +216,22 @@ export const getJobQueue = () => {
   the `sslmode` parameter from the connection string. Otherwise, the connection
   will fail.
 </Callout>
+
+---
+
+## TLS Configuration (Redis)
+
+If your Redis server requires TLS (common with managed services like AWS ElastiCache, Redis Cloud, etc.), provide TLS options in the `redisConfig`:
+
+```typescript title="@lib/queue.ts"
+jobQueue = initJobQueue<JobPayloadMap>({
+  backend: 'redis',
+  redisConfig: {
+    url: process.env.REDIS_URL,
+    tls: {
+      ca: process.env.REDIS_CA_CERT, // PEM string
+      rejectUnauthorized: true,
+    },
+  },
+});
+```

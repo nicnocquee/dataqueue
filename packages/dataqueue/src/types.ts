@@ -1,5 +1,3 @@
-import { Pool } from 'pg';
-
 // Utility type for job type keys
 export type JobType<PayloadMap> = keyof PayloadMap & string;
 
@@ -448,7 +446,12 @@ export interface DatabaseSSLConfig {
   rejectUnauthorized?: boolean;
 }
 
-export interface JobQueueConfig {
+/**
+ * Configuration for PostgreSQL backend (default).
+ * Backward-compatible: omitting `backend` defaults to 'postgres'.
+ */
+export interface PostgresJobQueueConfig {
+  backend?: 'postgres';
   databaseConfig: {
     connectionString?: string;
     host?: string;
@@ -460,6 +463,48 @@ export interface JobQueueConfig {
   };
   verbose?: boolean;
 }
+
+/**
+ * TLS configuration for the Redis connection.
+ */
+export interface RedisTLSConfig {
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
+}
+
+/**
+ * Configuration for Redis backend.
+ */
+export interface RedisJobQueueConfig {
+  backend: 'redis';
+  redisConfig: {
+    /** Redis URL (e.g. redis://localhost:6379) */
+    url?: string;
+    host?: string;
+    port?: number;
+    password?: string;
+    /** Redis database number (default: 0) */
+    db?: number;
+    tls?: RedisTLSConfig;
+    /**
+     * Key prefix for all Redis keys (default: 'dq:').
+     * Useful to namespace multiple queues in the same Redis instance.
+     */
+    keyPrefix?: string;
+  };
+  verbose?: boolean;
+}
+
+/**
+ * Job queue configuration — discriminated union.
+ * If `backend` is omitted, PostgreSQL is used.
+ */
+export type JobQueueConfig = PostgresJobQueueConfig | RedisJobQueueConfig;
+
+/** @deprecated Use JobQueueConfig instead. Alias kept for backward compat. */
+export type JobQueueConfigLegacy = PostgresJobQueueConfig;
 
 export type TagQueryMode = 'exact' | 'all' | 'any' | 'none';
 
@@ -643,7 +688,13 @@ export interface JobQueue<PayloadMap> {
   expireTimedOutTokens: () => Promise<number>;
 
   /**
-   * Get the database pool.
+   * Get the PostgreSQL database pool.
+   * Throws if the backend is not PostgreSQL.
    */
-  getPool: () => Pool;
+  getPool: () => any;
+  /**
+   * Get the Redis client instance (ioredis).
+   * Throws if the backend is not Redis.
+   */
+  getRedisClient: () => any;
 }

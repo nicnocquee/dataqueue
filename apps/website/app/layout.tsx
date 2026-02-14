@@ -6,9 +6,9 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://dataqueue.dev'),
-  title: 'DataQueue | A lightweight, PostgreSQL-backed job queue',
+  title: 'DataQueue | A lightweight job queue backed by PostgreSQL or Redis',
   description:
-    'An open-source, lightweight, PostgreSQL-backed job queue for Node.js/TypeScript projects. Schedule, process, and manage background jobs with ease.',
+    'An open-source, lightweight job queue backed by PostgreSQL or Redis for Node.js/TypeScript projects. Schedule, process, and manage background jobs with ease.',
 };
 
 export default function RootLayout({

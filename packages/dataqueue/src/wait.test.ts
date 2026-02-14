@@ -4,6 +4,7 @@ import { processJobWithHandlers } from './processor.js';
 import * as queue from './queue.js';
 import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 import { JobHandler, JobContext, WaitSignal } from './types.js';
+import { PostgresBackend } from './backends/postgres.js';
 
 // Payload map for wait-related tests
 interface WaitPayloadMap {
@@ -27,11 +28,13 @@ function makeHandlers(overrides: Partial<Record<keyof WaitPayloadMap, any>>) {
 describe('ctx.run step tracking', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -66,7 +69,7 @@ describe('ctx.run step tracking', () => {
       payload: { value: 'test' },
     });
     const job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Job should be completed
     const completed = await queue.getJob(pool, jobId);
@@ -108,7 +111,7 @@ describe('ctx.run step tracking', () => {
       payload: { value: 'test' },
     });
     let job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Job should be in 'waiting' status
     job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
@@ -133,7 +136,7 @@ describe('ctx.run step tracking', () => {
     expect(batch.length).toBe(1);
 
     // Second invocation: step1 replayed from cache, wait skipped, step2 executes
-    await processJobWithHandlers(pool, batch[0]!, handlers);
+    await processJobWithHandlers(backend, batch[0]!, handlers);
 
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
@@ -162,7 +165,7 @@ describe('ctx.run step tracking', () => {
 
     // First invocation
     let job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Check attempts after first wait
     job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
@@ -194,11 +197,13 @@ describe('ctx.run step tracking', () => {
 describe('ctx.waitFor / ctx.waitUntil', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -221,7 +226,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       payload: { step: 0 },
     });
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     const waiting = await queue.getJob(pool, jobId);
     expect(waiting?.status).toBe('waiting');
@@ -249,7 +254,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       payload: { step: 0 },
     });
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     const waiting = await queue.getJob(pool, jobId);
     expect(waiting?.status).toBe('waiting');
@@ -274,7 +279,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       payload: { step: 0 },
     });
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     const events = await queue.getJobEvents(pool, jobId);
     const waitingEvents = events.filter((e) => e.eventType === 'waiting');
@@ -297,7 +302,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       payload: { step: 0 },
     });
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Try to pick up -- should get nothing (wait_until is in the future)
     const batch = await queue.getNextBatch<WaitPayloadMap, 'waitJob'>(
@@ -339,7 +344,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
 
     // First invocation: phase1 runs, first waitFor triggers
     let job = await queue.getJob<WaitPayloadMap, 'multiWait'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
     expect(phase).toBe(1);
 
     let waiting = await queue.getJob(pool, jobId);
@@ -359,7 +364,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       'worker-test',
       1,
     );
-    await processJobWithHandlers(pool, batch[0]!, handlers);
+    await processJobWithHandlers(backend, batch[0]!, handlers);
     expect(phase).toBe(2);
 
     waiting = await queue.getJob(pool, jobId);
@@ -379,7 +384,7 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
       'worker-test',
       1,
     );
-    await processJobWithHandlers(pool, batch[0]!, handlers);
+    await processJobWithHandlers(backend, batch[0]!, handlers);
     expect(phase).toBe(3);
 
     const completed = await queue.getJob(pool, jobId);
@@ -390,11 +395,13 @@ describe('ctx.waitFor / ctx.waitUntil', () => {
 describe('ctx.waitForToken', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -428,7 +435,7 @@ describe('ctx.waitForToken', () => {
       payload: { userId: 'user-123' },
     });
     let job = await queue.getJob<WaitPayloadMap, 'tokenJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     expect(tokenId).toBeDefined();
     job = await queue.getJob<WaitPayloadMap, 'tokenJob'>(pool, jobId);
@@ -456,7 +463,7 @@ describe('ctx.waitForToken', () => {
       1,
     );
     expect(batch.length).toBe(1);
-    await processJobWithHandlers(pool, batch[0]!, handlers);
+    await processJobWithHandlers(backend, batch[0]!, handlers);
 
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
@@ -487,7 +494,7 @@ describe('ctx.waitForToken', () => {
       payload: { userId: 'user-456' },
     });
     let job = await queue.getJob<WaitPayloadMap, 'tokenJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     expect(tokenId).toBeDefined();
     job = await queue.getJob<WaitPayloadMap, 'tokenJob'>(pool, jobId);
@@ -520,7 +527,7 @@ describe('ctx.waitForToken', () => {
       1,
     );
     expect(batch.length).toBe(1);
-    await processJobWithHandlers(pool, batch[0]!, handlers);
+    await processJobWithHandlers(backend, batch[0]!, handlers);
 
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');
@@ -531,11 +538,13 @@ describe('ctx.waitForToken', () => {
 describe('cancel waiting job', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -558,7 +567,7 @@ describe('cancel waiting job', () => {
       payload: { step: 0 },
     });
     const job = await queue.getJob<WaitPayloadMap, 'waitJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     // Verify waiting
     let waiting = await queue.getJob(pool, jobId);
@@ -577,11 +586,13 @@ describe('cancel waiting job', () => {
 describe('createToken / completeToken outside handlers', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -628,11 +639,13 @@ describe('WaitSignal class', () => {
 describe('existing handlers without wait features', () => {
   let pool: Pool;
   let dbName: string;
+  let backend: PostgresBackend;
 
   beforeEach(async () => {
     const setup = await createTestDbAndPool();
     pool = setup.pool;
     dbName = setup.dbName;
+    backend = new PostgresBackend(pool);
   });
 
   afterEach(async () => {
@@ -656,7 +669,7 @@ describe('existing handlers without wait features', () => {
       payload: { value: 'hello' },
     });
     const job = await queue.getJob<WaitPayloadMap, 'stepJob'>(pool, jobId);
-    await processJobWithHandlers(pool, job!, handlers);
+    await processJobWithHandlers(backend, job!, handlers);
 
     const completed = await queue.getJob(pool, jobId);
     expect(completed?.status).toBe('completed');

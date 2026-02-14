@@ -2,6 +2,12 @@
 title: Database Migration
 ---
 
+<Callout>
+  Database migrations are **only required for the PostgreSQL backend**. If
+  you're using the Redis backend, you can skip this page entirely -- Redis
+  requires no schema setup.
+</Callout>
+
 After installing the package, add the following script to your `package.json` to apply [the migrations](https://github.com/nicnocquee/dataqueue/tree/main/packages/dataqueue/migrations):
 
 ```json title="package.json"

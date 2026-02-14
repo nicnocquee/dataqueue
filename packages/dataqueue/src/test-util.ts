@@ -65,3 +65,35 @@ export async function destroyTestDb(dbName: string) {
   await adminPool.query(`DROP DATABASE IF EXISTS ${dbName}`);
   await adminPool.end();
 }
+
+/**
+ * Create a Redis test setup with a unique prefix to isolate tests.
+ * Returns the prefix and a cleanup function.
+ */
+export function createRedisTestPrefix(): string {
+  return `test_${randomUUID().replace(/-/g, '').slice(0, 12)}:`;
+}
+
+/**
+ * Flush all keys with the given prefix from Redis.
+ */
+export async function cleanupRedisPrefix(
+  redisClient: any,
+  prefix: string,
+): Promise<void> {
+  // Use SCAN to find all keys with the prefix and delete them
+  let cursor = '0';
+  do {
+    const [nextCursor, keys] = await redisClient.scan(
+      cursor,
+      'MATCH',
+      `${prefix}*`,
+      'COUNT',
+      100,
+    );
+    cursor = nextCursor;
+    if (keys.length > 0) {
+      await redisClient.del(...keys);
+    }
+  } while (cursor !== '0');
+}

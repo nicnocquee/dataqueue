@@ -2,7 +2,7 @@
 title: Overview
 ---
 
-DataQueue is a lightweight library that helps you manage your job queue in a Postgres database. It has three main components: the processor, the queue, and the job. It is not an external tool or service. You install DataQueue in your project and use it to add jobs to the queue, process them, and more, using your own existing Postgres database.
+DataQueue is a lightweight library that helps you manage your job queue using a **PostgreSQL** or **Redis** backend. It has three main components: the processor, the queue, and the job. It is not an external tool or service. You install DataQueue in your project and use it to add jobs to the queue, process them, and more, using your own existing database.
 
 ![](/dataqueue-overview.png)
 
@@ -10,7 +10,7 @@ DataQueue is a lightweight library that helps you manage your job queue in a Pos
 
 The processor has these responsibilities:
 
-- retrieve a certain number of unclaimed, pending jobs from the Postgres database
+- retrieve a certain number of unclaimed, pending jobs from the database
 - run the defined job handlers for each job
 - update the job status accordingly
 - retry failed jobs
@@ -21,12 +21,14 @@ For more information, see [Processor](/api/processor).
 
 ## Queue
 
-The queue is an abstraction over the Postgres database. It has these responsibilities:
+The queue is an abstraction over the database. It has these responsibilities:
 
 - add jobs to the database
 - retrieve jobs from the database
 - cancel pending jobs
 - edit pending jobs
+
+The API is identical whether you're using PostgreSQL or Redis as your backend. You select the backend when [initializing the queue](/usage/init-queue).
 
 For more information, see [Queue](/api/queue).
 

@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { JobQueueConfig } from './types.js';
+import { PostgresJobQueueConfig } from './types.js';
 import { parse } from 'pg-connection-string';
 import fs from 'fs';
 
@@ -26,7 +26,9 @@ function loadPemOrFile(value?: string): string | undefined {
  *     rejectUnauthorized: true
  *   }
  */
-export const createPool = (config: JobQueueConfig['databaseConfig']): Pool => {
+export const createPool = (
+  config: PostgresJobQueueConfig['databaseConfig'],
+): Pool => {
   let searchPath: string | undefined;
   let ssl: any = undefined;
   let customCA: string | undefined;

@@ -1,5 +1,5 @@
-import { Pool } from 'pg';
 import { Worker } from 'worker_threads';
+import { Pool } from 'pg';
 import {
   JobRecord,
   ProcessorOptions,
@@ -14,18 +14,60 @@ import {
   WaitDuration,
   WaitTokenResult,
 } from './types.js';
+import { QueueBackend } from './backend.js';
+import { PostgresBackend } from './backends/postgres.js';
 import {
-  getNextBatch,
-  completeJob,
-  failJob,
-  prolongJob,
-  setPendingReasonForUnpickedJobs,
   waitJob,
   updateStepData,
   createWaitpoint,
   getWaitpoint,
 } from './queue.js';
 import { log, setLogContext } from './log-context.js';
+
+/**
+ * Try to extract the underlying pg Pool from a QueueBackend.
+ * Returns null for non-PostgreSQL backends.
+ */
+function tryExtractPool(backend: QueueBackend): Pool | null {
+  if (backend instanceof PostgresBackend) {
+    return backend.getPool();
+  }
+  return null;
+}
+
+/**
+ * Build a JobContext without wait support (for non-PostgreSQL backends).
+ * prolong/onTimeout work normally; wait-related methods throw helpful errors.
+ */
+function buildBasicContext(baseCtx: {
+  prolong: JobContext['prolong'];
+  onTimeout: JobContext['onTimeout'];
+}): JobContext {
+  const waitError = () =>
+    new Error(
+      'Wait features (waitFor, waitUntil, createToken, waitForToken, ctx.run) are currently only supported with the PostgreSQL backend.',
+    );
+  return {
+    prolong: baseCtx.prolong,
+    onTimeout: baseCtx.onTimeout,
+    run: async <T>(_stepName: string, fn: () => Promise<T>): Promise<T> => {
+      // Without PostgreSQL, just execute the function directly (no persistence)
+      return fn();
+    },
+    waitFor: async () => {
+      throw waitError();
+    },
+    waitUntil: async () => {
+      throw waitError();
+    },
+    createToken: async () => {
+      throw waitError();
+    },
+    waitForToken: async () => {
+      throw waitError();
+    },
+  };
+}
 
 /**
  * Validates that a handler can be serialized for worker thread execution.
@@ -502,20 +544,18 @@ export async function processJobWithHandlers<
   PayloadMap,
   T extends keyof PayloadMap & string,
 >(
-  pool: Pool,
+  backend: QueueBackend,
   job: JobRecord<PayloadMap, T>,
   jobHandlers: JobHandlers<PayloadMap>,
 ): Promise<void> {
   const handler = jobHandlers[job.jobType];
 
   if (!handler) {
-    await setPendingReasonForUnpickedJobs(
-      pool,
+    await backend.setPendingReasonForUnpickedJobs(
       `No handler registered for job type: ${job.jobType}`,
       job.jobType,
     );
-    await failJob(
-      pool,
+    await backend.failJob(
       job.id,
       new Error(`No handler registered for job type: ${job.jobType}`),
       FailureReason.NoHandler,
@@ -526,11 +566,14 @@ export async function processJobWithHandlers<
   // Load step data (may contain completed steps from previous invocations)
   const stepData: Record<string, any> = { ...(job.stepData || {}) };
 
+  // Try to get pool for wait features (PostgreSQL-only)
+  const pool = tryExtractPool(backend);
+
   // If resuming from a wait, resolve any pending wait entries
   const hasStepHistory = Object.keys(stepData).some((k) =>
     k.startsWith('__wait_'),
   );
-  if (hasStepHistory) {
+  if (hasStepHistory && pool) {
     await resolveCompletedWaits(pool, stepData);
     // Persist the resolved step data
     await updateStepData(pool, job.id, stepData);
@@ -568,7 +611,7 @@ export async function processJobWithHandlers<
             const extension = onTimeoutCallback();
             if (typeof extension === 'number' && extension > 0) {
               // Extend: re-arm timeout and update DB
-              prolongJob(pool, job.id).catch(() => {});
+              backend.prolongJob(job.id).catch(() => {});
               armTimeout(extension);
               return;
             }
@@ -594,7 +637,7 @@ export async function processJobWithHandlers<
               if (duration != null && duration > 0) {
                 armTimeout(duration);
                 // Update DB locked_at to prevent reclaimStuckJobs
-                prolongJob(pool, job.id).catch(() => {});
+                backend.prolongJob(job.id).catch(() => {});
               }
             },
             onTimeout: (callback: OnTimeoutCallback) => {
@@ -610,8 +653,10 @@ export async function processJobWithHandlers<
             },
           };
 
-      // Build the full context with wait support
-      const ctx = buildWaitContext(pool, job.id, stepData, baseCtx);
+      // Build context: full wait support for PostgreSQL, basic for others
+      const ctx = pool
+        ? buildWaitContext(pool, job.id, stepData, baseCtx)
+        : buildBasicContext(baseCtx);
 
       // If forceKillOnTimeout was set but timeoutMs was missing, warn
       if (forceKillOnTimeout && !hasTimeout) {
@@ -636,13 +681,25 @@ export async function processJobWithHandlers<
     }
     if (timeoutId) clearTimeout(timeoutId);
 
-    // Job completed successfully -- clear step_data and complete
-    await completeJob(pool, job.id);
+    // Job completed successfully -- complete via backend
+    await backend.completeJob(job.id);
   } catch (error) {
     if (timeoutId) clearTimeout(timeoutId);
 
     // Check if this is a WaitSignal (not a real error)
     if (error instanceof WaitSignal) {
+      if (!pool) {
+        // Wait signals should never happen with non-PostgreSQL backends
+        // since the context methods throw, but guard just in case
+        await backend.failJob(
+          job.id,
+          new Error(
+            'WaitSignal received but wait features require the PostgreSQL backend.',
+          ),
+          FailureReason.HandlerError,
+        );
+        return;
+      }
       log(
         `Job ${job.id} entering wait: type=${error.type}, waitUntil=${error.waitUntil?.toISOString() ?? 'none'}, tokenId=${error.tokenId ?? 'none'}`,
       );
@@ -665,8 +722,7 @@ export async function processJobWithHandlers<
     ) {
       failureReason = FailureReason.Timeout;
     }
-    await failJob(
-      pool,
+    await backend.failJob(
       job.id,
       error instanceof Error ? error : new Error(String(error)),
       failureReason,
@@ -678,15 +734,14 @@ export async function processJobWithHandlers<
  * Process a batch of jobs using the provided handler map and concurrency limit
  */
 export async function processBatchWithHandlers<PayloadMap>(
-  pool: Pool,
+  backend: QueueBackend,
   workerId: string,
   batchSize: number,
   jobType: string | string[] | undefined,
   jobHandlers: JobHandlers<PayloadMap>,
   concurrency?: number,
 ): Promise<number> {
-  const jobs = await getNextBatch<PayloadMap, JobType<PayloadMap>>(
-    pool,
+  const jobs = await backend.getNextBatch<PayloadMap, JobType<PayloadMap>>(
     workerId,
     batchSize,
     jobType,
@@ -694,7 +749,7 @@ export async function processBatchWithHandlers<PayloadMap>(
   if (!concurrency || concurrency >= jobs.length) {
     // Default: all in parallel
     await Promise.all(
-      jobs.map((job) => processJobWithHandlers(pool, job, jobHandlers)),
+      jobs.map((job) => processJobWithHandlers(backend, job, jobHandlers)),
     );
     return jobs.length;
   }
@@ -708,7 +763,7 @@ export async function processBatchWithHandlers<PayloadMap>(
       while (running < concurrency && idx < jobs.length) {
         const job = jobs[idx++];
         running++;
-        processJobWithHandlers(pool, job, jobHandlers)
+        processJobWithHandlers(backend, job, jobHandlers)
           .then(() => {
             running--;
             finished++;
@@ -727,13 +782,13 @@ export async function processBatchWithHandlers<PayloadMap>(
 
 /**
  * Start a job processor that continuously processes jobs
- * @param pool - The database pool
+ * @param backend - The queue backend
  * @param handlers - The job handlers for this processor instance
  * @param options - The processor options. Leave pollInterval empty to run only once. Use jobType to filter jobs by type.
  * @returns {Processor} The processor instance
  */
 export const createProcessor = <PayloadMap = any>(
-  pool: Pool,
+  backend: QueueBackend,
   handlers: JobHandlers<PayloadMap>,
   options: ProcessorOptions = {},
 ): Processor => {
@@ -760,7 +815,7 @@ export const createProcessor = <PayloadMap = any>(
 
     try {
       const processed = await processBatchWithHandlers(
-        pool,
+        backend,
         workerId,
         batchSize,
         jobType,
