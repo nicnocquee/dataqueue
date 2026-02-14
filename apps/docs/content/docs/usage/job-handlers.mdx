@@ -53,14 +53,29 @@ export const jobHandlers: JobHandlers<JobPayloadMap> = {
 };
 ```
 
-In the example above, we define three job handlers: `send_email`, `generate_report`, and `generate_image`. Each handler is a function that takes a payload and an optional `AbortSignal` as arguments. The `AbortSignal` is used to abort the job if it takes too long to complete.
+In the example above, we define three job handlers: `send_email`, `generate_report`, and `generate_image`. Each handler is a function that takes a payload, an `AbortSignal`, and a `JobContext` as arguments. The `AbortSignal` is used to abort the job if it takes too long to complete. The `JobContext` provides methods to extend the job's timeout while it's running.
 
 ### Job Handler Signature
 
-A job handler receives two arguments: the job payload and an `AbortSignal`.
+A job handler receives three arguments: the job payload, an `AbortSignal`, and a `JobContext`.
 
 ```typescript
-(payload: Payload, signal: AbortSignal) => Promise<void>;
+(payload: Payload, signal: AbortSignal, ctx: JobContext) => Promise<void>;
 ```
 
-However, as shown above, you can omit the `AbortSignal` if you don't need it.
+You can omit arguments you don't need. For example, if you only need the payload:
+
+```typescript
+const handler = async (payload) => {
+  // ...
+};
+```
+
+### JobContext
+
+The third argument provides two methods to extend the job's timeout deadline while it's running:
+
+- `ctx.prolong(ms?)` — Proactively reset the timeout. If `ms` is provided, sets the deadline to `ms` milliseconds from now. If omitted, resets to the original `timeoutMs`.
+- `ctx.onTimeout(callback)` — Register a callback that fires when the timeout is about to hit, before the `AbortSignal` is triggered. Return a number (ms) to extend, or return nothing to let the timeout proceed.
+
+See [Job Timeout](/docs/usage/job-timeout) for detailed usage examples.

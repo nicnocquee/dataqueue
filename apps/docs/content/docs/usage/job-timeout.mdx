@@ -28,13 +28,98 @@ const handler = async (payload, signal) => {
 
 If the job times out, the signal will be aborted and your handler should exit early. If your handler does not check for `signal.aborted`, it will keep running in the background even after the job is marked as failed due to timeout. For best results, always make your handlers abortable if they might run for a long time.
 
+## Extending the Timeout
+
+Sometimes a job takes longer than expected but is still making progress. Instead of letting it time out and fail, you can extend the timeout from inside the handler using two mechanisms: **prolong** (proactive) and **onTimeout** (reactive).
+
+### Prolong (proactive)
+
+Call `ctx.prolong()` at any point in your handler to reset the timeout deadline:
+
+```typescript title="@lib/job-handlers.ts"
+const handler = async (payload, signal, { prolong }) => {
+  await doStep1(payload);
+
+  // "I know the next step is heavy, give me 60 more seconds"
+  prolong(60_000);
+  await doHeavyStep2(payload);
+
+  // Reset to the original timeout duration (heartbeat-style)
+  prolong();
+  await doStep3(payload);
+};
+```
+
+- `prolong(ms)` — sets the timeout deadline to `ms` milliseconds from now.
+- `prolong()` — resets the timeout deadline to the original `timeoutMs` from now.
+
+### onTimeout (reactive)
+
+Register a callback that fires when the timeout is about to hit, **before** the `AbortSignal` is triggered. The callback can decide whether to extend or let the timeout proceed:
+
+```typescript title="@lib/job-handlers.ts"
+const handler = async (payload, signal, { onTimeout }) => {
+  let progress = 0;
+
+  onTimeout(() => {
+    if (progress < 100) {
+      return 30_000; // still working, give me 30 more seconds
+    }
+    // return nothing to let the timeout proceed
+  });
+
+  for (const chunk of payload.chunks) {
+    await processChunk(chunk);
+    progress += 10;
+  }
+};
+```
+
+- If the callback returns a number > 0, the timeout is reset to that many milliseconds from now.
+- If the callback returns `undefined`, `null`, `0`, or a negative number, the timeout proceeds normally (signal is aborted, job fails).
+- The callback fires again each time a new deadline is reached, so the job can keep extending or finally let go.
+
+### Using Both Together
+
+`prolong` and `onTimeout` work together. Use `prolong` when you know upfront that a step will be heavy. Use `onTimeout` for a last-second decision when the deadline arrives.
+
+```typescript title="@lib/job-handlers.ts"
+const handler = async (payload, signal, { prolong, onTimeout }) => {
+  // Reactive fallback: extend if still making progress
+  let step = 0;
+  onTimeout(() => {
+    if (step < 3) return 30_000;
+  });
+
+  step = 1;
+  await doStep1(payload);
+
+  // Proactive: we know step 2 is heavy
+  step = 2;
+  prolong(120_000);
+  await doHeavyStep2(payload);
+
+  step = 3;
+  await doStep3(payload);
+};
+```
+
+### Side Effects
+
+When either mechanism extends the timeout, DataQueue also updates `locked_at` in the database. This prevents [`reclaimStuckJobs`](/docs/usage/reclaim-jobs) from accidentally reclaiming the job while it's still actively working. A `prolonged` event is also recorded in the job's event history.
+
+### Limitations
+
+- Both `prolong` and `onTimeout` are no-ops if the job has no `timeoutMs` set.
+- Neither is supported with `forceKillOnTimeout: true` (worker thread mode). See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
+
 ## Force Kill on Timeout
 
 If you need to forcefully terminate jobs that don't respond to the abort signal, you can use `forceKillOnTimeout: true`. This will run the handler in a Worker Thread and forcefully terminate it when the timeout is reached.
 
-**⚠️ Runtime Requirements**: `forceKillOnTimeout` requires **Node.js** and will **not work** in Bun or other runtimes without worker thread support. See [Force Kill on Timeout](/usage/force-kill-timeout) for details.
+**Warning**: `forceKillOnTimeout` requires **Node.js** and will **not work** in Bun or other runtimes without worker thread support. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
 
-**Important**: When using `forceKillOnTimeout`, your handler must be serializable. See [Force Kill on Timeout](/usage/force-kill-timeout) for details.
+**Important**: When using `forceKillOnTimeout`, your handler must be serializable. See [Force Kill on Timeout](/docs/usage/force-kill-timeout) for details.
 
 ```typescript
 await queue.addJob({

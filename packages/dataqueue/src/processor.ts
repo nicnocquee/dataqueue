@@ -8,11 +8,14 @@ import {
   JobType,
   FailureReason,
   JobHandlers,
+  JobContext,
+  OnTimeoutCallback,
 } from './types.js';
 import {
   getNextBatch,
   completeJob,
   failJob,
+  prolongJob,
   setPendingReasonForUnpickedJobs,
 } from './queue.js';
 import { log, setLogContext } from './log-context.js';
@@ -254,6 +257,21 @@ async function runHandlerInWorker<
 }
 
 /**
+ * Create a no-op JobContext for cases where prolong/onTimeout are not supported
+ * (e.g. forceKillOnTimeout mode or no timeout set).
+ */
+function createNoOpContext(reason: string): JobContext {
+  return {
+    prolong: () => {
+      log(`prolong() called but ignored: ${reason}`);
+    },
+    onTimeout: () => {
+      log(`onTimeout() called but ignored: ${reason}`);
+    },
+  };
+}
+
+/**
  * Process a single job using the provided handler map
  */
 export async function processJobWithHandlers<
@@ -291,21 +309,76 @@ export async function processJobWithHandlers<
     if (forceKillOnTimeout && timeoutMs && timeoutMs > 0) {
       await runHandlerInWorker(handler, job.payload, timeoutMs, job.jobType);
     } else {
-      // Default: graceful shutdown with AbortController
-      const jobPromise = handler(job.payload, controller.signal);
-      if (timeoutMs && timeoutMs > 0) {
+      // Build the JobContext for prolong/onTimeout support
+      let onTimeoutCallback: OnTimeoutCallback | undefined;
+
+      // Reference to the reject function of the timeout promise so we can re-arm it
+      let timeoutReject: ((error: Error) => void) | undefined;
+
+      /**
+       * Arms (or re-arms) the timeout. When it fires:
+       * 1. If an onTimeout callback is registered, call it first.
+       *    - If it returns a positive number, re-arm with that duration and update DB.
+       *    - Otherwise, proceed with abort.
+       * 2. If no onTimeout callback, proceed with abort.
+       */
+      const armTimeout = (ms: number) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          // Check if an onTimeout callback wants to extend
+          if (onTimeoutCallback) {
+            const extension = onTimeoutCallback();
+            if (typeof extension === 'number' && extension > 0) {
+              // Extend: re-arm timeout and update DB
+              prolongJob(pool, job.id).catch(() => {});
+              armTimeout(extension);
+              return;
+            }
+          }
+          // No extension -- proceed with abort
+          controller.abort();
+          const timeoutError = new Error(`Job timed out after ${ms} ms`);
+          // @ts-ignore
+          timeoutError.failureReason = FailureReason.Timeout;
+          if (timeoutReject) {
+            timeoutReject(timeoutError);
+          }
+        }, ms);
+      };
+
+      const hasTimeout = timeoutMs != null && timeoutMs > 0;
+
+      const ctx: JobContext = hasTimeout
+        ? {
+            prolong: (ms?: number) => {
+              const duration = ms ?? timeoutMs;
+              if (duration != null && duration > 0) {
+                armTimeout(duration);
+                // Update DB locked_at to prevent reclaimStuckJobs
+                prolongJob(pool, job.id).catch(() => {});
+              }
+            },
+            onTimeout: (callback: OnTimeoutCallback) => {
+              onTimeoutCallback = callback;
+            },
+          }
+        : createNoOpContext('job has no timeout set');
+
+      // If forceKillOnTimeout was set but timeoutMs was missing, warn
+      if (forceKillOnTimeout && !hasTimeout) {
+        log(
+          `forceKillOnTimeout is set but no timeoutMs for job ${job.id}, running without force kill`,
+        );
+      }
+
+      const jobPromise = handler(job.payload, controller.signal, ctx);
+
+      if (hasTimeout) {
         await Promise.race([
           jobPromise,
-          new Promise((_, reject) => {
-            timeoutId = setTimeout(() => {
-              controller.abort();
-              const timeoutError = new Error(
-                `Job timed out after ${timeoutMs} ms`,
-              );
-              // @ts-ignore
-              timeoutError.failureReason = FailureReason.Timeout;
-              reject(timeoutError);
-            }, timeoutMs);
+          new Promise<never>((_, reject) => {
+            timeoutReject = reject;
+            armTimeout(timeoutMs!);
           }),
         ]);
       } else {

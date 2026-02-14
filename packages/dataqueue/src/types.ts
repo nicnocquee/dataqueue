@@ -98,6 +98,7 @@ export enum JobEventType {
   Cancelled = 'cancelled',
   Retried = 'retried',
   Edited = 'edited',
+  Prolonged = 'prolonged',
 }
 
 export interface JobEvent {
@@ -180,9 +181,40 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
   idempotencyKey?: string | null;
 }
 
+/**
+ * Callback registered via `onTimeout`. Invoked when the timeout fires, before the AbortSignal is triggered.
+ * Return a number (ms) to extend the timeout, or return nothing to let the timeout proceed.
+ */
+export type OnTimeoutCallback = () => number | void | undefined;
+
+/**
+ * Context object passed to job handlers as the third argument.
+ * Provides mechanisms to extend the job's timeout while it's running.
+ */
+export interface JobContext {
+  /**
+   * Proactively reset the timeout deadline.
+   * - If `ms` is provided, sets the deadline to `ms` milliseconds from now.
+   * - If omitted, resets the deadline to the original `timeoutMs` from now (heartbeat-style).
+   * - No-op if the job has no timeout set or if `forceKillOnTimeout` is true.
+   */
+  prolong: (ms?: number) => void;
+
+  /**
+   * Register a callback that is invoked when the timeout fires, **before** the AbortSignal is triggered.
+   * - If the callback returns a number > 0, the timeout is reset to that many ms from now.
+   * - If the callback returns `undefined`, `null`, `0`, or a negative number, the timeout proceeds normally.
+   * - The callback may be invoked multiple times if the job keeps extending.
+   * - Only one callback can be registered; subsequent calls replace the previous one.
+   * - No-op if the job has no timeout set or if `forceKillOnTimeout` is true.
+   */
+  onTimeout: (callback: OnTimeoutCallback) => void;
+}
+
 export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
   payload: PayloadMap[T],
   signal: AbortSignal,
+  ctx: JobContext,
 ) => Promise<void>;
 
 export type JobHandlers<PayloadMap> = {

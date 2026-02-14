@@ -2,14 +2,29 @@
 title: JobHandlers
 ---
 
-The `JobHandlers` type defines a map of job types to their handler functions. Each handler processes a job's payload and receives an `AbortSignal` for cancellation.
+The `JobHandlers` type defines a map of job types to their handler functions. Each handler processes a job's payload and receives an `AbortSignal` for cancellation and a `JobContext` for timeout extension.
 
 ## Type
 
 ```ts
+type OnTimeoutCallback = () => number | void | undefined;
+
+interface JobContext {
+  /** Proactively reset the timeout deadline.
+   *  If ms is provided, sets deadline to ms from now.
+   *  If omitted, resets to the original timeoutMs. */
+  prolong: (ms?: number) => void;
+
+  /** Register a callback invoked when timeout fires (before abort).
+   *  Return a number (ms) to extend, or nothing to let timeout proceed.
+   *  The callback may be called multiple times if the job keeps extending. */
+  onTimeout: (callback: OnTimeoutCallback) => void;
+}
+
 type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
   payload: PayloadMap[T],
   signal: AbortSignal,
+  ctx: JobContext,
 ) => Promise<void>;
 
 // Map of job types to handlers
@@ -26,8 +41,17 @@ const handlers = {
   email: async (payload, signal) => {
     // send email
   },
-  generateReport: async (payload, signal) => {
+  generateReport: async (payload, signal, { prolong }) => {
+    // prolong the timeout before a heavy step
+    prolong(60_000);
     // generate report
+  },
+  processData: async (payload, signal, { onTimeout }) => {
+    let progress = 0;
+    onTimeout(() => {
+      if (progress < 100) return 30_000; // extend if still working
+    });
+    // process data in chunks, updating progress
   },
 };
 ```
