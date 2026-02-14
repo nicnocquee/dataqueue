@@ -223,7 +223,7 @@ export const waitJob = async (
 ): Promise<void> => {
   const client = await pool.connect();
   try {
-    await client.query(
+    const result = await client.query(
       `
       UPDATE job_queue
       SET status = 'waiting',
@@ -233,7 +233,7 @@ export const waitJob = async (
           locked_at = NULL,
           locked_by = NULL,
           updated_at = NOW()
-      WHERE id = $1
+      WHERE id = $1 AND status = 'processing'
     `,
       [
         jobId,
@@ -242,15 +242,21 @@ export const waitJob = async (
         JSON.stringify(options.stepData),
       ],
     );
+    if (result.rowCount === 0) {
+      log(
+        `Job ${jobId} could not be set to waiting (may have been reclaimed or is no longer processing)`,
+      );
+      return;
+    }
     await recordJobEvent(pool, jobId, JobEventType.Waiting, {
       waitUntil: options.waitUntil?.toISOString() ?? null,
       waitTokenId: options.waitTokenId ?? null,
     });
+    log(`Job ${jobId} set to waiting`);
   } catch (error) {
     log(`Error setting job ${jobId} to waiting: ${error}`);
     throw error;
   } finally {
-    log(`Job ${jobId} set to waiting`);
     client.release();
   }
 };
@@ -281,6 +287,12 @@ export const updateStepData = async (
 /**
  * Parse a timeout string like '10m', '1h', '24h', '7d' into milliseconds.
  */
+/**
+ * Maximum allowed timeout in milliseconds (~365 days).
+ * Prevents overflow to Infinity when computing Date offsets.
+ */
+const MAX_TIMEOUT_MS = 365 * 24 * 60 * 60 * 1000;
+
 function parseTimeoutString(timeout: string): number {
   const match = timeout.match(/^(\d+)(s|m|h|d)$/);
   if (!match) {
@@ -290,18 +302,29 @@ function parseTimeoutString(timeout: string): number {
   }
   const value = parseInt(match[1], 10);
   const unit = match[2];
+  let ms: number;
   switch (unit) {
     case 's':
-      return value * 1000;
+      ms = value * 1000;
+      break;
     case 'm':
-      return value * 60 * 1000;
+      ms = value * 60 * 1000;
+      break;
     case 'h':
-      return value * 60 * 60 * 1000;
+      ms = value * 60 * 60 * 1000;
+      break;
     case 'd':
-      return value * 24 * 60 * 60 * 1000;
+      ms = value * 24 * 60 * 60 * 1000;
+      break;
     default:
       throw new Error(`Unknown timeout unit: "${unit}"`);
   }
+  if (!Number.isFinite(ms) || ms > MAX_TIMEOUT_MS) {
+    throw new Error(
+      `Timeout value "${timeout}" is too large. Maximum allowed is 365 days.`,
+    );
+  }
+  return ms;
 }
 
 /**

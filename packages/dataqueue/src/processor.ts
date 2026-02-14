@@ -608,12 +608,19 @@ export async function processJobWithHandlers<
         timeoutId = setTimeout(() => {
           // Check if an onTimeout callback wants to extend
           if (onTimeoutCallback) {
-            const extension = onTimeoutCallback();
-            if (typeof extension === 'number' && extension > 0) {
-              // Extend: re-arm timeout and update DB
-              backend.prolongJob(job.id).catch(() => {});
-              armTimeout(extension);
-              return;
+            try {
+              const extension = onTimeoutCallback();
+              if (typeof extension === 'number' && extension > 0) {
+                // Extend: re-arm timeout and update DB
+                backend.prolongJob(job.id).catch(() => {});
+                armTimeout(extension);
+                return;
+              }
+            } catch (callbackError) {
+              log(
+                `onTimeout callback threw for job ${job.id}: ${callbackError}`,
+              );
+              // Treat as "no extension" and proceed with abort
             }
           }
           // No extension -- proceed with abort
@@ -718,7 +725,8 @@ export async function processJobWithHandlers<
       error &&
       typeof error === 'object' &&
       'failureReason' in error &&
-      (error as any).failureReason === FailureReason.Timeout
+      (error as { failureReason?: FailureReason }).failureReason ===
+        FailureReason.Timeout
     ) {
       failureReason = FailureReason.Timeout;
     }
@@ -740,6 +748,7 @@ export async function processBatchWithHandlers<PayloadMap>(
   jobType: string | string[] | undefined,
   jobHandlers: JobHandlers<PayloadMap>,
   concurrency?: number,
+  onError?: (error: Error) => void,
 ): Promise<number> {
   const jobs = await backend.getNextBatch<PayloadMap, JobType<PayloadMap>>(
     workerId,
@@ -772,6 +781,9 @@ export async function processBatchWithHandlers<PayloadMap>(
           .catch((err) => {
             running--;
             finished++;
+            if (onError) {
+              onError(err instanceof Error ? err : new Error(String(err)));
+            }
             next();
           });
       }
@@ -803,6 +815,7 @@ export const createProcessor = <PayloadMap = any>(
 
   let running = false;
   let intervalId: NodeJS.Timeout | null = null;
+  let currentBatchPromise: Promise<number> | null = null;
 
   setLogContext(options.verbose ?? false);
 
@@ -821,6 +834,7 @@ export const createProcessor = <PayloadMap = any>(
         jobType,
         handlers,
         concurrency,
+        onError,
       );
       // Only process one batch in start; do not schedule next batch here
       return processed;
@@ -841,27 +855,62 @@ export const createProcessor = <PayloadMap = any>(
 
       log(`Starting job processor with workerId: ${workerId}`);
       running = true;
-      // Background: process batches repeatedly if needed
-      const processBatches = async () => {
+
+      // Single serialized loop: process a batch, then either immediately
+      // continue (if full batch was returned) or wait pollInterval.
+      const scheduleNext = (immediate: boolean) => {
         if (!running) return;
-        const processed = await processJobs();
-        if (processed === batchSize && running) {
-          setImmediate(processBatches);
+        if (immediate) {
+          intervalId = setTimeout(loop, 0);
+        } else {
+          intervalId = setTimeout(loop, pollInterval);
         }
       };
-      processBatches(); // Process immediately on start
-      intervalId = setInterval(processJobs, pollInterval);
+
+      const loop = async () => {
+        if (!running) return;
+        currentBatchPromise = processJobs();
+        const processed = await currentBatchPromise;
+        currentBatchPromise = null;
+        // If we got a full batch, there may be more work — process immediately
+        scheduleNext(processed === batchSize);
+      };
+
+      // Start the first iteration immediately
+      loop();
     },
     /**
-     * Stop the job processor that runs in the background
+     * Stop the job processor that runs in the background.
+     * Does not wait for in-flight jobs.
      */
     stop: () => {
       log(`Stopping job processor with workerId: ${workerId}`);
       running = false;
       if (intervalId) {
-        clearInterval(intervalId);
+        clearTimeout(intervalId);
         intervalId = null;
       }
+    },
+    /**
+     * Stop the job processor and wait for all in-flight jobs to complete.
+     * Useful for graceful shutdown (e.g., SIGTERM handling).
+     */
+    stopAndDrain: async (drainTimeoutMs = 30000) => {
+      log(`Stopping and draining job processor with workerId: ${workerId}`);
+      running = false;
+      if (intervalId) {
+        clearTimeout(intervalId);
+        intervalId = null;
+      }
+      // Wait for current batch to finish, with a timeout
+      if (currentBatchPromise) {
+        await Promise.race([
+          currentBatchPromise.catch(() => {}),
+          new Promise<void>((resolve) => setTimeout(resolve, drainTimeoutMs)),
+        ]);
+        currentBatchPromise = null;
+      }
+      log(`Job processor ${workerId} drained`);
     },
     /**
      * Start the job processor synchronously.

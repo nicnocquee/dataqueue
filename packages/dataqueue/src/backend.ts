@@ -16,6 +16,12 @@ export interface JobFilters {
   priority?: number;
   runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
   tags?: { values: string[]; mode?: TagQueryMode };
+  /**
+   * Cursor for keyset pagination. When provided, only return jobs with id < cursor.
+   * This is more efficient than OFFSET for large datasets.
+   * Cannot be used together with offset.
+   */
+  cursor?: number;
 }
 
 /**
@@ -123,6 +129,9 @@ export interface QueueBackend {
 
   /** Delete completed jobs older than N days. Returns count deleted. */
   cleanupOldJobs(daysToKeep?: number): Promise<number>;
+
+  /** Delete job events older than N days. Returns count deleted. */
+  cleanupOldJobEvents(daysToKeep?: number): Promise<number>;
 
   /** Reclaim jobs stuck in 'processing' for too long. Returns count. */
   reclaimStuckJobs(maxProcessingTimeMinutes?: number): Promise<number>;

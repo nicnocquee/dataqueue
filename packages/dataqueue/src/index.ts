@@ -95,6 +95,8 @@ export const initJobQueue = <PayloadMap = any>(
     ),
     retryJob: (jobId: number) => backend.retryJob(jobId),
     cleanupOldJobs: (daysToKeep?: number) => backend.cleanupOldJobs(daysToKeep),
+    cleanupOldJobEvents: (daysToKeep?: number) =>
+      backend.cleanupOldJobEvents(daysToKeep),
     cancelJob: withLogContext(
       (jobId: number) => backend.cancelJob(jobId),
       config.verbose ?? false,
@@ -103,7 +105,7 @@ export const initJobQueue = <PayloadMap = any>(
       <T extends JobType<PayloadMap>>(
         jobId: number,
         updates: import('./types.js').EditJobOptions<PayloadMap, T>,
-      ) => backend.editJob(jobId, updates as any),
+      ) => backend.editJob(jobId, updates as import('./backend.js').JobUpdates),
       config.verbose ?? false,
     ),
     editAllPendingJobs: withLogContext(
@@ -122,7 +124,11 @@ export const initJobQueue = <PayloadMap = any>(
             }
           | undefined,
         updates: import('./types.js').EditJobOptions<PayloadMap, T>,
-      ) => backend.editAllPendingJobs(filters, updates as any),
+      ) =>
+        backend.editAllPendingJobs(
+          filters,
+          updates as import('./backend.js').JobUpdates,
+        ),
       config.verbose ?? false,
     ),
     cancelAllUpcomingJobs: withLogContext(

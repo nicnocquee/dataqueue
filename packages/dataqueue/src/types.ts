@@ -412,8 +412,18 @@ export interface Processor {
   startInBackground: () => void;
   /**
    * Stop the job processor that runs in the background.
+   * Does not wait for in-flight jobs to complete.
    */
   stop: () => void;
+  /**
+   * Stop the job processor and wait for all in-flight jobs to complete.
+   * Useful for graceful shutdown (e.g., SIGTERM handling).
+   * No new batches will be started after calling this method.
+   *
+   * @param timeoutMs - Maximum time to wait for in-flight jobs (default: 30000ms).
+   *   If jobs don't complete within this time, the promise resolves anyway.
+   */
+  stopAndDrain: (timeoutMs?: number) => Promise<void>;
   /**
    * Check if the job processor is running.
    */
@@ -555,16 +565,25 @@ export interface JobQueue<PayloadMap> {
     offset?: number,
   ) => Promise<JobRecord<PayloadMap, T>[]>;
   /**
-   * Get jobs by filters.
-  /**
-   * Get jobs by filters.
+   * Get jobs by filters, with pagination support.
+   * - Use `cursor` for efficient keyset pagination (recommended for large datasets).
+   * - Use `limit` and `offset` for traditional pagination.
+   * - Do not combine `cursor` with `offset`.
    */
-  getJobs: <T extends JobType<PayloadMap>>(filters?: {
-    jobType?: string;
-    priority?: number;
-    runAt?: Date | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
-    tags?: { values: string[]; mode?: TagQueryMode };
-  }) => Promise<JobRecord<PayloadMap, T>[]>;
+  getJobs: <T extends JobType<PayloadMap>>(
+    filters?: {
+      jobType?: string;
+      priority?: number;
+      runAt?:
+        | Date
+        | { gt?: Date; gte?: Date; lt?: Date; lte?: Date; eq?: Date };
+      tags?: { values: string[]; mode?: TagQueryMode };
+      /** Cursor for keyset pagination. Only return jobs with id < cursor. */
+      cursor?: number;
+    },
+    limit?: number,
+    offset?: number,
+  ) => Promise<JobRecord<PayloadMap, T>[]>;
   /**
    * Retry a job given its ID.
    * - This will set the job status back to 'pending', clear the locked_at and locked_by, and allow it to be picked up by other workers.
@@ -574,6 +593,10 @@ export interface JobQueue<PayloadMap> {
    * Cleanup jobs that are older than the specified number of days.
    */
   cleanupOldJobs: (daysToKeep?: number) => Promise<number>;
+  /**
+   * Cleanup job events that are older than the specified number of days.
+   */
+  cleanupOldJobEvents: (daysToKeep?: number) => Promise<number>;
   /**
    * Cancel a job given its ID.
    * - This will set the job status to 'cancelled' and clear the locked_at and locked_by.
@@ -657,6 +680,8 @@ export interface JobQueue<PayloadMap> {
    * Tokens can be completed externally to resume a waiting job.
    * Can be called outside of handlers (e.g., from an API route).
    *
+   * **PostgreSQL backend only.** Throws if the backend is Redis.
+   *
    * @param options - Optional token configuration (timeout, tags).
    * @returns A token object with `id`.
    */
@@ -666,6 +691,8 @@ export interface JobQueue<PayloadMap> {
    * Complete a waitpoint token, resuming the associated waiting job.
    * Can be called from anywhere (API routes, external services, etc.).
    *
+   * **PostgreSQL backend only.** Throws if the backend is Redis.
+   *
    * @param tokenId - The ID of the token to complete.
    * @param data - Optional data to pass to the waiting handler.
    */
@@ -673,6 +700,8 @@ export interface JobQueue<PayloadMap> {
 
   /**
    * Retrieve a waitpoint token by its ID.
+   *
+   * **PostgreSQL backend only.** Throws if the backend is Redis.
    *
    * @param tokenId - The ID of the token to retrieve.
    * @returns The token record, or null if not found.
@@ -683,6 +712,8 @@ export interface JobQueue<PayloadMap> {
    * Expire timed-out waitpoint tokens and resume their associated jobs.
    * Call this periodically (e.g., alongside `reclaimStuckJobs`).
    *
+   * **PostgreSQL backend only.** Throws if the backend is Redis.
+   *
    * @returns The number of tokens that were expired.
    */
   expireTimedOutTokens: () => Promise<number>;
@@ -691,10 +722,10 @@ export interface JobQueue<PayloadMap> {
    * Get the PostgreSQL database pool.
    * Throws if the backend is not PostgreSQL.
    */
-  getPool: () => any;
+  getPool: () => import('pg').Pool;
   /**
    * Get the Redis client instance (ioredis).
    * Throws if the backend is not Redis.
    */
-  getRedisClient: () => any;
+  getRedisClient: () => unknown;
 }

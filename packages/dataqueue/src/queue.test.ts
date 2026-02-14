@@ -72,6 +72,8 @@ describe('queue integration', () => {
       jobType: 'email',
       payload: { to: 'done@example.com' },
     });
+    // Claim the job first (sets status to 'processing')
+    await queue.getNextBatch(pool, 'worker-complete', 1);
     await queue.completeJob(pool, jobId);
     const job = await queue.getJob(pool, jobId);
     expect(job?.status).toBe('completed');
@@ -124,6 +126,8 @@ describe('queue integration', () => {
       jobType: 'email',
       payload: { to: 'cleanup@example.com' },
     });
+    // Claim then complete the job
+    await queue.getNextBatch(pool, 'worker-cleanup', 1);
     await queue.completeJob(pool, jobId);
     // Manually update updated_at to be old
     await pool.query(
@@ -154,6 +158,7 @@ describe('queue integration', () => {
         payload: { to: 'done@example.com' },
       },
     );
+    await queue.getNextBatch(pool, 'worker-cancel-done', 1);
     await queue.completeJob(pool, jobId2);
     await queue.cancelJob(pool, jobId2);
     const completedJob = await queue.getJob(pool, jobId2);
@@ -229,6 +234,7 @@ describe('queue integration', () => {
       jobType: 'email',
       payload: { to: 'original@example.com' },
     });
+    await queue.getNextBatch(pool, 'worker-edit-noop', 1);
     await queue.completeJob(pool, jobId);
 
     // Try to edit a completed job - should silently fail
@@ -367,7 +373,7 @@ describe('queue integration', () => {
         priority: 0,
       },
     );
-    // Add a completed job
+    // Add a completed job (set via SQL since this test is about edit behavior)
     const jobId4 = await queue.addJob<{ email: { to: string } }, 'email'>(
       pool,
       {
@@ -375,7 +381,10 @@ describe('queue integration', () => {
         payload: { to: 'done@example.com' },
       },
     );
-    await queue.completeJob(pool, jobId4);
+    await pool.query(
+      `UPDATE job_queue SET status = 'completed' WHERE id = $1`,
+      [jobId4],
+    );
 
     // Edit all pending jobs
     const editedCount = await queue.editAllPendingJobs<
@@ -615,7 +624,11 @@ describe('queue integration', () => {
       payload: { to: 'completed@example.com' },
       priority: 0,
     });
-    await queue.completeJob(pool, completedJobId);
+    // Set to completed via SQL (bypassing status check since we're testing edit behavior)
+    await pool.query(
+      `UPDATE job_queue SET status = 'completed' WHERE id = $1`,
+      [completedJobId],
+    );
 
     // Edit all pending jobs
     const editedCount = await queue.editAllPendingJobs<
@@ -705,7 +718,7 @@ describe('queue integration', () => {
         payload: { to: 'cancelall3@example.com' },
       },
     );
-    // Add a completed job
+    // Add a completed job (set via SQL since this test is about cancel behavior)
     const jobId4 = await queue.addJob<{ email: { to: string } }, 'email'>(
       pool,
       {
@@ -713,7 +726,10 @@ describe('queue integration', () => {
         payload: { to: 'done@example.com' },
       },
     );
-    await queue.completeJob(pool, jobId4);
+    await pool.query(
+      `UPDATE job_queue SET status = 'completed' WHERE id = $1`,
+      [jobId4],
+    );
 
     // Cancel all upcoming jobs
     const cancelledCount = await queue.cancelAllUpcomingJobs(pool);
@@ -809,8 +825,12 @@ describe('queue integration', () => {
       jobType: 'email',
       payload: { to: 'failhistory@example.com' },
     });
-    // Fail the job twice with different errors
+    // Claim and fail the job (first error)
+    await queue.getNextBatch(pool, 'worker-fail-1', 1);
     await queue.failJob(pool, jobId, new Error('first error'));
+    // Retry, claim again, and fail again (second error)
+    await queue.retryJob(pool, jobId);
+    await queue.getNextBatch(pool, 'worker-fail-2', 1);
     await queue.failJob(pool, jobId, new Error('second error'));
     const job = await queue.getJob(pool, jobId);
     expect(job?.status).toBe('failed');
@@ -1825,5 +1845,44 @@ describe('getJobs', () => {
     const job = await queue.getJob(pool, jobId);
     expect(job).not.toBeNull();
     expect(job?.idempotencyKey).toBeNull();
+  });
+
+  it('should permanently fail a job when max attempts are exhausted', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'exhaust@example.com' },
+      maxAttempts: 2,
+    });
+
+    // Claim the job (attempt 1)
+    const batch1 = await queue.getNextBatch(pool, 'worker-1', 1);
+    expect(batch1.length).toBe(1);
+    expect(batch1[0].attempts).toBe(1);
+
+    // Fail it
+    await queue.failJob(pool, jobId, new Error('attempt 1 failed'));
+    let job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.nextAttemptAt).not.toBeNull(); // Should have a retry scheduled
+
+    // Wait a moment so next_attempt_at <= NOW() and claim again (attempt 2)
+    await pool.query(
+      `UPDATE job_queue SET next_attempt_at = NOW() WHERE id = $1`,
+      [jobId],
+    );
+    const batch2 = await queue.getNextBatch(pool, 'worker-1', 1);
+    expect(batch2.length).toBe(1);
+    expect(batch2[0].attempts).toBe(2);
+
+    // Fail it again — now attempts === maxAttempts
+    await queue.failJob(pool, jobId, new Error('attempt 2 failed'));
+    job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.nextAttemptAt).toBeNull(); // No more retries
+    expect(job?.errorHistory?.length).toBe(2);
+
+    // Should NOT be picked up again
+    const batch3 = await queue.getNextBatch(pool, 'worker-1', 1);
+    expect(batch3.length).toBe(0);
   });
 });
