@@ -1,3 +1,9 @@
+import {
+  createWaitpoint,
+  completeWaitpoint,
+  getWaitpoint,
+  expireTimedOutWaitpoints,
+} from './queue.js';
 import { createProcessor } from './processor.js';
 import {
   JobQueueConfig,
@@ -27,10 +33,11 @@ export const initJobQueue = <PayloadMap = any>(
   setLogContext(config.verbose ?? false);
 
   let backend: QueueBackend;
+  let pool: import('pg').Pool | undefined;
 
   if (backendType === 'postgres') {
     const pgConfig = config as PostgresJobQueueConfig;
-    const pool = createPool(pgConfig.databaseConfig);
+    pool = createPool(pgConfig.databaseConfig);
     backend = new PostgresBackend(pool);
   } else if (backendType === 'redis') {
     const redisConfig = (config as RedisJobQueueConfig).redisConfig;
@@ -39,6 +46,15 @@ export const initJobQueue = <PayloadMap = any>(
   } else {
     throw new Error(`Unknown backend: ${backendType}`);
   }
+
+  const requirePool = () => {
+    if (!pool) {
+      throw new Error(
+        'Wait/Token features require the PostgreSQL backend. Configure with backend: "postgres" to use these features.',
+      );
+    }
+    return pool;
+  };
 
   // Return the job queue API
   return {
@@ -136,6 +152,33 @@ export const initJobQueue = <PayloadMap = any>(
       handlers: JobHandlers<PayloadMap>,
       options?: ProcessorOptions,
     ) => createProcessor<PayloadMap>(backend, handlers, options),
+
+    // Job events
+    getJobEvents: withLogContext(
+      (jobId: number) => backend.getJobEvents(jobId),
+      config.verbose ?? false,
+    ),
+
+    // Wait / Token support (PostgreSQL-only for now)
+    createToken: withLogContext(
+      (options?: import('./types.js').CreateTokenOptions) =>
+        createWaitpoint(requirePool(), null, options),
+      config.verbose ?? false,
+    ),
+    completeToken: withLogContext(
+      (tokenId: string, data?: any) =>
+        completeWaitpoint(requirePool(), tokenId, data),
+      config.verbose ?? false,
+    ),
+    getToken: withLogContext(
+      (tokenId: string) => getWaitpoint(requirePool(), tokenId),
+      config.verbose ?? false,
+    ),
+    expireTimedOutTokens: withLogContext(
+      () => expireTimedOutWaitpoints(requirePool()),
+      config.verbose ?? false,
+    ),
+
     // Advanced access
     getPool: () => {
       if (backendType !== 'postgres') {
@@ -153,11 +196,6 @@ export const initJobQueue = <PayloadMap = any>(
       }
       return (backend as RedisBackend).getClient();
     },
-    // Job events
-    getJobEvents: withLogContext(
-      (jobId: number) => backend.getJobEvents(jobId),
-      config.verbose ?? false,
-    ),
   };
 };
 

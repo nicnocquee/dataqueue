@@ -97,6 +97,7 @@ export enum JobEventType {
   Retried = 'retried',
   Edited = 'edited',
   Prolonged = 'prolonged',
+  Waiting = 'waiting',
 }
 
 export interface JobEvent {
@@ -118,7 +119,8 @@ export type JobStatus =
   | 'processing'
   | 'completed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'waiting';
 
 export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
   id: number;
@@ -177,6 +179,18 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * The idempotency key for this job, if one was provided when the job was created.
    */
   idempotencyKey?: string | null;
+  /**
+   * The time the job is waiting until (for time-based waits).
+   */
+  waitUntil?: Date | null;
+  /**
+   * The waitpoint token ID the job is waiting for (for token-based waits).
+   */
+  waitTokenId?: string | null;
+  /**
+   * Step data for the job. Stores completed step results for replay on re-invocation.
+   */
+  stepData?: Record<string, any>;
 }
 
 /**
@@ -187,7 +201,8 @@ export type OnTimeoutCallback = () => number | void | undefined;
 
 /**
  * Context object passed to job handlers as the third argument.
- * Provides mechanisms to extend the job's timeout while it's running.
+ * Provides mechanisms to extend the job's timeout while it's running,
+ * as well as step tracking and wait capabilities.
  */
 export interface JobContext {
   /**
@@ -207,6 +222,143 @@ export interface JobContext {
    * - No-op if the job has no timeout set or if `forceKillOnTimeout` is true.
    */
   onTimeout: (callback: OnTimeoutCallback) => void;
+
+  /**
+   * Execute a named step with memoization. If the step was already completed
+   * in a previous invocation (e.g., before a wait), the cached result is returned
+   * without re-executing the function.
+   *
+   * Step names must be unique within a handler and stable across re-invocations.
+   *
+   * @param stepName - A unique identifier for this step.
+   * @param fn - The function to execute. Its return value is cached.
+   * @returns The result of the step (from cache or fresh execution).
+   */
+  run: <T>(stepName: string, fn: () => Promise<T>) => Promise<T>;
+
+  /**
+   * Wait for a specified duration before continuing execution.
+   * The job will be paused and resumed after the duration elapses.
+   *
+   * When this is called, the handler throws a WaitSignal internally.
+   * The job is set to 'waiting' status and will be re-invoked after the
+   * specified duration. All steps completed via `ctx.run()` before this
+   * call will be replayed from cache on re-invocation.
+   *
+   * @param duration - The duration to wait (e.g., `{ hours: 1 }`, `{ days: 7 }`).
+   */
+  waitFor: (duration: WaitDuration) => Promise<void>;
+
+  /**
+   * Wait until a specific date/time before continuing execution.
+   * The job will be paused and resumed at (or after) the specified date.
+   *
+   * @param date - The date to wait until.
+   */
+  waitUntil: (date: Date) => Promise<void>;
+
+  /**
+   * Create a waitpoint token. The token can be completed externally
+   * (by calling `jobQueue.completeToken()`) to resume a waiting job.
+   *
+   * Tokens can be created inside handlers or outside (via `jobQueue.createToken()`).
+   *
+   * @param options - Optional token configuration (timeout, tags).
+   * @returns A token object with `id` that can be passed to `waitForToken()`.
+   */
+  createToken: (options?: CreateTokenOptions) => Promise<WaitToken>;
+
+  /**
+   * Wait for a waitpoint token to be completed by an external signal.
+   * The job will be paused until `jobQueue.completeToken(tokenId, data)` is called
+   * or the token times out.
+   *
+   * @param tokenId - The ID of the token to wait for.
+   * @returns A result object indicating success or timeout.
+   */
+  waitForToken: <T = any>(tokenId: string) => Promise<WaitTokenResult<T>>;
+}
+
+/**
+ * Duration specification for `ctx.waitFor()`.
+ * At least one field must be provided. Fields are additive.
+ */
+export interface WaitDuration {
+  seconds?: number;
+  minutes?: number;
+  hours?: number;
+  days?: number;
+  weeks?: number;
+  months?: number;
+  years?: number;
+}
+
+/**
+ * Options for creating a waitpoint token.
+ */
+export interface CreateTokenOptions {
+  /**
+   * Maximum time to wait for the token to be completed.
+   * Accepts a duration string like '10m', '1h', '24h', '7d'.
+   * If not provided, the token has no timeout.
+   */
+  timeout?: string;
+  /**
+   * Tags to attach to the token for filtering.
+   */
+  tags?: string[];
+}
+
+/**
+ * A waitpoint token returned by `ctx.createToken()`.
+ */
+export interface WaitToken {
+  /** The unique token ID. */
+  id: string;
+}
+
+/**
+ * Result of `ctx.waitForToken()`.
+ */
+export type WaitTokenResult<T = any> =
+  | { ok: true; output: T }
+  | { ok: false; error: string };
+
+/**
+ * Internal signal thrown by wait methods to pause handler execution.
+ * This is not a real error -- the processor catches it and transitions the job to 'waiting' status.
+ */
+export class WaitSignal extends Error {
+  readonly isWaitSignal = true;
+
+  constructor(
+    public readonly type: 'duration' | 'date' | 'token',
+    public readonly waitUntil: Date | undefined,
+    public readonly tokenId: string | undefined,
+    public readonly stepData: Record<string, any>,
+  ) {
+    super('WaitSignal');
+    this.name = 'WaitSignal';
+  }
+}
+
+/**
+ * Status of a waitpoint token.
+ */
+export type WaitpointStatus = 'waiting' | 'completed' | 'timed_out';
+
+/**
+ * A waitpoint record from the database.
+ */
+export interface WaitpointRecord {
+  id: string;
+  jobId: number | null;
+  status: WaitpointStatus;
+  output: any;
+  timeoutAt: Date | null;
+  createdAt: Date;
+  completedAt: Date | null;
+  tags: string[] | null;
 }
 
 export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
@@ -499,6 +651,42 @@ export interface JobQueue<PayloadMap> {
    * Get the job events for a job.
    */
   getJobEvents: (jobId: number) => Promise<JobEvent[]>;
+
+  /**
+   * Create a waitpoint token.
+   * Tokens can be completed externally to resume a waiting job.
+   * Can be called outside of handlers (e.g., from an API route).
+   *
+   * @param options - Optional token configuration (timeout, tags).
+   * @returns A token object with `id`.
+   */
+  createToken: (options?: CreateTokenOptions) => Promise<WaitToken>;
+
+  /**
+   * Complete a waitpoint token, resuming the associated waiting job.
+   * Can be called from anywhere (API routes, external services, etc.).
+   *
+   * @param tokenId - The ID of the token to complete.
+   * @param data - Optional data to pass to the waiting handler.
+   */
+  completeToken: (tokenId: string, data?: any) => Promise<void>;
+
+  /**
+   * Retrieve a waitpoint token by its ID.
+   *
+   * @param tokenId - The ID of the token to retrieve.
+   * @returns The token record, or null if not found.
+   */
+  getToken: (tokenId: string) => Promise<WaitpointRecord | null>;
+
+  /**
+   * Expire timed-out waitpoint tokens and resume their associated jobs.
+   * Call this periodically (e.g., alongside `reclaimStuckJobs`).
+   *
+   * @returns The number of tokens that were expired.
+   */
+  expireTimedOutTokens: () => Promise<number>;
+
   /**
    * Get the PostgreSQL database pool.
    * Throws if the backend is not PostgreSQL.
