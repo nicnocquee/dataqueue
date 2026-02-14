@@ -25,16 +25,48 @@ import {
 import { log, setLogContext } from './log-context.js';
 
 /**
- * Extract the underlying pg Pool from a QueueBackend.
- * Wait features are currently PostgreSQL-only; this will throw for Redis backends.
+ * Try to extract the underlying pg Pool from a QueueBackend.
+ * Returns null for non-PostgreSQL backends.
  */
-function extractPool(backend: QueueBackend): Pool {
+function tryExtractPool(backend: QueueBackend): Pool | null {
   if (backend instanceof PostgresBackend) {
     return backend.getPool();
   }
-  throw new Error(
-    'Wait features (waitFor, waitUntil, createToken, waitForToken) are currently only supported with the PostgreSQL backend.',
-  );
+  return null;
+}
+
+/**
+ * Build a JobContext without wait support (for non-PostgreSQL backends).
+ * prolong/onTimeout work normally; wait-related methods throw helpful errors.
+ */
+function buildBasicContext(baseCtx: {
+  prolong: JobContext['prolong'];
+  onTimeout: JobContext['onTimeout'];
+}): JobContext {
+  const waitError = () =>
+    new Error(
+      'Wait features (waitFor, waitUntil, createToken, waitForToken, ctx.run) are currently only supported with the PostgreSQL backend.',
+    );
+  return {
+    prolong: baseCtx.prolong,
+    onTimeout: baseCtx.onTimeout,
+    run: async <T>(_stepName: string, fn: () => Promise<T>): Promise<T> => {
+      // Without PostgreSQL, just execute the function directly (no persistence)
+      return fn();
+    },
+    waitFor: async () => {
+      throw waitError();
+    },
+    waitUntil: async () => {
+      throw waitError();
+    },
+    createToken: async () => {
+      throw waitError();
+    },
+    waitForToken: async () => {
+      throw waitError();
+    },
+  };
 }
 
 /**
@@ -534,13 +566,14 @@ export async function processJobWithHandlers<
   // Load step data (may contain completed steps from previous invocations)
   const stepData: Record<string, any> = { ...(job.stepData || {}) };
 
+  // Try to get pool for wait features (PostgreSQL-only)
+  const pool = tryExtractPool(backend);
+
   // If resuming from a wait, resolve any pending wait entries
-  // (requires pool — PostgreSQL-only wait features)
   const hasStepHistory = Object.keys(stepData).some((k) =>
     k.startsWith('__wait_'),
   );
-  if (hasStepHistory) {
-    const pool = extractPool(backend);
+  if (hasStepHistory && pool) {
     await resolveCompletedWaits(pool, stepData);
     // Persist the resolved step data
     await updateStepData(pool, job.id, stepData);
@@ -620,9 +653,10 @@ export async function processJobWithHandlers<
             },
           };
 
-      // Build the full context with wait support (requires pool)
-      const pool = extractPool(backend);
-      const ctx = buildWaitContext(pool, job.id, stepData, baseCtx);
+      // Build context: full wait support for PostgreSQL, basic for others
+      const ctx = pool
+        ? buildWaitContext(pool, job.id, stepData, baseCtx)
+        : buildBasicContext(baseCtx);
 
       // If forceKillOnTimeout was set but timeoutMs was missing, warn
       if (forceKillOnTimeout && !hasTimeout) {
@@ -654,7 +688,18 @@ export async function processJobWithHandlers<
 
     // Check if this is a WaitSignal (not a real error)
     if (error instanceof WaitSignal) {
-      const pool = extractPool(backend);
+      if (!pool) {
+        // Wait signals should never happen with non-PostgreSQL backends
+        // since the context methods throw, but guard just in case
+        await backend.failJob(
+          job.id,
+          new Error(
+            'WaitSignal received but wait features require the PostgreSQL backend.',
+          ),
+          FailureReason.HandlerError,
+        );
+        return;
+      }
       log(
         `Job ${job.id} entering wait: type=${error.type}, waitUntil=${error.waitUntil?.toISOString() ?? 'none'}, tokenId=${error.tokenId ?? 'none'}`,
       );
