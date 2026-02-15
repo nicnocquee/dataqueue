@@ -154,6 +154,9 @@ importers:
       '@nicnocquee/dataqueue':
         specifier: workspace:*
         version: link:../../packages/dataqueue
+      '@nicnocquee/dataqueue-react':
+        specifier: workspace:^
+        version: link:../../packages/react
       next:
         specifier: 15.3.8
         version: 15.3.8(@playwright/test@1.58.2)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
