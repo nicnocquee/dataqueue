@@ -1,0 +1,172 @@
+---
+title: React SDK
+description: Subscribe to job status and progress from React
+---
+
+The `@nicnocquee/dataqueue-react` package provides React hooks for subscribing to job updates. It uses polling to track a job's status and progress in real-time.
+
+## Installation
+
+```package-install
+npm install @nicnocquee/dataqueue-react
+```
+
+<Callout>The React SDK requires React 18 or later.</Callout>
+
+## Quick Start
+
+The simplest way to use the SDK is with the `useJob` hook:
+
+```tsx title="components/JobTracker.tsx"
+'use client';
+
+import { useJob } from '@nicnocquee/dataqueue-react';
+
+function JobTracker({ jobId }: { jobId: number }) {
+  const { status, progress, data, isLoading, error } = useJob(jobId, {
+    fetcher: (id) =>
+      fetch(`/api/jobs/${id}`)
+        .then((r) => r.json())
+        .then((d) => d.job),
+    pollingInterval: 1000,
+  });
+
+  if (isLoading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error.message}</p>;
+
+  return (
+    <div>
+      <p>Status: {status}</p>
+      <progress value={progress ?? 0} max={100} />
+      <span>{progress ?? 0}%</span>
+    </div>
+  );
+}
+```
+
+### API Route
+
+The `fetcher` function should call an API route that returns the job data. Here's an example Next.js API route:
+
+```typescript title="app/api/jobs/[id]/route.ts"
+import { getJobQueue } from '@/lib/queue';
+import { NextResponse } from 'next/server';
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const jobQueue = getJobQueue();
+  const job = await jobQueue.getJob(Number(id));
+  if (!job) {
+    return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+  }
+  return NextResponse.json({ job });
+}
+```
+
+## DataqueueProvider
+
+To avoid passing the `fetcher` and `pollingInterval` to every `useJob` call, wrap your app (or a subtree) in a `DataqueueProvider`:
+
+```tsx title="app/providers.tsx"
+'use client';
+
+import { DataqueueProvider } from '@nicnocquee/dataqueue-react';
+
+const fetcher = (id: number) =>
+  fetch(`/api/jobs/${id}`)
+    .then((r) => r.json())
+    .then((d) => d.job);
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <DataqueueProvider fetcher={fetcher} pollingInterval={2000}>
+      {children}
+    </DataqueueProvider>
+  );
+}
+```
+
+Then use `useJob` without repeating the config:
+
+```tsx
+const { status, progress } = useJob(jobId);
+```
+
+Options passed directly to `useJob` override the provider values.
+
+## useJob API
+
+```typescript
+const result = useJob(jobId, options?);
+```
+
+### Parameters
+
+- `jobId`: _number | null | undefined_ — The job ID to subscribe to. Pass `null` or `undefined` to skip polling.
+- `options` _(optional)_:
+
+| Option            | Type                               | Default       | Description                       |
+| ----------------- | ---------------------------------- | ------------- | --------------------------------- |
+| `fetcher`         | `(id: number) => Promise<JobData>` | from provider | Function that fetches a job by ID |
+| `pollingInterval` | `number`                           | `1000`        | Milliseconds between polls        |
+| `enabled`         | `boolean`                          | `true`        | Set to `false` to pause polling   |
+| `onStatusChange`  | `(newStatus, oldStatus) => void`   | —             | Called when status changes        |
+| `onComplete`      | `(job) => void`                    | —             | Called when job completes         |
+| `onFailed`        | `(job) => void`                    | —             | Called when job fails             |
+
+### Return Value
+
+| Field       | Type                | Description                                   |
+| ----------- | ------------------- | --------------------------------------------- |
+| `data`      | `JobData \| null`   | Latest job data, or `null` before first fetch |
+| `status`    | `JobStatus \| null` | Current job status                            |
+| `progress`  | `number \| null`    | Progress percentage (0–100)                   |
+| `isLoading` | `boolean`           | `true` until the first fetch resolves         |
+| `error`     | `Error \| null`     | Last fetch error, if any                      |
+
+### Smart Polling
+
+The hook automatically stops polling when the job reaches a **terminal status**: `completed`, `failed`, or `cancelled`. This avoids unnecessary network requests once the job is done.
+
+## Callbacks
+
+Use callbacks to react to job lifecycle events:
+
+```tsx
+useJob(jobId, {
+  fetcher,
+  onStatusChange: (newStatus, oldStatus) => {
+    console.log(`Job went from ${oldStatus} to ${newStatus}`);
+  },
+  onComplete: (job) => {
+    toast.success('Job completed!');
+  },
+  onFailed: (job) => {
+    toast.error('Job failed.');
+  },
+});
+```
+
+## JobData Type
+
+The `fetcher` should return an object matching the `JobData` interface:
+
+```typescript
+interface JobData {
+  id: number;
+  status:
+    | 'pending'
+    | 'processing'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'waiting';
+  progress?: number | null;
+  [key: string]: unknown;
+}
+```
+
+The `id`, `status`, and optionally `progress` fields are required. Any additional fields from your API response are preserved in `data`.

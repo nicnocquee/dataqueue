@@ -136,6 +136,11 @@ export interface QueueBackend {
   /** Reclaim jobs stuck in 'processing' for too long. Returns count. */
   reclaimStuckJobs(maxProcessingTimeMinutes?: number): Promise<number>;
 
+  // ── Progress ──────────────────────────────────────────────────────────
+
+  /** Update the progress percentage (0-100) for a job. */
+  updateProgress(jobId: number, progress: number): Promise<void>;
+
   // ── Events ────────────────────────────────────────────────────────────
 
   /** Record a job event. Should not throw. */
