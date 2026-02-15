@@ -437,7 +437,6 @@ export const RECLAIM_STUCK_JOBS_SCRIPT = `
 local prefix = KEYS[1]
 local maxAgeMs = tonumber(ARGV[1])
 local nowMs = tonumber(ARGV[2])
-local cutoff = nowMs - maxAgeMs
 
 local processing = redis.call('SMEMBERS', prefix .. 'status:processing')
 local count = 0
@@ -447,23 +446,35 @@ for _, jobId in ipairs(processing) do
   local lockedAt = redis.call('HGET', jk, 'lockedAt')
   if lockedAt and lockedAt ~= 'null' then
     local lockedAtNum = tonumber(lockedAt)
-    if lockedAtNum and lockedAtNum < cutoff then
-      redis.call('HMSET', jk,
-        'status', 'pending',
-        'lockedAt', 'null',
-        'lockedBy', 'null',
-        'updatedAt', nowMs
-      )
-      redis.call('SREM', prefix .. 'status:processing', jobId)
-      redis.call('SADD', prefix .. 'status:pending', jobId)
+    if lockedAtNum then
+      -- Use the greater of maxAgeMs and the job's own timeoutMs
+      local jobMaxAge = maxAgeMs
+      local timeoutMs = redis.call('HGET', jk, 'timeoutMs')
+      if timeoutMs and timeoutMs ~= 'null' then
+        local tMs = tonumber(timeoutMs)
+        if tMs and tMs > jobMaxAge then
+          jobMaxAge = tMs
+        end
+      end
+      local cutoff = nowMs - jobMaxAge
+      if lockedAtNum < cutoff then
+        redis.call('HMSET', jk,
+          'status', 'pending',
+          'lockedAt', 'null',
+          'lockedBy', 'null',
+          'updatedAt', nowMs
+        )
+        redis.call('SREM', prefix .. 'status:processing', jobId)
+        redis.call('SADD', prefix .. 'status:pending', jobId)
 
-      -- Re-add to queue
-      local priority = tonumber(redis.call('HGET', jk, 'priority') or '0')
-      local createdAt = tonumber(redis.call('HGET', jk, 'createdAt'))
-      local score = priority * ${SCORE_RANGE} + (${SCORE_RANGE} - createdAt)
-      redis.call('ZADD', prefix .. 'queue', score, jobId)
+        -- Re-add to queue
+        local priority = tonumber(redis.call('HGET', jk, 'priority') or '0')
+        local createdAt = tonumber(redis.call('HGET', jk, 'createdAt'))
+        local score = priority * ${SCORE_RANGE} + (${SCORE_RANGE} - createdAt)
+        redis.call('ZADD', prefix .. 'queue', score, jobId)
 
-      count = count + 1
+        count = count + 1
+      end
     end
   end
 end

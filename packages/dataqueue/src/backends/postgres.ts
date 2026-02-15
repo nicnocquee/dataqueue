@@ -1012,7 +1012,10 @@ export class PostgresBackend implements QueueBackend {
         UPDATE job_queue
         SET status = 'pending', locked_at = NULL, locked_by = NULL, updated_at = NOW()
         WHERE status = 'processing'
-          AND locked_at < NOW() - INTERVAL '1 minute' * $1::int
+          AND locked_at < NOW() - GREATEST(
+            INTERVAL '1 minute' * $1::int,
+            INTERVAL '1 millisecond' * COALESCE(timeout_ms, 0)
+          )
         RETURNING id
         `,
         [maxProcessingTimeMinutes],

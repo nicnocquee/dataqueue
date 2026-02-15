@@ -108,6 +108,8 @@ const handler = async (payload, signal, { prolong, onTimeout }) => {
 
 When either mechanism extends the timeout, DataQueue also updates `locked_at` in the database. This prevents [`reclaimStuckJobs`](/docs/usage/reclaim-jobs) from accidentally reclaiming the job while it's still actively working. A `prolonged` event is also recorded in the job's event history.
 
+Note that `reclaimStuckJobs` is already aware of each job's `timeoutMs` — a job will not be reclaimed until the greater of `maxProcessingTimeMinutes` and the job's own `timeoutMs` has elapsed. `prolong` is still useful when you want to extend _beyond_ the original timeout, or as a heartbeat for jobs without a `timeoutMs`.
+
 ### Limitations
 
 - Both `prolong` and `onTimeout` are no-ops if the job has no `timeoutMs` set.
