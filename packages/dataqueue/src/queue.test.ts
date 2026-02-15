@@ -863,6 +863,50 @@ describe('queue integration', () => {
     expect(job?.lockedAt).toBeNull();
     expect(job?.lockedBy).toBeNull();
   });
+
+  it('should not reclaim a job whose timeoutMs exceeds the reclaim threshold', async () => {
+    // Add a job with a 30-minute timeout
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'long-timeout@example.com' },
+      timeoutMs: 30 * 60 * 1000, // 30 minutes
+    });
+    // Simulate: processing for 15 minutes (exceeds 10-min global threshold but within 30-min job timeout)
+    await pool.query(
+      `UPDATE job_queue SET status = 'processing', locked_at = NOW() - INTERVAL '15 minutes' WHERE id = $1`,
+      [jobId],
+    );
+    let job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('processing');
+
+    // Reclaim with 10-minute global threshold — should NOT reclaim this job
+    const reclaimed = await queue.reclaimStuckJobs(pool, 10);
+    expect(reclaimed).toBe(0);
+    job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('processing');
+  });
+
+  it('should reclaim a job whose timeoutMs has also been exceeded', async () => {
+    // Add a job with a 20-minute timeout
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'expired-timeout@example.com' },
+      timeoutMs: 20 * 60 * 1000, // 20 minutes
+    });
+    // Simulate: processing for 25 minutes (exceeds both 10-min threshold and 20-min job timeout)
+    await pool.query(
+      `UPDATE job_queue SET status = 'processing', locked_at = NOW() - INTERVAL '25 minutes' WHERE id = $1`,
+      [jobId],
+    );
+    let job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('processing');
+
+    // Reclaim with 10-minute global threshold — should reclaim since 25 min > 20 min timeout
+    const reclaimed = await queue.reclaimStuckJobs(pool, 10);
+    expect(reclaimed).toBeGreaterThanOrEqual(1);
+    job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('pending');
+  });
 });
 
 describe('job event tracking', () => {

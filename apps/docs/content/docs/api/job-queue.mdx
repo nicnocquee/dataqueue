@@ -331,7 +331,7 @@ Cleans up jobs older than the specified number of days. Returns the number of jo
 reclaimStuckJobs(maxProcessingTimeMinutes?: number): Promise<number>
 ```
 
-Reclaims jobs stuck in 'processing' for too long. Returns the number of jobs reclaimed.
+Reclaims jobs stuck in 'processing' for too long. Returns the number of jobs reclaimed. If a job has a `timeoutMs` that is longer than the `maxProcessingTimeMinutes` threshold, the job's own timeout is used instead, preventing premature reclamation of long-running jobs.
 
 ---
 

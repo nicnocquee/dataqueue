@@ -410,6 +410,60 @@ describe('Redis backend integration', () => {
     expect(job?.lockedAt).toBeNull();
   });
 
+  it('should not reclaim a job whose timeoutMs exceeds the reclaim threshold', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'long-timeout@example.com' },
+      timeoutMs: 30 * 60 * 1000, // 30 minutes
+    });
+    // Simulate: processing for 15 minutes (exceeds 10-min global threshold but within 30-min job timeout)
+    const oldMs = Date.now() - 15 * 60 * 1000;
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'status',
+      'processing',
+      'lockedAt',
+      oldMs.toString(),
+      'lockedBy',
+      'some-worker',
+    );
+    await redisClient.srem(`${prefix}status:pending`, jobId.toString());
+    await redisClient.sadd(`${prefix}status:processing`, jobId.toString());
+    await redisClient.zrem(`${prefix}queue`, jobId.toString());
+
+    const reclaimed = await jobQueue.reclaimStuckJobs(10);
+    expect(reclaimed).toBe(0);
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('processing');
+  });
+
+  it('should reclaim a job whose timeoutMs has also been exceeded', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'expired-timeout@example.com' },
+      timeoutMs: 20 * 60 * 1000, // 20 minutes
+    });
+    // Simulate: processing for 25 minutes (exceeds both 10-min threshold and 20-min job timeout)
+    const oldMs = Date.now() - 25 * 60 * 1000;
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'status',
+      'processing',
+      'lockedAt',
+      oldMs.toString(),
+      'lockedBy',
+      'some-worker',
+    );
+    await redisClient.srem(`${prefix}status:pending`, jobId.toString());
+    await redisClient.sadd(`${prefix}status:processing`, jobId.toString());
+    await redisClient.zrem(`${prefix}queue`, jobId.toString());
+
+    const reclaimed = await jobQueue.reclaimStuckJobs(10);
+    expect(reclaimed).toBe(1);
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('pending');
+  });
+
   it('getPool should throw for Redis backend', () => {
     expect(() => jobQueue.getPool()).toThrow(
       'getPool() is only available with the PostgreSQL backend',

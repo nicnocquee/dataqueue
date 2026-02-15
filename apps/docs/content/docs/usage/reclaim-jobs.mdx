@@ -39,6 +39,12 @@ export async function GET(request: Request) {
 }
 ```
 
+#### Per-Job Timeout Awareness
+
+`reclaimStuckJobs` respects each job's individual `timeoutMs`. If a job has a `timeoutMs` that is longer than `maxProcessingTimeMinutes`, it will not be reclaimed until its own timeout has elapsed. For example, if you call `reclaimStuckJobs(10)` and a job has `timeoutMs: 1800000` (30 minutes), that job will only be reclaimed after 30 minutes — not 10.
+
+Jobs without a `timeoutMs` continue to use the global `maxProcessingTimeMinutes` threshold as before.
+
 #### Scheduling the Reclaim Job with Cron
 
 Add the following to your `vercel.json` to call the cron route every 10 minutes:
