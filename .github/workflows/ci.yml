@@ -104,6 +104,10 @@ jobs:
         working-directory: packages/dataqueue
         run: pnpm run build
 
+      - name: Build react
+        working-directory: packages/react
+        run: pnpm run build
+
       - name: Create E2E test database and run migrations
         run: |
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE e2e_test;"
@@ -113,6 +117,10 @@ jobs:
       - name: Install Playwright browsers
         working-directory: apps/e2e
         run: npx playwright install --with-deps chromium
+
+      - name: Build e2e
+        working-directory: apps/e2e
+        run: pnpm run build
 
       - name: Run E2E tests
         working-directory: apps/e2e
