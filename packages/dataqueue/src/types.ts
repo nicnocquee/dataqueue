@@ -191,6 +191,11 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * Step data for the job. Stores completed step results for replay on re-invocation.
    */
   stepData?: Record<string, any>;
+  /**
+   * Progress percentage for the job (0-100), or null if no progress has been reported.
+   * Updated by the handler via `ctx.setProgress(percent)`.
+   */
+  progress?: number | null;
 }
 
 /**
@@ -277,6 +282,16 @@ export interface JobContext {
    * @returns A result object indicating success or timeout.
    */
   waitForToken: <T = any>(tokenId: string) => Promise<WaitTokenResult<T>>;
+
+  /**
+   * Report progress for this job (0-100).
+   * The value is persisted to the database and can be read by clients
+   * via `getJob()` or the React SDK's `useJob()` hook.
+   *
+   * @param percent - Progress percentage (0-100). Values are rounded to the nearest integer.
+   * @throws If percent is outside the 0-100 range.
+   */
+  setProgress: (percent: number) => Promise<void>;
 }
 
 /**

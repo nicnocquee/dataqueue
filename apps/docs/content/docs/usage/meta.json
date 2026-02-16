@@ -18,7 +18,9 @@
     "cancel-jobs",
     "edit-jobs",
     "job-events",
-    "get-jobs"
+    "get-jobs",
+    "progress-tracking",
+    "react-sdk"
   ],
   "defaultOpen": true
 }

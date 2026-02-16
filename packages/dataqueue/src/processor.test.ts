@@ -955,4 +955,120 @@ describe('onTimeout', () => {
     // onTimeout should NOT have been called since prolong extended before timeout fired
     expect(onTimeoutCalled).toBe(false);
   });
+
+  it('should persist progress via ctx.setProgress', async () => {
+    // Setup
+    const handler: JobHandler<TestPayloadMap, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      await ctx.setProgress(25);
+      await ctx.setProgress(50);
+      await ctx.setProgress(100);
+    };
+    const handlers = {
+      test: handler,
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
+    const jobId = await queue.addJob<TestPayloadMap, 'test'>(pool, {
+      jobType: 'test',
+      payload: { foo: 'bar' },
+    });
+    await claimJob(pool, jobId);
+    const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(backend, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.status).toBe('completed');
+    expect(completed?.progress).toBe(100);
+  });
+
+  it('should reject progress values outside 0-100', async () => {
+    expect.assertions(2);
+
+    // Setup
+    const handler: JobHandler<TestPayloadMap, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      try {
+        await ctx.setProgress(-1);
+      } catch (err) {
+        expect((err as Error).message).toBe(
+          'Progress must be between 0 and 100',
+        );
+      }
+      try {
+        await ctx.setProgress(101);
+      } catch (err) {
+        expect((err as Error).message).toBe(
+          'Progress must be between 0 and 100',
+        );
+      }
+    };
+    const handlers = {
+      test: handler,
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
+    const jobId = await queue.addJob<TestPayloadMap, 'test'>(pool, {
+      jobType: 'test',
+      payload: { foo: 'bar' },
+    });
+    await claimJob(pool, jobId);
+    const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(backend, job!, handlers);
+  });
+
+  it('should round fractional progress values', async () => {
+    // Setup
+    const handler: JobHandler<TestPayloadMap, 'test'> = async (
+      _payload,
+      _signal,
+      ctx,
+    ) => {
+      await ctx.setProgress(33.7);
+    };
+    const handlers = {
+      test: handler,
+      fail: vi.fn(async () => {}),
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
+    const jobId = await queue.addJob<TestPayloadMap, 'test'>(pool, {
+      jobType: 'test',
+      payload: { foo: 'bar' },
+    });
+    await claimJob(pool, jobId);
+    const job = await queue.getJob<TestPayloadMap, 'test'>(pool, jobId);
+
+    // Act
+    await processJobWithHandlers(backend, job!, handlers);
+
+    // Assert
+    const completed = await queue.getJob(pool, jobId);
+    expect(completed?.progress).toBe(34);
+  });
 });

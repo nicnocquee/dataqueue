@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@nicnocquee/dataqueue": "workspace:*",
+    "@nicnocquee/dataqueue-react": "workspace:^",
     "next": "15.3.8",
     "node-pg-migrate": "^8.0.3",
     "pg": "^8.16.3",

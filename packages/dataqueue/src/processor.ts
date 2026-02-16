@@ -39,10 +39,14 @@ function tryExtractPool(backend: QueueBackend): Pool | null {
  * Build a JobContext without wait support (for non-PostgreSQL backends).
  * prolong/onTimeout work normally; wait-related methods throw helpful errors.
  */
-function buildBasicContext(baseCtx: {
-  prolong: JobContext['prolong'];
-  onTimeout: JobContext['onTimeout'];
-}): JobContext {
+function buildBasicContext(
+  backend: QueueBackend,
+  jobId: number,
+  baseCtx: {
+    prolong: JobContext['prolong'];
+    onTimeout: JobContext['onTimeout'];
+  },
+): JobContext {
   const waitError = () =>
     new Error(
       'Wait features (waitFor, waitUntil, createToken, waitForToken, ctx.run) are currently only supported with the PostgreSQL backend.',
@@ -65,6 +69,11 @@ function buildBasicContext(baseCtx: {
     },
     waitForToken: async () => {
       throw waitError();
+    },
+    setProgress: async (percent: number) => {
+      if (percent < 0 || percent > 100)
+        throw new Error('Progress must be between 0 and 100');
+      await backend.updateProgress(jobId, Math.round(percent));
     },
   };
 }
@@ -330,7 +339,11 @@ function calculateWaitUntil(duration: WaitDuration): Date {
  * Create a no-op JobContext for cases where prolong/onTimeout are not supported
  * (e.g. forceKillOnTimeout mode or no timeout set).
  */
-function createNoOpContext(reason: string): JobContext {
+function createNoOpContext(
+  backend: QueueBackend,
+  jobId: number,
+  reason: string,
+): JobContext {
   return {
     prolong: () => {
       log(`prolong() called but ignored: ${reason}`);
@@ -361,6 +374,11 @@ function createNoOpContext(reason: string): JobContext {
       throw new Error(
         `waitForToken() is not supported when forceKillOnTimeout is enabled. ${reason}`,
       );
+    },
+    setProgress: async (percent: number) => {
+      if (percent < 0 || percent > 100)
+        throw new Error('Progress must be between 0 and 100');
+      await backend.updateProgress(jobId, Math.round(percent));
     },
   };
 }
@@ -406,6 +424,7 @@ async function resolveCompletedWaits(
  * Build the extended JobContext with step tracking and wait support.
  */
 function buildWaitContext(
+  backend: QueueBackend,
   pool: Pool,
   jobId: number,
   stepData: Record<string, any>,
@@ -531,6 +550,12 @@ function buildWaitContext(
       // Token not yet completed -- save pending state and throw WaitSignal
       stepData[waitKey] = { type: 'token', tokenId, completed: false };
       throw new WaitSignal('token', undefined, tokenId, stepData);
+    },
+
+    setProgress: async (percent: number) => {
+      if (percent < 0 || percent > 100)
+        throw new Error('Progress must be between 0 and 100');
+      await backend.updateProgress(jobId, Math.round(percent));
     },
   };
 
@@ -662,8 +687,8 @@ export async function processJobWithHandlers<
 
       // Build context: full wait support for PostgreSQL, basic for others
       const ctx = pool
-        ? buildWaitContext(pool, job.id, stepData, baseCtx)
-        : buildBasicContext(baseCtx);
+        ? buildWaitContext(backend, pool, job.id, stepData, baseCtx)
+        : buildBasicContext(backend, job.id, baseCtx);
 
       // If forceKillOnTimeout was set but timeoutMs was missing, warn
       if (forceKillOnTimeout && !hasTimeout) {

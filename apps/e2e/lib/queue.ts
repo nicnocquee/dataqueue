@@ -17,6 +17,8 @@ export type TestPayloadMap = {
   'step-job': { value: string; steps: string[] };
   /** Uses ctx.createToken() + ctx.waitForToken() */
   'token-job': { value: string };
+  /** Reports progress in increments, sleeping between each */
+  'progress-job': { value: string; steps: number; delayMs: number };
 };
 
 let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>> | null = null;
@@ -82,6 +84,14 @@ export const jobHandlers: JobHandlers<TestPayloadMap> = {
     const result = await ctx.waitForToken(token.id);
     if (!result.ok) {
       throw new Error(`Token wait failed: ${result.error}`);
+    }
+  },
+
+  'progress-job': async (payload, signal, ctx) => {
+    for (let i = 1; i <= payload.steps; i++) {
+      if (signal.aborted) throw new Error('Job aborted');
+      await new Promise((r) => setTimeout(r, payload.delayMs));
+      await ctx.setProgress(Math.round((i / payload.steps) * 100));
     }
   },
 };

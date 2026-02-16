@@ -107,6 +107,7 @@ function deserializeJob<PayloadMap, T extends JobType<PayloadMap>>(
     lastCancelledAt: dateOrNull(h.lastCancelledAt),
     tags,
     idempotencyKey: nullish(h.idempotencyKey) as string | null | undefined,
+    progress: numOrNull(h.progress),
   };
 }
 
@@ -437,6 +438,25 @@ export class RedisBackend implements QueueBackend {
     } catch (error) {
       log(`Error prolonging job ${jobId}: ${error}`);
       // Best-effort, do not throw
+    }
+  }
+
+  // ── Progress ──────────────────────────────────────────────────────────
+
+  async updateProgress(jobId: number, progress: number): Promise<void> {
+    try {
+      const now = this.nowMs();
+      await this.client.hset(
+        `${this.prefix}job:${jobId}`,
+        'progress',
+        progress.toString(),
+        'updatedAt',
+        now.toString(),
+      );
+      log(`Updated progress for job ${jobId}: ${progress}%`);
+    } catch (error) {
+      log(`Error updating progress for job ${jobId}: ${error}`);
+      // Best-effort: do not throw to avoid killing the running handler
     }
   }
 

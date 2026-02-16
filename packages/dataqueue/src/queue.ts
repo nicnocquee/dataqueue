@@ -206,6 +206,14 @@ export const getJobs = async <PayloadMap, T extends keyof PayloadMap & string>(
 ): Promise<JobRecord<PayloadMap, T>[]> =>
   new PostgresBackend(pool).getJobs<PayloadMap, T>(filters, limit, offset);
 
+// ── Progress ──────────────────────────────────────────────────────────────────
+
+export const updateProgress = async (
+  pool: Pool,
+  jobId: number,
+  progress: number,
+): Promise<void> => new PostgresBackend(pool).updateProgress(jobId, progress);
+
 // ── Wait support functions (PostgreSQL-only) ─────────────────────────────────
 
 /**

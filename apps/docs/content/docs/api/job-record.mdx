@@ -40,6 +40,7 @@ The `JobRecord` interface represents a job stored in the queue, including its st
   cancelled.
 - `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
 - `idempotencyKey?`: _string | null_ — The idempotency key for this job, if one was provided when the job was created.
+- `progress?`: _number | null_ — Progress percentage (0–100) reported by the handler via `ctx.setProgress()`. `null` if no progress has been reported. See [Progress Tracking](/docs/usage/progress-tracking).
 
 ## Example
 
@@ -51,6 +52,7 @@ The `JobRecord` interface represents a job stored in the queue, including its st
   "status": "pending",
   "createdAt": "2024-06-01T12:00:00Z",
   "tags": ["welcome", "user"],
-  "idempotencyKey": "welcome-email-user-123"
+  "idempotencyKey": "welcome-email-user-123",
+  "progress": null
 }
 ```

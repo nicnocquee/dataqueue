@@ -1,0 +1,61 @@
+{
+  "name": "@nicnocquee/dataqueue-react",
+  "version": "0.1.0",
+  "description": "React hooks for subscribing to dataqueue job status and progress",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "tsc",
+    "test": "vitest run",
+    "check-exports": "attw --pack .",
+    "ci": "npm run build && npm run check-exports && npm run lint && npm run test"
+  },
+  "keywords": [
+    "react",
+    "hooks",
+    "job-queue",
+    "dataqueue",
+    "polling",
+    "progress"
+  ],
+  "author": "Nico Prananta",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicnocquee/dataqueue.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/nicnocquee/dataqueue/tree/main/packages/react#readme",
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "jsdom": "^28.1.0",
+    "react": "^19.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
