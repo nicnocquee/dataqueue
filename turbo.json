@@ -1,7 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
-  "passThroughEnv": ["PG_DATAQUEUE_DATABASE"],
+  "globalPassThroughEnv": ["PG_DATAQUEUE_DATABASE"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
