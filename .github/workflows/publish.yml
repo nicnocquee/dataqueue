@@ -23,13 +23,13 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "Publishing version: $VERSION"
-          npm version "$VERSION" --no-git-tag-version --workspace=packages/dataqueue
-          npm version "$VERSION" --no-git-tag-version --workspace=packages/react
-          npm version "$VERSION" --no-git-tag-version --workspace=packages/dashboard
+          cd packages/dataqueue && npm version "$VERSION" --no-git-tag-version && cd ../..
+          cd packages/react && npm version "$VERSION" --no-git-tag-version && cd ../..
+          cd packages/dashboard && npm version "$VERSION" --no-git-tag-version && cd ../..
       - name: Build all packages
         run: pnpm --filter '@nicnocquee/*' run build
       - name: Publish all packages
         run: |
-          npm publish --provenance --access public --workspace=packages/dataqueue
-          npm publish --provenance --access public --workspace=packages/react
-          npm publish --provenance --access public --workspace=packages/dashboard
+          cd packages/dataqueue && npm publish --provenance --access public && cd ../..
+          cd packages/react && npm publish --provenance --access public && cd ../..
+          cd packages/dashboard && npm publish --provenance --access public && cd ../..
