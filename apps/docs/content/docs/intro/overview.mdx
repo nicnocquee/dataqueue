@@ -15,7 +15,7 @@ The processor has these responsibilities:
 - update the job status accordingly
 - retry failed jobs
 
-The processor doesn't run in a separate process. It runs in the same process as your application. In a serverless environment, you can initiate and start the processor for example in an API route. In a long running process environment, you can start the processor when your application starts, and it will periodically check for jobs to process.
+In a serverless environment, you can initiate and start the processor for example in an API route and use cron job to periodically call it. In a long running process environment, you can start the processor when your application starts, and it will periodically check for jobs to process.
 
 For more information, see [Processor](/api/processor).
 
@@ -28,7 +28,7 @@ The queue is an abstraction over the database. It has these responsibilities:
 - cancel pending jobs
 - edit pending jobs
 
-The API is identical whether you're using PostgreSQL or Redis as your backend. You select the backend when [initializing the queue](/usage/init-queue).
+The API is identical whether you're using PostgreSQL or Redis (beta) as your backend. You select the backend when [initializing the queue](/usage/init-queue).
 
 For more information, see [Queue](/api/queue).
 
