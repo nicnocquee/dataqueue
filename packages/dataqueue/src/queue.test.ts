@@ -141,6 +141,35 @@ describe('queue integration', () => {
     expect(job).toBeNull();
   });
 
+  it('should cleanup old completed jobs in batches', async () => {
+    // Add and complete 5 jobs
+    const ids: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(
+        pool,
+        {
+          jobType: 'email',
+          payload: { to: `batch-${i}@example.com` },
+        },
+      );
+      await queue.getNextBatch(pool, 'worker-batch-cleanup', 1);
+      await queue.completeJob(pool, jobId);
+      ids.push(jobId);
+    }
+    // Manually backdate all 5
+    await pool.query(
+      `UPDATE job_queue SET updated_at = NOW() - INTERVAL '31 days' WHERE id = ANY($1::int[])`,
+      [ids],
+    );
+    // Cleanup with batchSize=2 so it takes multiple iterations
+    const deleted = await queue.cleanupOldJobs(pool, 30, 2);
+    expect(deleted).toBe(5);
+    for (const id of ids) {
+      const job = await queue.getJob(pool, id);
+      expect(job).toBeNull();
+    }
+  });
+
   it('should cancel a scheduled job', async () => {
     const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
       jobType: 'email',

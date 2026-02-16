@@ -149,11 +149,11 @@ export interface QueueBackend {
     updates: JobUpdates,
   ): Promise<number>;
 
-  /** Delete completed jobs older than N days. Returns count deleted. */
-  cleanupOldJobs(daysToKeep?: number): Promise<number>;
+  /** Delete completed jobs older than N days. Deletes in batches for scale safety. Returns count deleted. */
+  cleanupOldJobs(daysToKeep?: number, batchSize?: number): Promise<number>;
 
-  /** Delete job events older than N days. Returns count deleted. */
-  cleanupOldJobEvents(daysToKeep?: number): Promise<number>;
+  /** Delete job events older than N days. Deletes in batches for scale safety. Returns count deleted. */
+  cleanupOldJobEvents(daysToKeep?: number, batchSize?: number): Promise<number>;
 
   /** Reclaim jobs stuck in 'processing' for too long. Returns count. */
   reclaimStuckJobs(maxProcessingTimeMinutes?: number): Promise<number>;

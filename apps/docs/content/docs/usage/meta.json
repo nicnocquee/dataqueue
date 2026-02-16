@@ -15,6 +15,7 @@
     "wait",
     "reclaim-jobs",
     "cleanup-jobs",
+    "scaling",
     "cancel-jobs",
     "edit-jobs",
     "job-events",

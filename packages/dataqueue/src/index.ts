@@ -158,9 +158,10 @@ export const initJobQueue = <PayloadMap = any>(
       config.verbose ?? false,
     ),
     retryJob: (jobId: number) => backend.retryJob(jobId),
-    cleanupOldJobs: (daysToKeep?: number) => backend.cleanupOldJobs(daysToKeep),
-    cleanupOldJobEvents: (daysToKeep?: number) =>
-      backend.cleanupOldJobEvents(daysToKeep),
+    cleanupOldJobs: (daysToKeep?: number, batchSize?: number) =>
+      backend.cleanupOldJobs(daysToKeep, batchSize),
+    cleanupOldJobEvents: (daysToKeep?: number, batchSize?: number) =>
+      backend.cleanupOldJobEvents(daysToKeep, batchSize),
     cancelJob: withLogContext(
       (jobId: number) => backend.cancelJob(jobId),
       config.verbose ?? false,

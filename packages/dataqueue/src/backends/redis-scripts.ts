@@ -483,23 +483,27 @@ return count
 `;
 
 /**
- * CLEANUP OLD JOBS
+ * CLEANUP OLD JOBS (batched)
+ *
+ * Processes a batch of candidate job IDs from the completed set, deleting
+ * those whose updatedAt is older than the cutoff. This script is called
+ * repeatedly from TypeScript with batches obtained via SSCAN to avoid
+ * loading the entire completed set into memory at once.
+ *
  * KEYS: [prefix]
- * ARGV: [cutoffMs]
- * Returns: count of deleted jobs
+ * ARGV: [cutoffMs, id1, id2, ...]
+ * Returns: count of deleted jobs in this batch
  */
-export const CLEANUP_OLD_JOBS_SCRIPT = `
+export const CLEANUP_OLD_JOBS_BATCH_SCRIPT = `
 local prefix = KEYS[1]
 local cutoffMs = tonumber(ARGV[1])
-
-local completed = redis.call('SMEMBERS', prefix .. 'status:completed')
 local count = 0
 
-for _, jobId in ipairs(completed) do
+for i = 2, #ARGV do
+  local jobId = ARGV[i]
   local jk = prefix .. 'job:' .. jobId
   local updatedAt = tonumber(redis.call('HGET', jk, 'updatedAt'))
   if updatedAt and updatedAt < cutoffMs then
-    -- Remove all indexes
     local jobType = redis.call('HGET', jk, 'jobType')
     local tagsJson = redis.call('HGET', jk, 'tags')
     local idempotencyKey = redis.call('HGET', jk, 'idempotencyKey')
@@ -522,7 +526,6 @@ for _, jobId in ipairs(completed) do
     if idempotencyKey and idempotencyKey ~= 'null' then
       redis.call('DEL', prefix .. 'idempotency:' .. idempotencyKey)
     end
-    -- Delete events
     redis.call('DEL', prefix .. 'events:' .. jobId)
 
     count = count + 1

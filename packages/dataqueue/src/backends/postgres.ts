@@ -987,46 +987,93 @@ export class PostgresBackend implements QueueBackend {
     }
   }
 
-  async cleanupOldJobs(daysToKeep = 30): Promise<number> {
-    const client = await this.pool.connect();
+  /**
+   * Delete completed jobs older than the given number of days.
+   * Deletes in batches of 1000 to avoid long-running transactions
+   * and excessive WAL bloat at scale.
+   *
+   * @param daysToKeep - Number of days to retain completed jobs (default 30).
+   * @param batchSize - Number of rows to delete per batch (default 1000).
+   * @returns Total number of deleted jobs.
+   */
+  async cleanupOldJobs(daysToKeep = 30, batchSize = 1000): Promise<number> {
+    let totalDeleted = 0;
+
     try {
-      const result = await client.query(
-        `
-        DELETE FROM job_queue
-        WHERE status = 'completed'
-        AND updated_at < NOW() - INTERVAL '1 day' * $1::int
-        RETURNING id
-      `,
-        [daysToKeep],
-      );
-      log(`Deleted ${result.rowCount} old jobs`);
-      return result.rowCount || 0;
+      let deletedInBatch: number;
+      do {
+        const client = await this.pool.connect();
+        try {
+          const result = await client.query(
+            `
+            DELETE FROM job_queue
+            WHERE id IN (
+              SELECT id FROM job_queue
+              WHERE status = 'completed'
+              AND updated_at < NOW() - INTERVAL '1 day' * $1::int
+              LIMIT $2
+            )
+          `,
+            [daysToKeep, batchSize],
+          );
+          deletedInBatch = result.rowCount || 0;
+          totalDeleted += deletedInBatch;
+        } finally {
+          client.release();
+        }
+      } while (deletedInBatch === batchSize);
+
+      log(`Deleted ${totalDeleted} old jobs`);
+      return totalDeleted;
     } catch (error) {
       log(`Error cleaning up old jobs: ${error}`);
       throw error;
-    } finally {
-      client.release();
     }
   }
 
-  async cleanupOldJobEvents(daysToKeep = 30): Promise<number> {
-    const client = await this.pool.connect();
+  /**
+   * Delete job events older than the given number of days.
+   * Deletes in batches of 1000 to avoid long-running transactions
+   * and excessive WAL bloat at scale.
+   *
+   * @param daysToKeep - Number of days to retain events (default 30).
+   * @param batchSize - Number of rows to delete per batch (default 1000).
+   * @returns Total number of deleted events.
+   */
+  async cleanupOldJobEvents(
+    daysToKeep = 30,
+    batchSize = 1000,
+  ): Promise<number> {
+    let totalDeleted = 0;
+
     try {
-      const result = await client.query(
-        `
-        DELETE FROM job_events
-        WHERE created_at < NOW() - INTERVAL '1 day' * $1::int
-        RETURNING id
-      `,
-        [daysToKeep],
-      );
-      log(`Deleted ${result.rowCount} old job events`);
-      return result.rowCount || 0;
+      let deletedInBatch: number;
+      do {
+        const client = await this.pool.connect();
+        try {
+          const result = await client.query(
+            `
+            DELETE FROM job_events
+            WHERE id IN (
+              SELECT id FROM job_events
+              WHERE created_at < NOW() - INTERVAL '1 day' * $1::int
+              LIMIT $2
+            )
+          `,
+            [daysToKeep, batchSize],
+          );
+          deletedInBatch = result.rowCount || 0;
+          totalDeleted += deletedInBatch;
+        } finally {
+          client.release();
+        }
+      } while (deletedInBatch === batchSize);
+
+      log(`Deleted ${totalDeleted} old job events`);
+      return totalDeleted;
     } catch (error) {
       log(`Error cleaning up old job events: ${error}`);
       throw error;
-    } finally {
-      client.release();
     }
   }
 

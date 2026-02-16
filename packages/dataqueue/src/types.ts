@@ -485,6 +485,23 @@ export interface PostgresJobQueueConfig {
     user?: string;
     password?: string;
     ssl?: DatabaseSSLConfig;
+    /**
+     * Maximum number of clients in the pool (default: 10).
+     * Increase when running multiple processors in the same process.
+     */
+    max?: number;
+    /**
+     * Minimum number of idle clients in the pool (default: 0).
+     */
+    min?: number;
+    /**
+     * Milliseconds a client must sit idle before being closed (default: 10000).
+     */
+    idleTimeoutMillis?: number;
+    /**
+     * Milliseconds to wait for a connection before throwing (default: 0, no timeout).
+     */
+    connectionTimeoutMillis?: number;
   };
   verbose?: boolean;
 }
@@ -690,12 +707,21 @@ export interface JobQueue<PayloadMap> {
   retryJob: (jobId: number) => Promise<void>;
   /**
    * Cleanup jobs that are older than the specified number of days.
+   * Deletes in batches for scale safety.
+   * @param daysToKeep - Number of days to retain completed jobs (default 30).
+   * @param batchSize - Number of rows to delete per batch (default 1000 for PostgreSQL, 200 for Redis).
    */
-  cleanupOldJobs: (daysToKeep?: number) => Promise<number>;
+  cleanupOldJobs: (daysToKeep?: number, batchSize?: number) => Promise<number>;
   /**
    * Cleanup job events that are older than the specified number of days.
+   * Deletes in batches for scale safety.
+   * @param daysToKeep - Number of days to retain events (default 30).
+   * @param batchSize - Number of rows to delete per batch (default 1000).
    */
-  cleanupOldJobEvents: (daysToKeep?: number) => Promise<number>;
+  cleanupOldJobEvents: (
+    daysToKeep?: number,
+    batchSize?: number,
+  ) => Promise<number>;
   /**
    * Cancel a job given its ID.
    * - This will set the job status to 'cancelled' and clear the locked_at and locked_by.

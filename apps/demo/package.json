@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "dataqueue-cli migrate && next build",
+    "build": "pnpm run migrate-dataqueue && next build",
     "start": "next start",
     "lint": "next lint",
     "cron": "bash cron.sh",
