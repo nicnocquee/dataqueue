@@ -8,6 +8,12 @@ export default function EventsPage() {
     <FeaturePage
       title="Job Events"
       description="Every job state transition is recorded as an event: added, processing, completed, failed, cancelled, retried, edited, prolonged, waiting. Use getJobEvents(jobId) to retrieve the full event history for any job."
+      docsLinks={[
+        {
+          label: 'Job Events',
+          url: 'https://docs.dataqueue.dev/usage/job-events',
+        },
+      ]}
     >
       <RefreshPeriodically action={refresh} interval={5000} />
       <EventsDemo />

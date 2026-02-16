@@ -11,6 +11,16 @@ export default function TimeoutsPage() {
     <FeaturePage
       title="Timeout Handling"
       description="Control job execution time with timeoutMs. Use ctx.prolong() for heartbeat-style extensions, ctx.onTimeout() to react before abort, and forceKillOnTimeout for hard termination via Worker Threads."
+      docsLinks={[
+        {
+          label: 'Job Timeout',
+          url: 'https://docs.dataqueue.dev/usage/job-timeout',
+        },
+        {
+          label: 'Force Kill on Timeout',
+          url: 'https://docs.dataqueue.dev/usage/force-kill-timeout',
+        },
+      ]}
     >
       <RefreshPeriodically action={refresh} interval={5000} />
       <div className="space-y-6">

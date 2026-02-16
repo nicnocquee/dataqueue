@@ -16,6 +16,9 @@ export default async function WaitpointsPage() {
     <FeaturePage
       title="Waitpoints & Tokens"
       description="Jobs can pause execution using ctx.waitFor() (time-based), ctx.waitUntil() (date-based), or ctx.waitForToken() (human-in-the-loop). Tokens are external signals that must be completed to resume the job. PostgreSQL only."
+      docsLinks={[
+        { label: 'Wait', url: 'https://docs.dataqueue.dev/usage/wait' },
+      ]}
     >
       <RefreshPeriodically action={refresh} interval={5000} />
       <div className="space-y-6">

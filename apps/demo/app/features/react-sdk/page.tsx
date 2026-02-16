@@ -8,6 +8,12 @@ export default function ReactSdkPage() {
     <FeaturePage
       title="React SDK"
       description="Track job status and progress in real time with the @nicnocquee/dataqueue-react SDK. This page demonstrates the useJob hook and DataqueueProvider for polling-based job monitoring with lifecycle callbacks."
+      docsLinks={[
+        {
+          label: 'React SDK',
+          url: 'https://docs.dataqueue.dev/usage/react-sdk',
+        },
+      ]}
     >
       <JobTrackerDemo />
     </FeaturePage>

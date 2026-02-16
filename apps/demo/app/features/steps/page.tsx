@@ -11,6 +11,12 @@ export default function StepsPage() {
     <FeaturePage
       title="Step Memoization"
       description="Use ctx.run(stepName, fn) to define named, memoized steps within a job handler. If the job is retried, previously completed steps are skipped and their return values are replayed from storage. This enables durable, resumable multi-step workflows."
+      docsLinks={[
+        {
+          label: 'Job Handlers',
+          url: 'https://docs.dataqueue.dev/usage/job-handlers',
+        },
+      ]}
     >
       <RefreshPeriodically action={refresh} interval={5000} />
       <div className="space-y-6">
