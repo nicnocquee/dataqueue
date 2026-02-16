@@ -20,7 +20,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - run: pnpm install
       - name: Build all packages
-        run: pnpm turbo run build --filter='@nicnocquee/*'
+        run: pnpm --filter '@nicnocquee/*' run build
       - name: Publish all packages
         run: pnpm changeset publish
         env:
