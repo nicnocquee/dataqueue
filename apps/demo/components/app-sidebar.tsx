@@ -22,6 +22,7 @@ import {
   Layers,
   Activity,
   Wrench,
+  Monitor,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -37,6 +38,7 @@ const featurePages = [
   { title: 'Step Memoization', href: '/features/steps', icon: Layers },
   { title: 'Job Events', href: '/features/events', icon: Activity },
   { title: 'Maintenance', href: '/features/maintenance', icon: Wrench },
+  { title: 'React SDK', href: '/features/react-sdk', icon: Monitor },
 ];
 
 export function AppSidebar() {

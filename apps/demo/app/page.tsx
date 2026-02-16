@@ -22,6 +22,7 @@ import {
   Layers,
   Activity,
   Wrench,
+  Monitor,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -80,6 +81,12 @@ const features = [
     description: 'Cleanup old jobs/events and reclaim stuck jobs',
     href: '/features/maintenance',
     icon: Wrench,
+  },
+  {
+    title: 'React SDK',
+    description: 'Track job status and progress in real time with useJob hook',
+    href: '/features/react-sdk',
+    icon: Monitor,
   },
 ];
 
