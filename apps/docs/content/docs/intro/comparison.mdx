@@ -1,0 +1,35 @@
+---
+title: Comparison
+description: How DataQueue compares to BullMQ and Trigger.dev
+---
+
+Choosing a job queue depends on your stack, infrastructure preferences, and the features you need. Here is a side-by-side comparison of **DataQueue**, **BullMQ**, and **Trigger.dev**.
+
+| Feature                 | DataQueue                                       | BullMQ                                      | Trigger.dev                             |
+| ----------------------- | ----------------------------------------------- | ------------------------------------------- | --------------------------------------- |
+| **Backend**             | PostgreSQL or Redis                             | Redis only                                  | Cloud or self-hosted (Postgres + Redis) |
+| **Type Safety**         | Full generic `PayloadMap`                       | Basic types                                 | Full TypeScript tasks                   |
+| **Scheduling**          | `runAt`, `waitFor`, `waitUntil`                 | Cron, delayed, recurring                    | Cron, delayed                           |
+| **Retries**             | Exponential backoff, configurable `maxAttempts` | Exponential backoff, custom strategies, DLQ | Auto retries, bulk replay, DLQ          |
+| **Priority**            | Integer priority                                | Priority levels                             | Queue-based priority                    |
+| **Concurrency Control** | `batchSize` + `concurrency`                     | Built-in                                    | Per-task + shared limits                |
+| **Rate Limiting**       | -                                               | Yes                                         | Via concurrency limits                  |
+| **Job Flows / DAGs**    | -                                               | Parent-child flows                          | Workflows                               |
+| **Dashboard**           | Built-in Next.js package                        | Third-party (Bull Board, etc.)              | Built-in web dashboard                  |
+| **Wait / Pause Jobs**   | `waitFor`, `waitUntil`, token system            | -                                           | Durable execution                       |
+| **Human-in-the-Loop**   | Token system                                    | -                                           | Yes                                     |
+| **Progress Tracking**   | Yes (0-100%)                                    | Yes                                         | Yes (realtime)                          |
+| **Serverless-First**    | Yes                                             | No (needs long-running process)             | Yes (cloud)                             |
+| **Self-Hosted**         | Yes                                             | Yes (your Redis)                            | Yes (containers)                        |
+| **Cloud Option**        | -                                               | -                                           | Yes                                     |
+| **License**             | MIT                                             | MIT                                         | Apache-2.0                              |
+| **Pricing**             | Free (OSS)                                      | Free (OSS)                                  | Free tier + paid plans                  |
+| **Infrastructure**      | Your own Postgres or Redis                      | Your own Redis                              | Their cloud or your infra               |
+
+## Where DataQueue shines
+
+- **Serverless-first** — designed from the ground up for Vercel, AWS Lambda, and other serverless platforms. No long-running process required.
+- **Use your existing database** — back your queue with PostgreSQL or Redis. No additional infrastructure to provision or pay for.
+- **Wait and token system** — pause jobs with `waitFor`, `waitUntil`, or token-based waits for human-in-the-loop workflows, all within a single handler function.
+- **Type-safe PayloadMap** — a generic `PayloadMap` gives you compile-time validation of every job type and its payload, catching bugs before they reach production.
+- **Built-in Next.js dashboard** — add a full admin UI to your Next.js app with a single route file. No separate service to deploy.

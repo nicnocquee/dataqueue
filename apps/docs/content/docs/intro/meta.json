@@ -1,6 +1,6 @@
 {
   "title": "Introduction",
   "icon": "MyIcon",
-  "pages": ["overview", "install"],
+  "pages": ["overview", "install", "comparison"],
   "defaultOpen": true
 }

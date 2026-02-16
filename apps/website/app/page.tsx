@@ -16,9 +16,20 @@ import {
   Timer,
   Atom,
   LayoutDashboard,
+  Check,
+  X,
+  Minus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import Image from 'next/image';
 
 const FeatureCard = ({
@@ -62,6 +73,118 @@ const BenefitCard = ({
       </div>
     </div>
   );
+};
+
+/** A single row in the comparison table. */
+type ComparisonRow = {
+  feature: string;
+  dataqueue: string | boolean;
+  bullmq: string | boolean;
+  trigger: string | boolean;
+};
+
+const comparisonRows: ComparisonRow[] = [
+  {
+    feature: 'Backend',
+    dataqueue: 'PostgreSQL or Redis',
+    bullmq: 'Redis only',
+    trigger: 'Cloud or self-hosted',
+  },
+  {
+    feature: 'Type Safety',
+    dataqueue: 'Generic PayloadMap',
+    bullmq: 'Basic types',
+    trigger: 'Full TypeScript',
+  },
+  {
+    feature: 'Scheduling',
+    dataqueue: 'runAt, waitFor, waitUntil',
+    bullmq: 'Cron, delayed, recurring',
+    trigger: 'Cron, delayed',
+  },
+  {
+    feature: 'Retries',
+    dataqueue: 'Exponential backoff',
+    bullmq: 'Custom strategies + DLQ',
+    trigger: 'Auto retries + DLQ',
+  },
+  { feature: 'Priority', dataqueue: true, bullmq: true, trigger: true },
+  {
+    feature: 'Concurrency Control',
+    dataqueue: true,
+    bullmq: true,
+    trigger: true,
+  },
+  { feature: 'Rate Limiting', dataqueue: false, bullmq: true, trigger: false },
+  {
+    feature: 'Job Flows / DAGs',
+    dataqueue: false,
+    bullmq: 'Parent-child flows',
+    trigger: 'Workflows',
+  },
+  {
+    feature: 'Dashboard',
+    dataqueue: 'Built-in (Next.js)',
+    bullmq: 'Third-party',
+    trigger: 'Built-in',
+  },
+  {
+    feature: 'Wait / Pause Jobs',
+    dataqueue: 'waitFor, waitUntil, tokens',
+    bullmq: false,
+    trigger: 'Durable execution',
+  },
+  {
+    feature: 'Human-in-the-Loop',
+    dataqueue: 'Token system',
+    bullmq: false,
+    trigger: true,
+  },
+  {
+    feature: 'Progress Tracking',
+    dataqueue: true,
+    bullmq: true,
+    trigger: true,
+  },
+  {
+    feature: 'Serverless-First',
+    dataqueue: true,
+    bullmq: false,
+    trigger: true,
+  },
+  { feature: 'Self-Hosted', dataqueue: true, bullmq: true, trigger: true },
+  { feature: 'Cloud Option', dataqueue: false, bullmq: false, trigger: true },
+  {
+    feature: 'License',
+    dataqueue: 'MIT',
+    bullmq: 'MIT',
+    trigger: 'Apache-2.0',
+  },
+  {
+    feature: 'Pricing',
+    dataqueue: 'Free (OSS)',
+    bullmq: 'Free (OSS)',
+    trigger: 'Free tier + paid',
+  },
+  {
+    feature: 'Infrastructure',
+    dataqueue: 'Your Postgres or Redis',
+    bullmq: 'Your Redis',
+    trigger: 'Their cloud or yours',
+  },
+];
+
+/**
+ * Renders a comparison cell value as a check icon, cross icon, or text label.
+ */
+const ComparisonCell = ({ value }: { value: string | boolean }) => {
+  if (value === true) {
+    return <Check className="mx-auto h-5 w-5 text-green-500" />;
+  }
+  if (value === false) {
+    return <X className="mx-auto h-5 w-5 text-muted-foreground/50" />;
+  }
+  return <span>{value}</span>;
 };
 
 export default function HomePage() {
@@ -224,10 +347,16 @@ queue.process<EmailJob>('email', async (job) => {
             </a>
 
             <a
+              href="#comparison"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Comparison
+            </a>
+            <a
               href="#who"
               className="text-muted-foreground transition-colors hover:text-foreground"
             >
-              Who It's For
+              Who It&apos;s For
             </a>
             <a
               href="https://docs.dataqueue.dev"
@@ -327,6 +456,62 @@ queue.process<EmailJob>('email', async (job) => {
             {features.map((feature, index) => (
               <FeatureCard key={index} {...feature} />
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Comparison */}
+      <section id="comparison" className="py-20">
+        <div className="container mx-auto px-4">
+          <div className="mb-16 text-center">
+            <h2 className="mb-4 text-3xl font-bold text-foreground">
+              How DataQueue Compares
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              See how DataQueue stacks up against other popular job queue
+              solutions
+            </p>
+          </div>
+          <div className="mx-auto max-w-5xl overflow-hidden rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border/50 hover:bg-transparent">
+                  <TableHead className="w-[200px] text-muted-foreground">
+                    Feature
+                  </TableHead>
+                  <TableHead className="bg-gradient-to-b from-purple-500/10 to-orange-500/10 text-center font-bold text-foreground">
+                    DataQueue
+                  </TableHead>
+                  <TableHead className="text-center text-muted-foreground">
+                    BullMQ
+                  </TableHead>
+                  <TableHead className="text-center text-muted-foreground">
+                    Trigger.dev
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {comparisonRows.map((row) => (
+                  <TableRow
+                    key={row.feature}
+                    className="border-border/30 hover:bg-muted/30"
+                  >
+                    <TableCell className="font-medium text-foreground">
+                      {row.feature}
+                    </TableCell>
+                    <TableCell className="bg-gradient-to-b from-purple-500/5 to-orange-500/5 text-center text-foreground">
+                      <ComparisonCell value={row.dataqueue} />
+                    </TableCell>
+                    <TableCell className="text-center text-muted-foreground">
+                      <ComparisonCell value={row.bullmq} />
+                    </TableCell>
+                    <TableCell className="text-center text-muted-foreground">
+                      <ComparisonCell value={row.trigger} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </div>
       </section>
