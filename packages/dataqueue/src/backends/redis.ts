@@ -29,7 +29,7 @@ import {
   CANCEL_JOB_SCRIPT,
   PROLONG_JOB_SCRIPT,
   RECLAIM_STUCK_JOBS_SCRIPT,
-  CLEANUP_OLD_JOBS_SCRIPT,
+  CLEANUP_OLD_JOBS_BATCH_SCRIPT,
 } from './redis-scripts.js';
 
 /** Helper: convert a Redis hash flat array [k,v,k,v,...] to a JS object */
@@ -624,16 +624,44 @@ export class RedisBackend implements QueueBackend {
     return count;
   }
 
-  async cleanupOldJobs(daysToKeep = 30): Promise<number> {
+  /**
+   * Delete completed jobs older than the given number of days.
+   * Uses SSCAN to iterate the completed set in batches, avoiding
+   * loading all IDs into memory and preventing long Redis blocks.
+   *
+   * @param daysToKeep - Number of days to retain completed jobs (default 30).
+   * @param batchSize - Number of IDs to scan per SSCAN iteration (default 200).
+   * @returns Total number of deleted jobs.
+   */
+  async cleanupOldJobs(daysToKeep = 30, batchSize = 200): Promise<number> {
     const cutoffMs = this.nowMs() - daysToKeep * 24 * 60 * 60 * 1000;
-    const result = (await this.client.eval(
-      CLEANUP_OLD_JOBS_SCRIPT,
-      1,
-      this.prefix,
-      cutoffMs,
-    )) as number;
-    log(`Deleted ${result} old jobs`);
-    return Number(result);
+    const setKey = `${this.prefix}status:completed`;
+    let totalDeleted = 0;
+    let cursor = '0';
+
+    do {
+      const [nextCursor, ids] = await this.client.sscan(
+        setKey,
+        cursor,
+        'COUNT',
+        batchSize,
+      );
+      cursor = nextCursor;
+
+      if (ids.length > 0) {
+        const result = (await this.client.eval(
+          CLEANUP_OLD_JOBS_BATCH_SCRIPT,
+          1,
+          this.prefix,
+          cutoffMs,
+          ...ids,
+        )) as number;
+        totalDeleted += Number(result);
+      }
+    } while (cursor !== '0');
+
+    log(`Deleted ${totalDeleted} old jobs`);
+    return totalDeleted;
   }
 
   async cleanupOldJobEvents(daysToKeep = 30): Promise<number> {

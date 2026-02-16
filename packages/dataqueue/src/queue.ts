@@ -94,7 +94,9 @@ export const retryJob = async (pool: Pool, jobId: number): Promise<void> =>
 export const cleanupOldJobs = async (
   pool: Pool,
   daysToKeep = 30,
-): Promise<number> => new PostgresBackend(pool).cleanupOldJobs(daysToKeep);
+  batchSize = 1000,
+): Promise<number> =>
+  new PostgresBackend(pool).cleanupOldJobs(daysToKeep, batchSize);
 
 export const cancelJob = async (pool: Pool, jobId: number): Promise<void> =>
   new PostgresBackend(pool).cancelJob(jobId);

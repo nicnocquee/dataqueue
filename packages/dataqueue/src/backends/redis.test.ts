@@ -383,6 +383,46 @@ describe('Redis backend integration', () => {
     expect(job).toBeNull();
   });
 
+  it('should cleanup old completed jobs in batches', async () => {
+    const ids: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const jobId = await jobQueue.addJob({
+        jobType: 'test',
+        payload: { foo: `batch-${i}` },
+      });
+      ids.push(jobId);
+    }
+    // Complete all jobs
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+    for (const id of ids) {
+      const job = await jobQueue.getJob(id);
+      expect(job?.status).toBe('completed');
+    }
+
+    // Backdate all to 31 days ago
+    const oldMs = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    for (const id of ids) {
+      await redisClient.hset(
+        `${prefix}job:${id}`,
+        'updatedAt',
+        oldMs.toString(),
+      );
+    }
+
+    // Cleanup with small batchSize to force multiple SSCAN iterations
+    const deleted = await jobQueue.cleanupOldJobs(30, 2);
+    expect(deleted).toBe(5);
+    for (const id of ids) {
+      const job = await jobQueue.getJob(id);
+      expect(job).toBeNull();
+    }
+  });
+
   it('should reclaim stuck jobs', async () => {
     const jobId = await jobQueue.addJob({
       jobType: 'email',
