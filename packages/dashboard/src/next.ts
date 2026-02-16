@@ -3,13 +3,9 @@ import type { DashboardConfig } from './core/types.js';
 
 export type { DashboardConfig } from './core/types.js';
 
-type NextRouteContext = {
-  params: Promise<{ path?: string[] }> | { path?: string[] };
-};
-
 type NextRouteHandler = (
   request: Request,
-  context: NextRouteContext,
+  context: { params: Promise<any> },
 ) => Promise<Response>;
 
 /**
