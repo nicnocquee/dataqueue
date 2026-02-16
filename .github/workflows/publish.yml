@@ -19,9 +19,17 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - uses: pnpm/action-setup@v4
       - run: pnpm install
+      - name: Set version from release tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Publishing version: $VERSION"
+          npm version "$VERSION" --no-git-tag-version --workspace=packages/dataqueue
+          npm version "$VERSION" --no-git-tag-version --workspace=packages/react
+          npm version "$VERSION" --no-git-tag-version --workspace=packages/dashboard
       - name: Build all packages
         run: pnpm --filter '@nicnocquee/*' run build
       - name: Publish all packages
-        run: pnpm changeset publish
-        env:
-          NPM_CONFIG_PROVENANCE: true
+        run: |
+          npm publish --provenance --access public --workspace=packages/dataqueue
+          npm publish --provenance --access public --workspace=packages/react
+          npm publish --provenance --access public --workspace=packages/dashboard
