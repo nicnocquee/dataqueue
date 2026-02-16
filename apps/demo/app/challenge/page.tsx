@@ -1,4 +1,4 @@
-import { generateChallengeToken } from './actions';
+import { generateChallengeToken } from './challenge-crypto';
 import { ChallengeForm } from './challenge-form';
 
 function generateProblem() {
