@@ -1,0 +1,188 @@
+---
+title: Dashboard
+description: Plug-and-play admin dashboard for monitoring and managing jobs
+---
+
+The `@nicnocquee/dataqueue-dashboard` package provides a self-contained admin dashboard that you can add to any Next.js application with a single file. It lets you view jobs, inspect details, manually trigger processing, and cancel or retry jobs.
+
+## Installation
+
+```package-install
+npm install @nicnocquee/dataqueue-dashboard
+```
+
+## Setup (Next.js)
+
+Create a single catch-all route file in your app:
+
+```typescript title="app/admin/dataqueue/[[...path]]/route.ts"
+import { createDataqueueDashboard } from '@nicnocquee/dataqueue-dashboard/next';
+import { getJobQueue, jobHandlers } from '@/lib/queue';
+
+const { GET, POST } = createDataqueueDashboard({
+  jobQueue: getJobQueue(),
+  jobHandlers,
+  basePath: '/admin/dataqueue',
+});
+
+export { GET, POST };
+```
+
+That's it. Visit `/admin/dataqueue` to open the dashboard.
+
+<Callout>
+  The `basePath` must match the directory where you placed the route file. If
+  you put it at `app/jobs/dashboard/[[...path]]/route.ts`, use `basePath:
+  '/jobs/dashboard'`.
+</Callout>
+
+## Features
+
+### Jobs List
+
+The main page shows all jobs in a table with:
+
+- **Status filter tabs** — All, Pending, Processing, Completed, Failed, Cancelled, Waiting
+- **Pagination** — Navigate through pages of jobs
+- **Auto-refresh** — Toggle automatic polling every 3 seconds
+- **Inline actions** — Cancel pending/waiting jobs or retry failed/cancelled jobs directly from the table
+
+### Job Detail
+
+Click any job ID to see the full detail view:
+
+- **Properties** — Status, type, priority, attempts, all timestamps, tags, progress bar
+- **Payload** — Formatted JSON display of the job's payload
+- **Error History** — All errors with timestamps (if the job has failed)
+- **Step Data** — Completed step results for jobs using `ctx.run()` (if any)
+- **Events Timeline** — Chronological history of all job events
+
+### Process Jobs
+
+The **Process Jobs** button in the header triggers one-shot job processing. It creates a temporary processor, runs a single batch, and returns the count of jobs processed. This is useful for:
+
+- Debugging job handlers during development
+- Manually processing jobs in environments without a background worker
+- Testing job behavior before deploying a cron-based processor
+
+## Configuration
+
+### DashboardConfig
+
+```typescript
+interface DashboardConfig<PayloadMap> {
+  /** The initialized JobQueue instance. */
+  jobQueue: JobQueue<PayloadMap>;
+
+  /** Job handlers used when triggering processing from the dashboard. */
+  jobHandlers: JobHandlers<PayloadMap>;
+
+  /** Base path where the dashboard is mounted (e.g., '/admin/dataqueue'). */
+  basePath: string;
+
+  /** Options for the processor when manually triggering processing. */
+  processorOptions?: {
+    batchSize?: number; // default: 10
+    concurrency?: number;
+    pollInterval?: number;
+    onError?: (error: Error) => void;
+    verbose?: boolean;
+    jobType?: string | string[];
+  };
+}
+```
+
+### Customizing the Processor
+
+Pass `processorOptions` to control how jobs are processed when using the "Process Jobs" button:
+
+```typescript title="app/admin/dataqueue/[[...path]]/route.ts"
+const { GET, POST } = createDataqueueDashboard({
+  jobQueue: getJobQueue(),
+  jobHandlers,
+  basePath: '/admin/dataqueue',
+  processorOptions: {
+    batchSize: 5,
+    concurrency: 2,
+    verbose: true,
+  },
+});
+```
+
+## Protecting the Dashboard
+
+Since you own the route file, you can protect the dashboard with any authentication strategy your app already uses.
+
+### Using Next.js Middleware
+
+```typescript title="middleware.ts"
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith('/admin/dataqueue')) {
+    const session = request.cookies.get('session');
+    if (!session) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+  }
+  return NextResponse.next();
+}
+```
+
+### Wrapping the Handler
+
+```typescript title="app/admin/dataqueue/[[...path]]/route.ts"
+import { createDataqueueDashboard } from '@nicnocquee/dataqueue-dashboard/next';
+import { getJobQueue, jobHandlers } from '@/lib/queue';
+import { auth } from '@/lib/auth';
+
+const dashboard = createDataqueueDashboard({
+  jobQueue: getJobQueue(),
+  jobHandlers,
+  basePath: '/admin/dataqueue',
+});
+
+export async function GET(req: Request, ctx: any) {
+  const session = await auth();
+  if (!session?.user?.isAdmin) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  return dashboard.GET(req, ctx);
+}
+
+export async function POST(req: Request, ctx: any) {
+  const session = await auth();
+  if (!session?.user?.isAdmin) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  return dashboard.POST(req, ctx);
+}
+```
+
+## API Endpoints
+
+The dashboard exposes these API endpoints under the configured `basePath`:
+
+| Method | Path                   | Description                                                              |
+| ------ | ---------------------- | ------------------------------------------------------------------------ |
+| GET    | `/`                    | Dashboard HTML page                                                      |
+| GET    | `/api/jobs`            | List jobs (supports `status`, `jobType`, `limit`, `offset` query params) |
+| GET    | `/api/jobs/:id`        | Get a single job                                                         |
+| GET    | `/api/jobs/:id/events` | Get job event history                                                    |
+| POST   | `/api/jobs/:id/cancel` | Cancel a pending or waiting job                                          |
+| POST   | `/api/jobs/:id/retry`  | Retry a failed or cancelled job                                          |
+| POST   | `/api/process`         | Trigger one-shot job processing                                          |
+
+## Architecture
+
+The package is designed with future framework support in mind. The core logic uses Web Standard `Request` and `Response` objects, making it framework-agnostic. The Next.js adapter is a thin wrapper that maps App Router conventions to the core handler:
+
+```
+@nicnocquee/dataqueue-dashboard
+├── core/          Framework-agnostic handlers (Web Request/Response)
+├── next.ts        Next.js App Router adapter
+└── index.ts       Type exports
+```
+
+Adding support for other frameworks (Express, Hono, etc.) would only require a new adapter file — the core handlers and dashboard UI remain unchanged.
