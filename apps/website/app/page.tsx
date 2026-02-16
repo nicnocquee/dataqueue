@@ -19,6 +19,7 @@ import {
   Check,
   X,
   Minus,
+  CalendarClock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -98,7 +99,7 @@ const comparisonRows: ComparisonRow[] = [
   },
   {
     feature: 'Scheduling',
-    dataqueue: 'runAt, waitFor, waitUntil',
+    dataqueue: 'Cron, runAt, waitFor, waitUntil',
     bullmq: 'Cron, delayed, recurring',
     trigger: 'Cron, delayed',
   },
@@ -265,6 +266,12 @@ queue.process<EmailJob>('email', async (job) => {
       title: 'Advanced Scheduling',
       description:
         'Support for job priorities, delays, retries, and automatic cleanup of old jobs.',
+    },
+    {
+      icon: CalendarClock,
+      title: 'Recurring Cron Jobs',
+      description:
+        'Define recurring schedules with cron expressions. Built-in overlap protection prevents duplicate runs by default.',
     },
     {
       icon: Database,

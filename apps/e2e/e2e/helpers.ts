@@ -140,6 +140,118 @@ export async function expireTokens(request: APIRequestContext) {
   return res.json() as Promise<{ expired: number }>;
 }
 
+// ---------------------------------------------------------------------------
+// Cron schedule helpers
+// ---------------------------------------------------------------------------
+
+/** Add a cron schedule. */
+export async function addCronSchedule(
+  request: APIRequestContext,
+  options: {
+    scheduleName: string;
+    cronExpression: string;
+    jobType: string;
+    payload: Record<string, unknown>;
+    timezone?: string;
+    allowOverlap?: boolean;
+    maxAttempts?: number;
+    priority?: number;
+    tags?: string[];
+  },
+) {
+  const res = await request.post(`${BASE}/api/cron-schedules`, {
+    data: options,
+  });
+  return res.json() as Promise<{ id: number }>;
+}
+
+/** Get a cron schedule by ID. */
+export async function getCronSchedule(request: APIRequestContext, id: number) {
+  const res = await request.get(`${BASE}/api/cron-schedules/${id}`);
+  return res.json() as Promise<{ schedule: Record<string, any> }>;
+}
+
+/** Get a cron schedule by name. */
+export async function getCronScheduleByName(
+  request: APIRequestContext,
+  name: string,
+) {
+  const res = await request.get(
+    `${BASE}/api/cron-schedules/by-name?name=${encodeURIComponent(name)}`,
+  );
+  return res.json() as Promise<{ schedule: Record<string, any> }>;
+}
+
+/** List cron schedules, optionally filtered by status. */
+export async function listCronSchedules(
+  request: APIRequestContext,
+  status?: string,
+) {
+  const qs = status ? `?status=${status}` : '';
+  const res = await request.get(`${BASE}/api/cron-schedules${qs}`);
+  return res.json() as Promise<{ schedules: Record<string, any>[] }>;
+}
+
+/** Edit a cron schedule. */
+export async function editCronSchedule(
+  request: APIRequestContext,
+  id: number,
+  updates: Record<string, unknown>,
+) {
+  const res = await request.patch(`${BASE}/api/cron-schedules/${id}`, {
+    data: updates,
+  });
+  return res.json() as Promise<{ success: boolean }>;
+}
+
+/** Remove a cron schedule. */
+export async function removeCronSchedule(
+  request: APIRequestContext,
+  id: number,
+) {
+  const res = await request.delete(`${BASE}/api/cron-schedules/${id}`);
+  return res.json() as Promise<{ success: boolean }>;
+}
+
+/** Pause a cron schedule. */
+export async function pauseCronSchedule(
+  request: APIRequestContext,
+  id: number,
+) {
+  const res = await request.post(`${BASE}/api/cron-schedules/${id}/pause`);
+  return res.json() as Promise<{ success: boolean }>;
+}
+
+/** Resume a paused cron schedule. */
+export async function resumeCronSchedule(
+  request: APIRequestContext,
+  id: number,
+) {
+  const res = await request.post(`${BASE}/api/cron-schedules/${id}/resume`);
+  return res.json() as Promise<{ success: boolean }>;
+}
+
+/** Enqueue all due cron jobs. */
+export async function enqueueDueCronJobs(request: APIRequestContext) {
+  const res = await request.post(`${BASE}/api/cron-schedules/enqueue`);
+  return res.json() as Promise<{ enqueued: number }>;
+}
+
+/**
+ * Force a cron schedule's nextRunAt to a specific time.
+ * Test-only helper so overlap tests can deterministically make a schedule "due".
+ */
+export async function forceNextRunAt(
+  request: APIRequestContext,
+  id: number,
+  nextRunAt: string,
+) {
+  const res = await request.patch(`${BASE}/api/cron-schedules/${id}`, {
+    data: { nextRunAt },
+  });
+  return res.json() as Promise<{ success: boolean }>;
+}
+
 /**
  * Poll until a job reaches the expected status, with timeout.
  */

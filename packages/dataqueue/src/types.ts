@@ -533,6 +533,90 @@ export type JobQueueConfigLegacy = PostgresJobQueueConfig;
 
 export type TagQueryMode = 'exact' | 'all' | 'any' | 'none';
 
+// ── Cron schedule types ──────────────────────────────────────────────
+
+/**
+ * Status of a cron schedule.
+ */
+export type CronScheduleStatus = 'active' | 'paused';
+
+/**
+ * Options for creating a recurring cron schedule.
+ * Each schedule defines a recurring job that is automatically enqueued
+ * when its cron expression matches.
+ */
+export interface CronScheduleOptions<
+  PayloadMap,
+  T extends JobType<PayloadMap>,
+> {
+  /** Unique human-readable name for the schedule. */
+  scheduleName: string;
+  /** Standard cron expression (5 fields, e.g. "0 * * * *"). */
+  cronExpression: string;
+  /** Job type from the PayloadMap. */
+  jobType: T;
+  /** Payload for each job instance. */
+  payload: PayloadMap[T];
+  /** Maximum retry attempts for each job instance (default: 3). */
+  maxAttempts?: number;
+  /** Priority for each job instance (default: 0). */
+  priority?: number;
+  /** Timeout in milliseconds for each job instance. */
+  timeoutMs?: number;
+  /** Whether to force-kill the job on timeout (default: false). */
+  forceKillOnTimeout?: boolean;
+  /** Tags for each job instance. */
+  tags?: string[];
+  /** IANA timezone string for cron evaluation (default: "UTC"). */
+  timezone?: string;
+  /**
+   * Whether to allow overlapping job instances (default: false).
+   * When false, a new job will not be enqueued if the previous instance
+   * is still pending, processing, or waiting.
+   */
+  allowOverlap?: boolean;
+}
+
+/**
+ * A persisted cron schedule record.
+ */
+export interface CronScheduleRecord {
+  id: number;
+  scheduleName: string;
+  cronExpression: string;
+  jobType: string;
+  payload: any;
+  maxAttempts: number;
+  priority: number;
+  timeoutMs: number | null;
+  forceKillOnTimeout: boolean;
+  tags: string[] | undefined;
+  timezone: string;
+  allowOverlap: boolean;
+  status: CronScheduleStatus;
+  lastEnqueuedAt: Date | null;
+  lastJobId: number | null;
+  nextRunAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Options for editing an existing cron schedule.
+ * All fields are optional; only provided fields are updated.
+ */
+export interface EditCronScheduleOptions {
+  cronExpression?: string;
+  payload?: any;
+  maxAttempts?: number;
+  priority?: number;
+  timeoutMs?: number | null;
+  forceKillOnTimeout?: boolean;
+  tags?: string[] | null;
+  timezone?: string;
+  allowOverlap?: boolean;
+}
+
 export interface JobQueue<PayloadMap> {
   /**
    * Add a job to the job queue.
@@ -732,6 +816,71 @@ export interface JobQueue<PayloadMap> {
    * @returns The number of tokens that were expired.
    */
   expireTimedOutTokens: () => Promise<number>;
+
+  // ── Cron schedule operations ────────────────────────────────────────
+
+  /**
+   * Add a recurring cron schedule. The processor automatically enqueues
+   * due cron jobs before each batch, so no manual triggering is needed.
+   *
+   * @returns The ID of the created schedule.
+   * @throws If the cron expression is invalid or the schedule name is already taken.
+   */
+  addCronJob: <T extends JobType<PayloadMap>>(
+    options: CronScheduleOptions<PayloadMap, T>,
+  ) => Promise<number>;
+
+  /**
+   * Get a cron schedule by its ID.
+   */
+  getCronJob: (id: number) => Promise<CronScheduleRecord | null>;
+
+  /**
+   * Get a cron schedule by its unique name.
+   */
+  getCronJobByName: (name: string) => Promise<CronScheduleRecord | null>;
+
+  /**
+   * List all cron schedules, optionally filtered by status.
+   */
+  listCronJobs: (status?: CronScheduleStatus) => Promise<CronScheduleRecord[]>;
+
+  /**
+   * Remove a cron schedule by its ID. Does not cancel any already-enqueued jobs.
+   */
+  removeCronJob: (id: number) => Promise<void>;
+
+  /**
+   * Pause a cron schedule. Paused schedules are skipped by `enqueueDueCronJobs()`.
+   */
+  pauseCronJob: (id: number) => Promise<void>;
+
+  /**
+   * Resume a paused cron schedule.
+   */
+  resumeCronJob: (id: number) => Promise<void>;
+
+  /**
+   * Edit an existing cron schedule. Only provided fields are updated.
+   * If `cronExpression` or `timezone` changes, `nextRunAt` is recalculated.
+   */
+  editCronJob: (id: number, updates: EditCronScheduleOptions) => Promise<void>;
+
+  /**
+   * Check all active cron schedules and enqueue jobs for any whose
+   * `nextRunAt` has passed. When `allowOverlap` is false (the default),
+   * a new job is not enqueued if the previous instance is still
+   * pending, processing, or waiting.
+   *
+   * **Note:** The processor calls this automatically before each batch,
+   * so you typically do not need to call it yourself. It is exposed for
+   * manual use in tests or one-off scripts.
+   *
+   * @returns The number of jobs that were enqueued.
+   */
+  enqueueDueCronJobs: () => Promise<number>;
+
+  // ── Advanced access ───────────────────────────────────────────────────
 
   /**
    * Get the PostgreSQL database pool.

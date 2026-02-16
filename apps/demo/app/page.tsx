@@ -24,6 +24,7 @@ import {
   Wrench,
   Monitor,
   ExternalLink,
+  CalendarClock,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -84,6 +85,14 @@ const features = [
     href: '/features/events',
     icon: Activity,
     docsUrl: 'https://docs.dataqueue.dev/usage/job-events',
+  },
+  {
+    title: 'Cron Schedules',
+    description:
+      'Define recurring jobs with cron expressions and overlap protection',
+    href: '/features/cron',
+    icon: CalendarClock,
+    docsUrl: 'https://docs.dataqueue.dev/usage/cron-jobs',
   },
   {
     title: 'Maintenance',

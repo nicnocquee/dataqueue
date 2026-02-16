@@ -6,7 +6,7 @@
     "dev": "next dev --turbopack --port 3099",
     "build": "next build",
     "start": "next start --port 3099",
-    "test:e2e": "playwright test",
+    "test:e2e": "PG_DATAQUEUE_DATABASE=${PG_DATAQUEUE_DATABASE:-postgres://postgres:postgres@localhost:5432/e2e_test} dataqueue-cli migrate && playwright test",
     "test:e2e:ui": "playwright test --ui",
     "migrate-dataqueue": "dataqueue-cli migrate"
   },

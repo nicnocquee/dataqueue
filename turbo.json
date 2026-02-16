@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalPassThroughEnv": ["PG_DATAQUEUE_DATABASE"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -13,8 +14,12 @@
     "check-types": {
       "dependsOn": ["^check-types"]
     },
+    "test": {
+      "dependsOn": ["^build", "^test"],
+      "cache": false
+    },
     "test:e2e": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "^test:e2e"],
       "cache": false
     },
     "dev": {
