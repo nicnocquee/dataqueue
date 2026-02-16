@@ -20,7 +20,8 @@
     "job-events",
     "get-jobs",
     "progress-tracking",
-    "react-sdk"
+    "react-sdk",
+    "dashboard"
   ],
   "defaultOpen": true
 }
