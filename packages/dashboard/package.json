@@ -1,0 +1,62 @@
+{
+  "name": "@nicnocquee/dataqueue-dashboard",
+  "version": "0.1.0",
+  "description": "Plug-and-play admin dashboard for dataqueue job queues",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./next": {
+      "import": {
+        "types": "./dist/next.d.ts",
+        "default": "./dist/next.js"
+      },
+      "require": {
+        "types": "./dist/next.d.cts",
+        "default": "./dist/next.cjs"
+      }
+    }
+  },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "tsc",
+    "check-exports": "attw --pack ."
+  },
+  "keywords": [
+    "dataqueue",
+    "dashboard",
+    "admin",
+    "job-queue",
+    "nextjs"
+  ],
+  "author": "Nico Prananta",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicnocquee/dataqueue.git",
+    "directory": "packages/dashboard"
+  },
+  "peerDependencies": {
+    "@nicnocquee/dataqueue": ">=1.25.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@nicnocquee/dataqueue": "workspace:*",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  }
+}
