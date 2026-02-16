@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@changesets/cli':
+        specifier: ^2.29.5
+        version: 2.29.5
       pnpm:
         specifier: ^9.0.0
         version: 9.15.9
@@ -409,9 +412,6 @@ importers:
       '@arethetypeswrong/cli':
         specifier: ^0.18.2
         version: 0.18.2
-      '@changesets/cli':
-        specifier: ^2.29.5
-        version: 2.29.5
       '@types/node':
         specifier: ^24.0.4
         version: 24.0.4
@@ -454,9 +454,6 @@ importers:
       '@arethetypeswrong/cli':
         specifier: ^0.18.2
         version: 0.18.2
-      '@changesets/cli':
-        specifier: ^2.29.5
-        version: 2.29.5
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1

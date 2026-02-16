@@ -24,11 +24,8 @@
     "format": "prettier --write .",
     "check-format": "prettier --check .",
     "check-exports": "attw --pack .",
-    "local-release": "changeset version && changeset publish",
     "dev": "tsup --watch",
-    "migrate": "node-pg-migrate -d $PG_DATAQUEUE_DATABASE -m ./migrations",
-    "changeset:add": "changeset",
-    "changeset:version": "changeset version && find .changeset -type f -name '*.md' ! -name 'README.md' -delete"
+    "migrate": "node-pg-migrate -d $PG_DATAQUEUE_DATABASE -m ./migrations"
   },
   "keywords": [
     "nextjs",
@@ -51,7 +48,6 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
-    "@changesets/cli": "^2.29.5",
     "@types/node": "^24.0.4",
     "@types/pg": "^8.15.4",
     "ioredis": "^5.9.3",

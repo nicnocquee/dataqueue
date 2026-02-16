@@ -2,6 +2,7 @@
   "name": "dataqueue-monorepo",
   "private": true,
   "devDependencies": {
+    "@changesets/cli": "^2.29.5",
     "pnpm": "^9.0.0",
     "prettier": "^3.6.2",
     "turbo": "^2.5.4"
@@ -17,7 +18,10 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e --filter e2e",
     "format": "prettier --write .",
-    "check-format": "prettier --check ."
+    "check-format": "prettier --check .",
+    "changeset:add": "changeset",
+    "changeset:version": "changeset version",
+    "release": "turbo run build --filter='@nicnocquee/*' && changeset publish"
   },
   "packageManager": "pnpm@9.0.0"
 }

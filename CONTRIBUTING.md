@@ -103,19 +103,19 @@ Thank you for your interest in contributing to **dataqueue**! Your help is great
 ## Submitting Changes
 
 - Ensure your branch is up to date with `main` before opening a PR.
-- Run `pnpm changeset:add` to add a new changeset. Here you can choose the type of change (major, minor, patch) and the scope of the change.
+- Run `pnpm changeset:add` from the **repo root** to add a new changeset. Here you can choose the type of change (major, minor, patch) and the affected packages.
 - Make changes in the changeset if needed. Then commit the changeset.
 - Provide a clear description of your changes in the PR.
 - Reference any related issues (e.g., `Resolves #123`).
 - Be responsive to feedback and make requested changes promptly.
 - PRs should pass all CI checks before merging.
-- **Publishing:** The library is published to npm automatically by CI using Changesets when changes are merged to `main` and a version bump is present.
+- **Publishing:** All publishable packages (`@nicnocquee/dataqueue`, `@nicnocquee/dataqueue-react`, `@nicnocquee/dataqueue-dashboard`) are published to npm automatically when a GitHub Release is created.
 
 ## Publishing
 
-- Run `pnpm changeset:version` to bump the version of the package. This will bump the version of the package, update the changelog, and delete the changeset files that are not the README.md.
-- Commit the changes and push to the `main` branch.
-- Create a new release on GitHub. Use the version number from the changeset as the release version. Use the changelog as the release description.
+1. Run `pnpm changeset:version` from the **repo root** to bump versions of all affected packages and update changelogs.
+2. Commit the changes and push to the `main` branch.
+3. Create a new GitHub Release. All packages with bumped versions are published to npm automatically by CI.
 
 ## Reporting Issues
 

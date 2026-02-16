@@ -1,6 +1,6 @@
 {
   "name": "@nicnocquee/dataqueue-react",
-  "version": "0.3.0",
+  "version": "1.26.0",
   "description": "React hooks for subscribing to dataqueue job status and progress",
   "type": "module",
   "main": "dist/index.js",
@@ -26,10 +26,7 @@
     "lint": "tsc",
     "test": "vitest run",
     "check-exports": "attw --pack .",
-    "ci": "npm run build && npm run check-exports && npm run lint && npm run test",
-    "local-release": "changeset version && changeset publish",
-    "changeset:add": "changeset",
-    "changeset:version": "changeset version && find .changeset -type f -name '*.md' ! -name 'README.md' -delete"
+    "ci": "npm run build && npm run check-exports && npm run lint && npm run test"
   },
   "keywords": [
     "react",
@@ -52,7 +49,6 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
-    "@changesets/cli": "^2.29.5",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.0.0",
