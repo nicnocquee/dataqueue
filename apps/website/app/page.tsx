@@ -13,6 +13,9 @@ import {
   Clock,
   Database,
   CheckCircle,
+  Timer,
+  Atom,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -145,6 +148,24 @@ queue.process<EmailJob>('email', async (job) => {
       title: 'Reliable Processing',
       description:
         'Built-in job recovery and stuck job handling ensures no jobs are lost or forgotten.',
+    },
+    {
+      icon: Timer,
+      title: 'Smart Waits',
+      description:
+        'Pause and resume job execution with time-based delays or external signals. Build multi-step workflows like onboarding sequences and approval flows as a single handler.',
+    },
+    {
+      icon: Atom,
+      title: 'React Hooks',
+      description:
+        'Subscribe to job status and progress updates from React components with a single hook. Automatic polling stops when jobs complete — zero extra configuration.',
+    },
+    {
+      icon: LayoutDashboard,
+      title: 'Admin Dashboard',
+      description:
+        'Add a complete admin dashboard to your Next.js app with a single route file. View, inspect, and manage jobs without building custom UI.',
     },
   ];
 
