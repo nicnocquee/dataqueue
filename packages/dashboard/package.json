@@ -1,6 +1,6 @@
 {
   "name": "@nicnocquee/dataqueue-dashboard",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Plug-and-play admin dashboard for dataqueue job queues",
   "type": "module",
   "main": "dist/index.js",
@@ -51,7 +51,7 @@
     "directory": "packages/dashboard"
   },
   "peerDependencies": {
-    "@nicnocquee/dataqueue": ">=1.25.0"
+    "@nicnocquee/dataqueue": ">=1.26.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",

@@ -1,5 +1,11 @@
 # dataqueue
 
+## 1.26.0
+
+### Minor Changes
+
+- New dashboard package
+
 ## 1.25.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # @nicnocquee/dataqueue-react
 
+## 0.3.0
+
+### Minor Changes
+
+- New dashboard package
+
 ## 0.2.0
 
 ### Minor Changes
