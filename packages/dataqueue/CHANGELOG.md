@@ -1,5 +1,18 @@
 # dataqueue
 
+## 1.25.0
+
+### Minor Changes
+
+- Various enhancements:
+  - Add idempotency key support for job management
+  - Enhance job handling with timeout extension features (prolong and onTimeout)
+  - Add wait feature to job processing system
+  - Update documentation and enhance job processor features
+  - Refactor job queue and enhance functionality
+  - Add end-to-end testing setup for DataQueue
+  - Implement Redis support and enhance documentation for DataQueue
+
 ## 1.24.0
 
 ### Minor Changes
