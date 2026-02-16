@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { addDataPipeline } from '@/app/jobs/data-pipeline';
-import { processJobs } from '@/app/jobs/process-jobs';
 import { Loader2 } from 'lucide-react';
 
 export function StepDemo() {
@@ -50,20 +49,6 @@ export function StepDemo() {
             >
               {isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
               Add Pipeline Job
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isPending}
-              onClick={() =>
-                startTransition(async () => {
-                  await processJobs();
-                  setResult('Processing triggered');
-                })
-              }
-            >
-              {isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-              Process Jobs Now
             </Button>
           </div>
 

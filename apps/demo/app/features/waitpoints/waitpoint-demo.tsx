@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/card';
 import { addGenericJob } from '@/app/jobs/add-job';
 import { addApprovalRequest } from '@/app/jobs/approval-request';
-import { processJobs } from '@/app/jobs/process-jobs';
 import { Loader2 } from 'lucide-react';
 
 export function WaitpointDemo() {
@@ -95,21 +94,6 @@ export function WaitpointDemo() {
           </CardContent>
         </Card>
       </div>
-
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={isPending}
-        onClick={() =>
-          startTransition(async () => {
-            await processJobs();
-            setResult('Processing triggered - check job statuses below');
-          })
-        }
-      >
-        {isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-        Process Jobs Now
-      </Button>
 
       {result && <p className="text-sm text-muted-foreground">{result}</p>}
     </div>
