@@ -23,6 +23,7 @@ import {
   Activity,
   Wrench,
   Monitor,
+  LayoutDashboard,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -39,6 +40,12 @@ const featurePages = [
   { title: 'Job Events', href: '/features/events', icon: Activity },
   { title: 'Maintenance', href: '/features/maintenance', icon: Wrench },
   { title: 'React SDK', href: '/features/react-sdk', icon: Monitor },
+  {
+    title: 'Admin Dashboard',
+    href: '/admin/dataqueue',
+    icon: LayoutDashboard,
+    external: true,
+  },
 ];
 
 export function AppSidebar() {
@@ -72,7 +79,12 @@ export function AppSidebar() {
                         : pathname.startsWith(page.href)
                     }
                   >
-                    <Link href={page.href}>
+                    <Link
+                      href={page.href}
+                      {...(page.external
+                        ? { target: '_blank', rel: 'noopener noreferrer' }
+                        : {})}
+                    >
                       <page.icon className="h-4 w-4" />
                       <span>{page.title}</span>
                     </Link>
