@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getJobQueue } from '@/lib/queue';
+import { JobStatus } from '@nicnocquee/dataqueue';
 
 /**
  * POST /api/jobs - Add a new job
@@ -62,7 +63,11 @@ export async function GET(request: NextRequest) {
 
     // If querying by status
     if (status) {
-      const jobs = await queue.getJobsByStatus(status, limit, offset);
+      const jobs = await queue.getJobsByStatus(
+        status as JobStatus,
+        limit,
+        offset,
+      );
       return NextResponse.json({ jobs });
     }
 
