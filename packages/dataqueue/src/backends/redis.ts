@@ -12,6 +12,8 @@ import {
   CronScheduleRecord,
   CronScheduleStatus,
   EditCronScheduleOptions,
+  WaitpointRecord,
+  CreateTokenOptions,
 } from '../types.js';
 import {
   QueueBackend,
@@ -20,6 +22,43 @@ import {
   CronScheduleInput,
 } from '../backend.js';
 import { log } from '../log-context.js';
+
+const MAX_TIMEOUT_MS = 365 * 24 * 60 * 60 * 1000;
+
+/** Parse a timeout string like '10m', '1h', '24h', '7d' into milliseconds. */
+function parseTimeoutString(timeout: string): number {
+  const match = timeout.match(/^(\d+)(s|m|h|d)$/);
+  if (!match) {
+    throw new Error(
+      `Invalid timeout format: "${timeout}". Expected format like "10m", "1h", "24h", "7d".`,
+    );
+  }
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  let ms: number;
+  switch (unit) {
+    case 's':
+      ms = value * 1000;
+      break;
+    case 'm':
+      ms = value * 60 * 1000;
+      break;
+    case 'h':
+      ms = value * 60 * 60 * 1000;
+      break;
+    case 'd':
+      ms = value * 24 * 60 * 60 * 1000;
+      break;
+    default:
+      throw new Error(`Unknown timeout unit: "${unit}"`);
+  }
+  if (!Number.isFinite(ms) || ms > MAX_TIMEOUT_MS) {
+    throw new Error(
+      `Timeout value "${timeout}" is too large. Maximum allowed is 365 days.`,
+    );
+  }
+  return ms;
+}
 import {
   ADD_JOB_SCRIPT,
   GET_NEXT_BATCH_SCRIPT,
@@ -30,7 +69,11 @@ import {
   PROLONG_JOB_SCRIPT,
   RECLAIM_STUCK_JOBS_SCRIPT,
   CLEANUP_OLD_JOBS_BATCH_SCRIPT,
+  WAIT_JOB_SCRIPT,
+  COMPLETE_WAITPOINT_SCRIPT,
+  EXPIRE_TIMED_OUT_WAITPOINTS_SCRIPT,
 } from './redis-scripts.js';
+import { randomUUID } from 'crypto';
 
 /** Helper: convert a Redis hash flat array [k,v,k,v,...] to a JS object */
 function hashToObject(arr: string[]): Record<string, string> {
@@ -116,7 +159,22 @@ function deserializeJob<PayloadMap, T extends JobType<PayloadMap>>(
     tags,
     idempotencyKey: nullish(h.idempotencyKey) as string | null | undefined,
     progress: numOrNull(h.progress),
+    waitUntil: dateOrNull(h.waitUntil),
+    waitTokenId: nullish(h.waitTokenId) as string | null | undefined,
+    stepData: parseStepData(h.stepData),
   };
+}
+
+/** Parse step data from a Redis hash field. */
+function parseStepData(
+  raw: string | undefined,
+): Record<string, any> | undefined {
+  if (!raw || raw === 'null') return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 }
 
 export class RedisBackend implements QueueBackend {
@@ -322,10 +380,19 @@ export class RedisBackend implements QueueBackend {
       if (filters.runAt) {
         jobs = this.filterByRunAt(jobs, filters.runAt);
       }
+      // Cursor-based (keyset) pagination: only return jobs with id < cursor
+      if (filters.cursor !== undefined) {
+        jobs = jobs.filter((j) => j.id < filters.cursor!);
+      }
     }
 
-    // Sort by createdAt DESC
-    jobs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    // Sort by id DESC for consistent keyset pagination (matches Postgres ORDER BY id DESC)
+    jobs.sort((a, b) => b.id - a.id);
+
+    // When using cursor, skip offset
+    if (filters?.cursor !== undefined) {
+      return jobs.slice(0, limit);
+    }
     return jobs.slice(offset, offset + limit);
   }
 
@@ -664,15 +731,75 @@ export class RedisBackend implements QueueBackend {
     return totalDeleted;
   }
 
-  async cleanupOldJobEvents(daysToKeep = 30): Promise<number> {
-    // Redis events are stored per-job; cleaning up old events requires
-    // iterating event lists and filtering by date. For now, we skip
-    // events belonging to jobs that have been cleaned up (their keys are gone).
-    // A full implementation would iterate all events:* keys.
-    log(
-      `cleanupOldJobEvents is a no-op for Redis backend (events are cleaned up with their jobs)`,
-    );
-    return 0;
+  /**
+   * Delete job events older than the given number of days.
+   * Iterates all event lists and removes events whose createdAt is before the cutoff.
+   * Also removes orphaned event lists (where the job no longer exists).
+   *
+   * @param daysToKeep - Number of days to retain events (default 30).
+   * @param batchSize - Number of event keys to scan per SCAN iteration (default 200).
+   * @returns Total number of deleted events.
+   */
+  async cleanupOldJobEvents(daysToKeep = 30, batchSize = 200): Promise<number> {
+    const cutoffMs = this.nowMs() - daysToKeep * 24 * 60 * 60 * 1000;
+    const pattern = `${this.prefix}events:*`;
+    let totalDeleted = 0;
+    let cursor = '0';
+
+    do {
+      const [nextCursor, keys] = await this.client.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        batchSize,
+      );
+      cursor = nextCursor;
+
+      for (const key of keys) {
+        // Check if the job still exists; if not, delete the entire event list
+        const jobIdStr = key.slice(`${this.prefix}events:`.length);
+        const jobExists = await this.client.exists(
+          `${this.prefix}job:${jobIdStr}`,
+        );
+        if (!jobExists) {
+          const len = await this.client.llen(key);
+          await this.client.del(key);
+          totalDeleted += len;
+          continue;
+        }
+
+        // Filter events by date: read all, keep recent, rewrite
+        const events = await this.client.lrange(key, 0, -1);
+        const kept: string[] = [];
+        for (const raw of events) {
+          try {
+            const e = JSON.parse(raw);
+            if (e.createdAt >= cutoffMs) {
+              kept.push(raw);
+            } else {
+              totalDeleted++;
+            }
+          } catch {
+            totalDeleted++;
+          }
+        }
+
+        if (kept.length === 0) {
+          await this.client.del(key);
+        } else if (kept.length < events.length) {
+          const pipeline = this.client.pipeline();
+          pipeline.del(key);
+          for (const raw of kept) {
+            pipeline.rpush(key, raw);
+          }
+          await pipeline.exec();
+        }
+      }
+    } while (cursor !== '0');
+
+    log(`Deleted ${totalDeleted} old job events`);
+    return totalDeleted;
   }
 
   async reclaimStuckJobs(maxProcessingTimeMinutes = 10): Promise<number> {
@@ -687,6 +814,230 @@ export class RedisBackend implements QueueBackend {
     )) as number;
     log(`Reclaimed ${result} stuck jobs`);
     return Number(result);
+  }
+
+  // ── Wait / step-data support ────────────────────────────────────────
+
+  /**
+   * Transition a job from 'processing' to 'waiting' status.
+   * Persists step data so the handler can resume from where it left off.
+   *
+   * @param jobId - The job to pause.
+   * @param options - Wait configuration including optional waitUntil date, token ID, and step data.
+   */
+  async waitJob(
+    jobId: number,
+    options: {
+      waitUntil?: Date;
+      waitTokenId?: string;
+      stepData: Record<string, any>;
+    },
+  ): Promise<void> {
+    const now = this.nowMs();
+    const waitUntilMs = options.waitUntil
+      ? options.waitUntil.getTime().toString()
+      : 'null';
+    const waitTokenId = options.waitTokenId ?? 'null';
+    const stepDataJson = JSON.stringify(options.stepData);
+
+    const result = await this.client.eval(
+      WAIT_JOB_SCRIPT,
+      1,
+      this.prefix,
+      jobId,
+      waitUntilMs,
+      waitTokenId,
+      stepDataJson,
+      now,
+    );
+
+    if (Number(result) === 0) {
+      log(
+        `Job ${jobId} could not be set to waiting (may have been reclaimed or is no longer processing)`,
+      );
+      return;
+    }
+
+    await this.recordJobEvent(jobId, JobEventType.Waiting, {
+      waitUntil: options.waitUntil?.toISOString() ?? null,
+      waitTokenId: options.waitTokenId ?? null,
+    });
+    log(`Job ${jobId} set to waiting`);
+  }
+
+  /**
+   * Persist step data for a job. Called after each ctx.run() step completes.
+   * Best-effort: does not throw to avoid killing the running handler.
+   *
+   * @param jobId - The job to update.
+   * @param stepData - The step data to persist.
+   */
+  async updateStepData(
+    jobId: number,
+    stepData: Record<string, any>,
+  ): Promise<void> {
+    try {
+      const now = this.nowMs();
+      await this.client.hset(
+        `${this.prefix}job:${jobId}`,
+        'stepData',
+        JSON.stringify(stepData),
+        'updatedAt',
+        now.toString(),
+      );
+    } catch (error) {
+      log(`Error updating stepData for job ${jobId}: ${error}`);
+    }
+  }
+
+  /**
+   * Create a waitpoint token.
+   *
+   * @param jobId - The job ID to associate with the token (null if created outside a handler).
+   * @param options - Optional timeout string (e.g. '10m', '1h') and tags.
+   * @returns The created waitpoint with its unique ID.
+   */
+  async createWaitpoint(
+    jobId: number | null,
+    options?: CreateTokenOptions,
+  ): Promise<{ id: string }> {
+    const id = `wp_${randomUUID()}`;
+    const now = this.nowMs();
+    let timeoutAt: number | null = null;
+
+    if (options?.timeout) {
+      const ms = parseTimeoutString(options.timeout);
+      timeoutAt = now + ms;
+    }
+
+    const key = `${this.prefix}waitpoint:${id}`;
+    const fields: string[] = [
+      'id',
+      id,
+      'jobId',
+      jobId !== null ? jobId.toString() : 'null',
+      'status',
+      'waiting',
+      'output',
+      'null',
+      'timeoutAt',
+      timeoutAt !== null ? timeoutAt.toString() : 'null',
+      'createdAt',
+      now.toString(),
+      'completedAt',
+      'null',
+      'tags',
+      options?.tags ? JSON.stringify(options.tags) : 'null',
+    ];
+
+    await (this.client as any).hmset(key, ...fields);
+
+    if (timeoutAt !== null) {
+      await this.client.zadd(`${this.prefix}waitpoint_timeout`, timeoutAt, id);
+    }
+
+    log(`Created waitpoint ${id} for job ${jobId}`);
+    return { id };
+  }
+
+  /**
+   * Complete a waitpoint token and move the associated job back to 'pending'.
+   *
+   * @param tokenId - The waitpoint token ID to complete.
+   * @param data - Optional data to pass to the waiting handler.
+   */
+  async completeWaitpoint(tokenId: string, data?: any): Promise<void> {
+    const now = this.nowMs();
+    const outputJson = data != null ? JSON.stringify(data) : 'null';
+
+    const result = await this.client.eval(
+      COMPLETE_WAITPOINT_SCRIPT,
+      1,
+      this.prefix,
+      tokenId,
+      outputJson,
+      now,
+    );
+
+    if (Number(result) === 0) {
+      log(`Waitpoint ${tokenId} not found or already completed`);
+      return;
+    }
+
+    log(`Completed waitpoint ${tokenId}`);
+  }
+
+  /**
+   * Retrieve a waitpoint token by its ID.
+   *
+   * @param tokenId - The waitpoint token ID to look up.
+   * @returns The waitpoint record, or null if not found.
+   */
+  async getWaitpoint(tokenId: string): Promise<WaitpointRecord | null> {
+    const data = await this.client.hgetall(
+      `${this.prefix}waitpoint:${tokenId}`,
+    );
+    if (!data || Object.keys(data).length === 0) return null;
+
+    const nullish = (v: string | undefined) =>
+      v === undefined || v === 'null' || v === '' ? null : v;
+    const numOrNull = (v: string | undefined): number | null => {
+      const n = nullish(v);
+      return n === null ? null : Number(n);
+    };
+    const dateOrNull = (v: string | undefined): Date | null => {
+      const n = numOrNull(v);
+      return n === null ? null : new Date(n);
+    };
+
+    let output: any = null;
+    if (data.output && data.output !== 'null') {
+      try {
+        output = JSON.parse(data.output);
+      } catch {
+        output = data.output;
+      }
+    }
+
+    let tags: string[] | null = null;
+    if (data.tags && data.tags !== 'null') {
+      try {
+        tags = JSON.parse(data.tags);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return {
+      id: data.id,
+      jobId: numOrNull(data.jobId),
+      status: data.status as WaitpointRecord['status'],
+      output,
+      timeoutAt: dateOrNull(data.timeoutAt),
+      createdAt: new Date(Number(data.createdAt)),
+      completedAt: dateOrNull(data.completedAt),
+      tags,
+    };
+  }
+
+  /**
+   * Expire timed-out waitpoint tokens and move their associated jobs back to 'pending'.
+   *
+   * @returns The number of tokens that were expired.
+   */
+  async expireTimedOutWaitpoints(): Promise<number> {
+    const now = this.nowMs();
+    const result = (await this.client.eval(
+      EXPIRE_TIMED_OUT_WAITPOINTS_SCRIPT,
+      1,
+      this.prefix,
+      now,
+    )) as number;
+    const count = Number(result);
+    if (count > 0) {
+      log(`Expired ${count} timed-out waitpoints`);
+    }
+    return count;
   }
 
   // ── Internal helpers ──────────────────────────────────────────────────
