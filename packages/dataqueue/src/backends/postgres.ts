@@ -7,8 +7,16 @@ import {
   JobEventType,
   TagQueryMode,
   JobType,
+  CronScheduleRecord,
+  CronScheduleStatus,
+  EditCronScheduleOptions,
 } from '../types.js';
-import { QueueBackend, JobFilters, JobUpdates } from '../backend.js';
+import {
+  QueueBackend,
+  JobFilters,
+  JobUpdates,
+  CronScheduleInput,
+} from '../backend.js';
 import { log } from '../log-context.js';
 
 export class PostgresBackend implements QueueBackend {
@@ -1082,6 +1090,328 @@ export class PostgresBackend implements QueueBackend {
       client.release();
     }
   }
+
+  // ── Cron schedules ──────────────────────────────────────────────────
+
+  /** Create a cron schedule and return its ID. */
+  async addCronSchedule(input: CronScheduleInput): Promise<number> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `INSERT INTO cron_schedules
+          (schedule_name, cron_expression, job_type, payload, max_attempts,
+           priority, timeout_ms, force_kill_on_timeout, tags, timezone,
+           allow_overlap, next_run_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id`,
+        [
+          input.scheduleName,
+          input.cronExpression,
+          input.jobType,
+          input.payload,
+          input.maxAttempts,
+          input.priority,
+          input.timeoutMs,
+          input.forceKillOnTimeout,
+          input.tags ?? null,
+          input.timezone,
+          input.allowOverlap,
+          input.nextRunAt,
+        ],
+      );
+      const id = result.rows[0].id;
+      log(`Added cron schedule ${id}: "${input.scheduleName}"`);
+      return id;
+    } catch (error: any) {
+      // Unique constraint violation on schedule_name
+      if (error?.code === '23505') {
+        throw new Error(
+          `Cron schedule with name "${input.scheduleName}" already exists`,
+        );
+      }
+      log(`Error adding cron schedule: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Get a cron schedule by ID. */
+  async getCronSchedule(id: number): Promise<CronScheduleRecord | null> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT id, schedule_name AS "scheduleName", cron_expression AS "cronExpression",
+                job_type AS "jobType", payload, max_attempts AS "maxAttempts",
+                priority, timeout_ms AS "timeoutMs",
+                force_kill_on_timeout AS "forceKillOnTimeout", tags,
+                timezone, allow_overlap AS "allowOverlap", status,
+                last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
+                next_run_at AS "nextRunAt",
+                created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM cron_schedules WHERE id = $1`,
+        [id],
+      );
+      if (result.rows.length === 0) return null;
+      return result.rows[0] as CronScheduleRecord;
+    } catch (error) {
+      log(`Error getting cron schedule ${id}: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Get a cron schedule by its unique name. */
+  async getCronScheduleByName(
+    name: string,
+  ): Promise<CronScheduleRecord | null> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT id, schedule_name AS "scheduleName", cron_expression AS "cronExpression",
+                job_type AS "jobType", payload, max_attempts AS "maxAttempts",
+                priority, timeout_ms AS "timeoutMs",
+                force_kill_on_timeout AS "forceKillOnTimeout", tags,
+                timezone, allow_overlap AS "allowOverlap", status,
+                last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
+                next_run_at AS "nextRunAt",
+                created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM cron_schedules WHERE schedule_name = $1`,
+        [name],
+      );
+      if (result.rows.length === 0) return null;
+      return result.rows[0] as CronScheduleRecord;
+    } catch (error) {
+      log(`Error getting cron schedule by name "${name}": ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** List cron schedules, optionally filtered by status. */
+  async listCronSchedules(
+    status?: CronScheduleStatus,
+  ): Promise<CronScheduleRecord[]> {
+    const client = await this.pool.connect();
+    try {
+      let query = `SELECT id, schedule_name AS "scheduleName", cron_expression AS "cronExpression",
+                job_type AS "jobType", payload, max_attempts AS "maxAttempts",
+                priority, timeout_ms AS "timeoutMs",
+                force_kill_on_timeout AS "forceKillOnTimeout", tags,
+                timezone, allow_overlap AS "allowOverlap", status,
+                last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
+                next_run_at AS "nextRunAt",
+                created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM cron_schedules`;
+      const params: any[] = [];
+      if (status) {
+        query += ` WHERE status = $1`;
+        params.push(status);
+      }
+      query += ` ORDER BY created_at ASC`;
+      const result = await client.query(query, params);
+      return result.rows as CronScheduleRecord[];
+    } catch (error) {
+      log(`Error listing cron schedules: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Delete a cron schedule by ID. */
+  async removeCronSchedule(id: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(`DELETE FROM cron_schedules WHERE id = $1`, [id]);
+      log(`Removed cron schedule ${id}`);
+    } catch (error) {
+      log(`Error removing cron schedule ${id}: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Pause a cron schedule. */
+  async pauseCronSchedule(id: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `UPDATE cron_schedules SET status = 'paused', updated_at = NOW() WHERE id = $1`,
+        [id],
+      );
+      log(`Paused cron schedule ${id}`);
+    } catch (error) {
+      log(`Error pausing cron schedule ${id}: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Resume a paused cron schedule. */
+  async resumeCronSchedule(id: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `UPDATE cron_schedules SET status = 'active', updated_at = NOW() WHERE id = $1`,
+        [id],
+      );
+      log(`Resumed cron schedule ${id}`);
+    } catch (error) {
+      log(`Error resuming cron schedule ${id}: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Edit a cron schedule. */
+  async editCronSchedule(
+    id: number,
+    updates: EditCronScheduleOptions,
+    nextRunAt?: Date | null,
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      const updateFields: string[] = [];
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      if (updates.cronExpression !== undefined) {
+        updateFields.push(`cron_expression = $${paramIdx++}`);
+        params.push(updates.cronExpression);
+      }
+      if (updates.payload !== undefined) {
+        updateFields.push(`payload = $${paramIdx++}`);
+        params.push(updates.payload);
+      }
+      if (updates.maxAttempts !== undefined) {
+        updateFields.push(`max_attempts = $${paramIdx++}`);
+        params.push(updates.maxAttempts);
+      }
+      if (updates.priority !== undefined) {
+        updateFields.push(`priority = $${paramIdx++}`);
+        params.push(updates.priority);
+      }
+      if (updates.timeoutMs !== undefined) {
+        updateFields.push(`timeout_ms = $${paramIdx++}`);
+        params.push(updates.timeoutMs);
+      }
+      if (updates.forceKillOnTimeout !== undefined) {
+        updateFields.push(`force_kill_on_timeout = $${paramIdx++}`);
+        params.push(updates.forceKillOnTimeout);
+      }
+      if (updates.tags !== undefined) {
+        updateFields.push(`tags = $${paramIdx++}`);
+        params.push(updates.tags);
+      }
+      if (updates.timezone !== undefined) {
+        updateFields.push(`timezone = $${paramIdx++}`);
+        params.push(updates.timezone);
+      }
+      if (updates.allowOverlap !== undefined) {
+        updateFields.push(`allow_overlap = $${paramIdx++}`);
+        params.push(updates.allowOverlap);
+      }
+      if (nextRunAt !== undefined) {
+        updateFields.push(`next_run_at = $${paramIdx++}`);
+        params.push(nextRunAt);
+      }
+
+      if (updateFields.length === 0) {
+        log(`No fields to update for cron schedule ${id}`);
+        return;
+      }
+
+      updateFields.push(`updated_at = NOW()`);
+      params.push(id);
+
+      const query = `UPDATE cron_schedules SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`;
+      await client.query(query, params);
+      log(`Edited cron schedule ${id}`);
+    } catch (error) {
+      log(`Error editing cron schedule ${id}: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Atomically fetch all active cron schedules whose nextRunAt <= NOW().
+   * Uses FOR UPDATE SKIP LOCKED to prevent duplicate enqueuing across workers.
+   */
+  async getDueCronSchedules(): Promise<CronScheduleRecord[]> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT id, schedule_name AS "scheduleName", cron_expression AS "cronExpression",
+                job_type AS "jobType", payload, max_attempts AS "maxAttempts",
+                priority, timeout_ms AS "timeoutMs",
+                force_kill_on_timeout AS "forceKillOnTimeout", tags,
+                timezone, allow_overlap AS "allowOverlap", status,
+                last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
+                next_run_at AS "nextRunAt",
+                created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM cron_schedules
+         WHERE status = 'active'
+           AND next_run_at IS NOT NULL
+           AND next_run_at <= NOW()
+         ORDER BY next_run_at ASC
+         FOR UPDATE SKIP LOCKED`,
+      );
+      log(`Found ${result.rows.length} due cron schedules`);
+      return result.rows as CronScheduleRecord[];
+    } catch (error: any) {
+      // 42P01 = undefined_table — cron migration hasn't been run yet
+      if (error?.code === '42P01') {
+        log('cron_schedules table does not exist, skipping cron enqueue');
+        return [];
+      }
+      log(`Error getting due cron schedules: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Update a cron schedule after a job has been enqueued.
+   * Sets lastEnqueuedAt, lastJobId, and advances nextRunAt.
+   */
+  async updateCronScheduleAfterEnqueue(
+    id: number,
+    lastEnqueuedAt: Date,
+    lastJobId: number,
+    nextRunAt: Date | null,
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `UPDATE cron_schedules
+         SET last_enqueued_at = $2,
+             last_job_id = $3,
+             next_run_at = $4,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [id, lastEnqueuedAt, lastJobId, nextRunAt],
+      );
+      log(
+        `Updated cron schedule ${id}: lastJobId=${lastJobId}, nextRunAt=${nextRunAt?.toISOString() ?? 'null'}`,
+      );
+    } catch (error) {
+      log(`Error updating cron schedule ${id} after enqueue: ${error}`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ── Internal helpers ──────────────────────────────────────────────────
 
   async setPendingReasonForUnpickedJobs(
     reason: string,

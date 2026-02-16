@@ -6,6 +6,9 @@ import {
   FailureReason,
   TagQueryMode,
   JobType,
+  CronScheduleRecord,
+  CronScheduleStatus,
+  EditCronScheduleOptions,
 } from './types.js';
 
 /**
@@ -34,6 +37,25 @@ export interface JobUpdates {
   runAt?: Date | null;
   timeoutMs?: number | null;
   tags?: string[] | null;
+}
+
+/**
+ * Input shape for creating a cron schedule in the backend.
+ * This is the backend-level version of CronScheduleOptions.
+ */
+export interface CronScheduleInput {
+  scheduleName: string;
+  cronExpression: string;
+  jobType: string;
+  payload: any;
+  maxAttempts: number;
+  priority: number;
+  timeoutMs: number | null;
+  forceKillOnTimeout: boolean;
+  tags: string[] | undefined;
+  timezone: string;
+  allowOverlap: boolean;
+  nextRunAt: Date | null;
 }
 
 /**
@@ -152,6 +174,53 @@ export interface QueueBackend {
 
   /** Get all events for a job, ordered by createdAt ASC. */
   getJobEvents(jobId: number): Promise<JobEvent[]>;
+
+  // ── Cron schedules ──────────────────────────────────────────────────
+
+  /** Create a cron schedule and return its ID. */
+  addCronSchedule(input: CronScheduleInput): Promise<number>;
+
+  /** Get a cron schedule by ID, or null if not found. */
+  getCronSchedule(id: number): Promise<CronScheduleRecord | null>;
+
+  /** Get a cron schedule by its unique name, or null if not found. */
+  getCronScheduleByName(name: string): Promise<CronScheduleRecord | null>;
+
+  /** List cron schedules, optionally filtered by status. */
+  listCronSchedules(status?: CronScheduleStatus): Promise<CronScheduleRecord[]>;
+
+  /** Delete a cron schedule by ID. */
+  removeCronSchedule(id: number): Promise<void>;
+
+  /** Pause a cron schedule. */
+  pauseCronSchedule(id: number): Promise<void>;
+
+  /** Resume a cron schedule. */
+  resumeCronSchedule(id: number): Promise<void>;
+
+  /** Edit a cron schedule. */
+  editCronSchedule(
+    id: number,
+    updates: EditCronScheduleOptions,
+    nextRunAt?: Date | null,
+  ): Promise<void>;
+
+  /**
+   * Atomically fetch all active cron schedules whose nextRunAt <= now.
+   * In PostgreSQL this uses FOR UPDATE SKIP LOCKED to prevent duplicate enqueuing.
+   */
+  getDueCronSchedules(): Promise<CronScheduleRecord[]>;
+
+  /**
+   * Update a cron schedule after a job has been enqueued.
+   * Sets lastEnqueuedAt, lastJobId, and advances nextRunAt.
+   */
+  updateCronScheduleAfterEnqueue(
+    id: number,
+    lastEnqueuedAt: Date,
+    lastJobId: number,
+    nextRunAt: Date | null,
+  ): Promise<void>;
 
   // ── Internal helpers ──────────────────────────────────────────────────
 

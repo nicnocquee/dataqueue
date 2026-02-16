@@ -9,8 +9,16 @@ import {
   TagQueryMode,
   JobType,
   RedisJobQueueConfig,
+  CronScheduleRecord,
+  CronScheduleStatus,
+  EditCronScheduleOptions,
 } from '../types.js';
-import { QueueBackend, JobFilters, JobUpdates } from '../backend.js';
+import {
+  QueueBackend,
+  JobFilters,
+  JobUpdates,
+  CronScheduleInput,
+} from '../backend.js';
 import { log } from '../log-context.js';
 import {
   ADD_JOB_SCRIPT,
@@ -794,6 +802,386 @@ export class RedisBackend implements QueueBackend {
       return true;
     });
   }
+
+  // ── Cron schedules ──────────────────────────────────────────────────
+
+  /** Create a cron schedule and return its ID. */
+  async addCronSchedule(input: CronScheduleInput): Promise<number> {
+    const existingId = await this.client.get(
+      `${this.prefix}cron_name:${input.scheduleName}`,
+    );
+    if (existingId !== null) {
+      throw new Error(
+        `Cron schedule with name "${input.scheduleName}" already exists`,
+      );
+    }
+
+    const id = await this.client.incr(`${this.prefix}cron_id_seq`);
+    const now = this.nowMs();
+    const key = `${this.prefix}cron:${id}`;
+
+    const fields: string[] = [
+      'id',
+      id.toString(),
+      'scheduleName',
+      input.scheduleName,
+      'cronExpression',
+      input.cronExpression,
+      'jobType',
+      input.jobType,
+      'payload',
+      JSON.stringify(input.payload),
+      'maxAttempts',
+      input.maxAttempts.toString(),
+      'priority',
+      input.priority.toString(),
+      'timeoutMs',
+      input.timeoutMs !== null ? input.timeoutMs.toString() : 'null',
+      'forceKillOnTimeout',
+      input.forceKillOnTimeout ? 'true' : 'false',
+      'tags',
+      input.tags ? JSON.stringify(input.tags) : 'null',
+      'timezone',
+      input.timezone,
+      'allowOverlap',
+      input.allowOverlap ? 'true' : 'false',
+      'status',
+      'active',
+      'lastEnqueuedAt',
+      'null',
+      'lastJobId',
+      'null',
+      'nextRunAt',
+      input.nextRunAt ? input.nextRunAt.getTime().toString() : 'null',
+      'createdAt',
+      now.toString(),
+      'updatedAt',
+      now.toString(),
+    ];
+
+    await (this.client as any).hmset(key, ...fields);
+    await this.client.set(
+      `${this.prefix}cron_name:${input.scheduleName}`,
+      id.toString(),
+    );
+    await this.client.sadd(`${this.prefix}crons`, id.toString());
+    await this.client.sadd(`${this.prefix}cron_status:active`, id.toString());
+
+    if (input.nextRunAt) {
+      await this.client.zadd(
+        `${this.prefix}cron_due`,
+        input.nextRunAt.getTime(),
+        id.toString(),
+      );
+    }
+
+    log(`Added cron schedule ${id}: "${input.scheduleName}"`);
+    return id;
+  }
+
+  /** Get a cron schedule by ID. */
+  async getCronSchedule(id: number): Promise<CronScheduleRecord | null> {
+    const data = await this.client.hgetall(`${this.prefix}cron:${id}`);
+    if (!data || Object.keys(data).length === 0) return null;
+    return this.deserializeCronSchedule(data);
+  }
+
+  /** Get a cron schedule by its unique name. */
+  async getCronScheduleByName(
+    name: string,
+  ): Promise<CronScheduleRecord | null> {
+    const id = await this.client.get(`${this.prefix}cron_name:${name}`);
+    if (id === null) return null;
+    return this.getCronSchedule(Number(id));
+  }
+
+  /** List cron schedules, optionally filtered by status. */
+  async listCronSchedules(
+    status?: CronScheduleStatus,
+  ): Promise<CronScheduleRecord[]> {
+    let ids: string[];
+    if (status) {
+      ids = await this.client.smembers(`${this.prefix}cron_status:${status}`);
+    } else {
+      ids = await this.client.smembers(`${this.prefix}crons`);
+    }
+    if (ids.length === 0) return [];
+
+    const pipeline = this.client.pipeline();
+    for (const id of ids) {
+      pipeline.hgetall(`${this.prefix}cron:${id}`);
+    }
+    const results = await pipeline.exec();
+    const schedules: CronScheduleRecord[] = [];
+    if (results) {
+      for (const [err, data] of results) {
+        if (
+          !err &&
+          data &&
+          typeof data === 'object' &&
+          Object.keys(data as object).length > 0
+        ) {
+          schedules.push(
+            this.deserializeCronSchedule(data as Record<string, string>),
+          );
+        }
+      }
+    }
+    schedules.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    return schedules;
+  }
+
+  /** Delete a cron schedule by ID. */
+  async removeCronSchedule(id: number): Promise<void> {
+    const data = await this.client.hgetall(`${this.prefix}cron:${id}`);
+    if (!data || Object.keys(data).length === 0) return;
+
+    const name = data.scheduleName;
+    const status = data.status;
+
+    await this.client.del(`${this.prefix}cron:${id}`);
+    await this.client.del(`${this.prefix}cron_name:${name}`);
+    await this.client.srem(`${this.prefix}crons`, id.toString());
+    await this.client.srem(
+      `${this.prefix}cron_status:${status}`,
+      id.toString(),
+    );
+    await this.client.zrem(`${this.prefix}cron_due`, id.toString());
+    log(`Removed cron schedule ${id}`);
+  }
+
+  /** Pause a cron schedule. */
+  async pauseCronSchedule(id: number): Promise<void> {
+    const now = this.nowMs();
+    await this.client.hset(
+      `${this.prefix}cron:${id}`,
+      'status',
+      'paused',
+      'updatedAt',
+      now.toString(),
+    );
+    await this.client.srem(`${this.prefix}cron_status:active`, id.toString());
+    await this.client.sadd(`${this.prefix}cron_status:paused`, id.toString());
+    await this.client.zrem(`${this.prefix}cron_due`, id.toString());
+    log(`Paused cron schedule ${id}`);
+  }
+
+  /** Resume a paused cron schedule. */
+  async resumeCronSchedule(id: number): Promise<void> {
+    const now = this.nowMs();
+    await this.client.hset(
+      `${this.prefix}cron:${id}`,
+      'status',
+      'active',
+      'updatedAt',
+      now.toString(),
+    );
+    await this.client.srem(`${this.prefix}cron_status:paused`, id.toString());
+    await this.client.sadd(`${this.prefix}cron_status:active`, id.toString());
+
+    const nextRunAt = await this.client.hget(
+      `${this.prefix}cron:${id}`,
+      'nextRunAt',
+    );
+    if (nextRunAt && nextRunAt !== 'null') {
+      await this.client.zadd(
+        `${this.prefix}cron_due`,
+        Number(nextRunAt),
+        id.toString(),
+      );
+    }
+    log(`Resumed cron schedule ${id}`);
+  }
+
+  /** Edit a cron schedule. */
+  async editCronSchedule(
+    id: number,
+    updates: EditCronScheduleOptions,
+    nextRunAt?: Date | null,
+  ): Promise<void> {
+    const now = this.nowMs();
+    const fields: string[] = [];
+
+    if (updates.cronExpression !== undefined) {
+      fields.push('cronExpression', updates.cronExpression);
+    }
+    if (updates.payload !== undefined) {
+      fields.push('payload', JSON.stringify(updates.payload));
+    }
+    if (updates.maxAttempts !== undefined) {
+      fields.push('maxAttempts', updates.maxAttempts.toString());
+    }
+    if (updates.priority !== undefined) {
+      fields.push('priority', updates.priority.toString());
+    }
+    if (updates.timeoutMs !== undefined) {
+      fields.push(
+        'timeoutMs',
+        updates.timeoutMs !== null ? updates.timeoutMs.toString() : 'null',
+      );
+    }
+    if (updates.forceKillOnTimeout !== undefined) {
+      fields.push(
+        'forceKillOnTimeout',
+        updates.forceKillOnTimeout ? 'true' : 'false',
+      );
+    }
+    if (updates.tags !== undefined) {
+      fields.push(
+        'tags',
+        updates.tags !== null ? JSON.stringify(updates.tags) : 'null',
+      );
+    }
+    if (updates.timezone !== undefined) {
+      fields.push('timezone', updates.timezone);
+    }
+    if (updates.allowOverlap !== undefined) {
+      fields.push('allowOverlap', updates.allowOverlap ? 'true' : 'false');
+    }
+    if (nextRunAt !== undefined) {
+      const val = nextRunAt !== null ? nextRunAt.getTime().toString() : 'null';
+      fields.push('nextRunAt', val);
+      if (nextRunAt !== null) {
+        await this.client.zadd(
+          `${this.prefix}cron_due`,
+          nextRunAt.getTime(),
+          id.toString(),
+        );
+      } else {
+        await this.client.zrem(`${this.prefix}cron_due`, id.toString());
+      }
+    }
+
+    if (fields.length === 0) {
+      log(`No fields to update for cron schedule ${id}`);
+      return;
+    }
+
+    fields.push('updatedAt', now.toString());
+    await (this.client as any).hmset(`${this.prefix}cron:${id}`, ...fields);
+    log(`Edited cron schedule ${id}`);
+  }
+
+  /**
+   * Fetch all active cron schedules whose nextRunAt <= now.
+   * Uses a sorted set (cron_due) for efficient range query.
+   */
+  async getDueCronSchedules(): Promise<CronScheduleRecord[]> {
+    const now = this.nowMs();
+    const ids = await this.client.zrangebyscore(
+      `${this.prefix}cron_due`,
+      0,
+      now,
+    );
+    if (ids.length === 0) {
+      log('Found 0 due cron schedules');
+      return [];
+    }
+
+    const schedules: CronScheduleRecord[] = [];
+    for (const id of ids) {
+      const data = await this.client.hgetall(`${this.prefix}cron:${id}`);
+      if (data && Object.keys(data).length > 0 && data.status === 'active') {
+        schedules.push(this.deserializeCronSchedule(data));
+      }
+    }
+    log(`Found ${schedules.length} due cron schedules`);
+    return schedules;
+  }
+
+  /**
+   * Update a cron schedule after a job has been enqueued.
+   * Sets lastEnqueuedAt, lastJobId, and advances nextRunAt.
+   */
+  async updateCronScheduleAfterEnqueue(
+    id: number,
+    lastEnqueuedAt: Date,
+    lastJobId: number,
+    nextRunAt: Date | null,
+  ): Promise<void> {
+    const fields: string[] = [
+      'lastEnqueuedAt',
+      lastEnqueuedAt.getTime().toString(),
+      'lastJobId',
+      lastJobId.toString(),
+      'nextRunAt',
+      nextRunAt ? nextRunAt.getTime().toString() : 'null',
+      'updatedAt',
+      this.nowMs().toString(),
+    ];
+
+    await (this.client as any).hmset(`${this.prefix}cron:${id}`, ...fields);
+
+    if (nextRunAt) {
+      await this.client.zadd(
+        `${this.prefix}cron_due`,
+        nextRunAt.getTime(),
+        id.toString(),
+      );
+    } else {
+      await this.client.zrem(`${this.prefix}cron_due`, id.toString());
+    }
+
+    log(
+      `Updated cron schedule ${id}: lastJobId=${lastJobId}, nextRunAt=${nextRunAt?.toISOString() ?? 'null'}`,
+    );
+  }
+
+  /** Deserialize a Redis hash into a CronScheduleRecord. */
+  private deserializeCronSchedule(
+    h: Record<string, string>,
+  ): CronScheduleRecord {
+    const nullish = (v: string | undefined) =>
+      v === undefined || v === 'null' || v === '' ? null : v;
+    const numOrNull = (v: string | undefined): number | null => {
+      const n = nullish(v);
+      return n === null ? null : Number(n);
+    };
+    const dateOrNull = (v: string | undefined): Date | null => {
+      const n = numOrNull(v);
+      return n === null ? null : new Date(n);
+    };
+
+    let payload: any;
+    try {
+      payload = JSON.parse(h.payload);
+    } catch {
+      payload = h.payload;
+    }
+
+    let tags: string[] | undefined;
+    try {
+      const raw = h.tags;
+      if (raw && raw !== 'null') {
+        tags = JSON.parse(raw);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    return {
+      id: Number(h.id),
+      scheduleName: h.scheduleName,
+      cronExpression: h.cronExpression,
+      jobType: h.jobType,
+      payload,
+      maxAttempts: Number(h.maxAttempts),
+      priority: Number(h.priority),
+      timeoutMs: numOrNull(h.timeoutMs),
+      forceKillOnTimeout: h.forceKillOnTimeout === 'true',
+      tags,
+      timezone: h.timezone,
+      allowOverlap: h.allowOverlap === 'true',
+      status: h.status as CronScheduleStatus,
+      lastEnqueuedAt: dateOrNull(h.lastEnqueuedAt),
+      lastJobId: numOrNull(h.lastJobId),
+      nextRunAt: dateOrNull(h.nextRunAt),
+      createdAt: new Date(Number(h.createdAt)),
+      updatedAt: new Date(Number(h.updatedAt)),
+    };
+  }
+
+  // ── Private helpers (filters) ─────────────────────────────────────────
 
   private async applyFilters(
     ids: string[],

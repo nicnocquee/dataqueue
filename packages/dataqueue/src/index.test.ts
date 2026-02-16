@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { initJobQueue, JobQueueConfig } from './index.js';
 import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 import { Pool } from 'pg';
+import type { CronScheduleRecord } from './types.js';
 
 // Integration tests for index.ts
 
@@ -530,5 +531,365 @@ describe('index integration', () => {
       payload: { to: 'updated@example.com' },
       priority: 10,
     });
+  });
+});
+
+describe('cron schedules integration', () => {
+  let pool: Pool;
+  let dbName: string;
+  let testDbUrl: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+    testDbUrl = setup.testDbUrl;
+    const config: JobQueueConfig = {
+      databaseConfig: {
+        connectionString: testDbUrl,
+      },
+    };
+    jobQueue = initJobQueue<TestPayloadMap>(config);
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    jobQueue.getPool().end();
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('creates a cron schedule and retrieves it by ID', async () => {
+    // Act
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'every-5-min-email',
+      cronExpression: '*/5 * * * *',
+      jobType: 'email',
+      payload: { to: 'cron@example.com' },
+    });
+
+    // Assert
+    const schedule = await jobQueue.getCronJob(id);
+    expect(schedule).not.toBeNull();
+    expect(schedule!.scheduleName).toBe('every-5-min-email');
+    expect(schedule!.cronExpression).toBe('*/5 * * * *');
+    expect(schedule!.jobType).toBe('email');
+    expect(schedule!.payload).toEqual({ to: 'cron@example.com' });
+    expect(schedule!.status).toBe('active');
+    expect(schedule!.allowOverlap).toBe(false);
+    expect(schedule!.timezone).toBe('UTC');
+    expect(schedule!.nextRunAt).toBeInstanceOf(Date);
+  });
+
+  it('retrieves a cron schedule by name', async () => {
+    // Setup
+    await jobQueue.addCronJob({
+      scheduleName: 'my-schedule',
+      cronExpression: '0 * * * *',
+      jobType: 'email',
+      payload: { to: 'test@example.com' },
+    });
+
+    // Act
+    const schedule = await jobQueue.getCronJobByName('my-schedule');
+
+    // Assert
+    expect(schedule).not.toBeNull();
+    expect(schedule!.scheduleName).toBe('my-schedule');
+  });
+
+  it('returns null for nonexistent schedule', async () => {
+    // Act
+    const byId = await jobQueue.getCronJob(99999);
+    const byName = await jobQueue.getCronJobByName('nonexistent');
+
+    // Assert
+    expect(byId).toBeNull();
+    expect(byName).toBeNull();
+  });
+
+  it('rejects duplicate schedule names', async () => {
+    // Setup
+    await jobQueue.addCronJob({
+      scheduleName: 'unique-name',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'a@example.com' },
+    });
+
+    // Act & Assert
+    await expect(
+      jobQueue.addCronJob({
+        scheduleName: 'unique-name',
+        cronExpression: '*/5 * * * *',
+        jobType: 'sms',
+        payload: { to: 'b@example.com' },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects invalid cron expressions', async () => {
+    // Act & Assert
+    await expect(
+      jobQueue.addCronJob({
+        scheduleName: 'bad-cron',
+        cronExpression: 'not a cron',
+        jobType: 'email',
+        payload: { to: 'a@example.com' },
+      }),
+    ).rejects.toThrow('Invalid cron expression');
+  });
+
+  it('lists active and paused schedules', async () => {
+    // Setup
+    const id1 = await jobQueue.addCronJob({
+      scheduleName: 'schedule-1',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'a@example.com' },
+    });
+    await jobQueue.addCronJob({
+      scheduleName: 'schedule-2',
+      cronExpression: '*/5 * * * *',
+      jobType: 'sms',
+      payload: { to: 'b@example.com' },
+    });
+    await jobQueue.pauseCronJob(id1);
+
+    // Act
+    const all = await jobQueue.listCronJobs();
+    const active = await jobQueue.listCronJobs('active');
+    const paused = await jobQueue.listCronJobs('paused');
+
+    // Assert
+    expect(all).toHaveLength(2);
+    expect(active).toHaveLength(1);
+    expect(active[0].scheduleName).toBe('schedule-2');
+    expect(paused).toHaveLength(1);
+    expect(paused[0].scheduleName).toBe('schedule-1');
+  });
+
+  it('pauses and resumes a schedule', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'pausable',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'a@example.com' },
+    });
+
+    // Act — pause
+    await jobQueue.pauseCronJob(id);
+    const paused = await jobQueue.getCronJob(id);
+
+    // Assert
+    expect(paused!.status).toBe('paused');
+
+    // Act — resume
+    await jobQueue.resumeCronJob(id);
+    const resumed = await jobQueue.getCronJob(id);
+
+    // Assert
+    expect(resumed!.status).toBe('active');
+  });
+
+  it('edits a schedule and recalculates nextRunAt when expression changes', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'editable',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'old@example.com' },
+    });
+    const before = await jobQueue.getCronJob(id);
+
+    // Act
+    await jobQueue.editCronJob(id, {
+      cronExpression: '0 0 * * *',
+      payload: { to: 'new@example.com' },
+    });
+
+    // Assert
+    const after = await jobQueue.getCronJob(id);
+    expect(after!.cronExpression).toBe('0 0 * * *');
+    expect(after!.payload).toEqual({ to: 'new@example.com' });
+    expect(after!.nextRunAt!.getTime()).not.toBe(before!.nextRunAt!.getTime());
+  });
+
+  it('removes a schedule', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'removable',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'a@example.com' },
+    });
+
+    // Act
+    await jobQueue.removeCronJob(id);
+
+    // Assert
+    const removed = await jobQueue.getCronJob(id);
+    expect(removed).toBeNull();
+  });
+
+  it('enqueueDueCronJobs enqueues a job when nextRunAt is due', async () => {
+    // Setup — insert a schedule with nextRunAt in the past
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'due-now',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'due@example.com' },
+    });
+    // Force nextRunAt to be in the past
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [id],
+    );
+
+    // Act
+    const count = await jobQueue.enqueueDueCronJobs();
+
+    // Assert
+    expect(count).toBe(1);
+    const jobs = await jobQueue.getJobsByStatus('pending');
+    const cronJob = jobs.find(
+      (j) =>
+        j.jobType === 'email' && (j.payload as any).to === 'due@example.com',
+    );
+    expect(cronJob).toBeDefined();
+  });
+
+  it('enqueueDueCronJobs advances nextRunAt and sets lastJobId', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'advance-test',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'advance@example.com' },
+    });
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [id],
+    );
+
+    // Act
+    await jobQueue.enqueueDueCronJobs();
+
+    // Assert
+    const schedule = await jobQueue.getCronJob(id);
+    expect(schedule!.lastJobId).not.toBeNull();
+    expect(schedule!.lastEnqueuedAt).toBeInstanceOf(Date);
+    expect(schedule!.nextRunAt).toBeInstanceOf(Date);
+    expect(schedule!.nextRunAt!.getTime()).toBeGreaterThan(Date.now() - 5000);
+  });
+
+  it('enqueueDueCronJobs skips paused schedules', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'paused-skip',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'paused@example.com' },
+    });
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [id],
+    );
+    await jobQueue.pauseCronJob(id);
+
+    // Act
+    const count = await jobQueue.enqueueDueCronJobs();
+
+    // Assert
+    expect(count).toBe(0);
+  });
+
+  it('enqueueDueCronJobs skips schedules not yet due', async () => {
+    // Setup — nextRunAt is calculated to the future by addCronJob
+    await jobQueue.addCronJob({
+      scheduleName: 'future-schedule',
+      cronExpression: '0 0 1 1 *',
+      jobType: 'email',
+      payload: { to: 'future@example.com' },
+    });
+
+    // Act
+    const count = await jobQueue.enqueueDueCronJobs();
+
+    // Assert
+    expect(count).toBe(0);
+  });
+
+  it('enqueueDueCronJobs skips when allowOverlap=false and last job is still active', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'no-overlap',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'overlap@example.com' },
+      allowOverlap: false,
+    });
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [id],
+    );
+
+    // First enqueue should succeed
+    const count1 = await jobQueue.enqueueDueCronJobs();
+    expect(count1).toBe(1);
+
+    // Set nextRunAt to past again (simulating next tick)
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [id],
+    );
+
+    // Act — second enqueue should be skipped because previous job is still pending
+    const count2 = await jobQueue.enqueueDueCronJobs();
+
+    // Assert
+    expect(count2).toBe(0);
+  });
+
+  it('enqueueDueCronJobs enqueues when allowOverlap=true even if last job is still active', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'with-overlap',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'overlap@example.com' },
+      allowOverlap: true,
+    });
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [id],
+    );
+
+    // First enqueue
+    const count1 = await jobQueue.enqueueDueCronJobs();
+    expect(count1).toBe(1);
+
+    // Set nextRunAt to past again
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [id],
+    );
+
+    // Act — second enqueue should succeed because allowOverlap=true
+    const count2 = await jobQueue.enqueueDueCronJobs();
+
+    // Assert
+    expect(count2).toBe(1);
+
+    // Verify there are two pending jobs
+    const jobs = await jobQueue.getJobsByStatus('pending');
+    const cronJobs = jobs.filter(
+      (j) =>
+        j.jobType === 'email' &&
+        (j.payload as any).to === 'overlap@example.com',
+    );
+    expect(cronJobs).toHaveLength(2);
   });
 });

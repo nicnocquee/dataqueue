@@ -14,12 +14,16 @@ import {
   JobType,
   PostgresJobQueueConfig,
   RedisJobQueueConfig,
+  CronScheduleOptions,
+  CronScheduleStatus,
+  EditCronScheduleOptions,
 } from './types.js';
-import { QueueBackend } from './backend.js';
+import { QueueBackend, CronScheduleInput } from './backend.js';
 import { setLogContext } from './log-context.js';
 import { createPool } from './db-util.js';
 import { PostgresBackend } from './backends/postgres.js';
 import { RedisBackend } from './backends/redis.js';
+import { getNextCronOccurrence, validateCronExpression } from './cron.js';
 
 /**
  * Initialize the job queue system.
@@ -54,6 +58,66 @@ export const initJobQueue = <PayloadMap = any>(
       );
     }
     return pool;
+  };
+
+  /**
+   * Enqueue due cron jobs. Shared by the public API and the processor hook.
+   */
+  const enqueueDueCronJobsImpl = async (): Promise<number> => {
+    const dueSchedules = await backend.getDueCronSchedules();
+    let count = 0;
+
+    for (const schedule of dueSchedules) {
+      // Overlap check: skip if allowOverlap is false and last job is still active
+      if (!schedule.allowOverlap && schedule.lastJobId !== null) {
+        const lastJob = await backend.getJob(schedule.lastJobId);
+        if (
+          lastJob &&
+          (lastJob.status === 'pending' ||
+            lastJob.status === 'processing' ||
+            lastJob.status === 'waiting')
+        ) {
+          // Still active — advance nextRunAt but don't enqueue
+          const nextRunAt = getNextCronOccurrence(
+            schedule.cronExpression,
+            schedule.timezone,
+          );
+          await backend.updateCronScheduleAfterEnqueue(
+            schedule.id,
+            new Date(),
+            schedule.lastJobId,
+            nextRunAt,
+          );
+          continue;
+        }
+      }
+
+      // Enqueue a new job instance
+      const jobId = await backend.addJob<any, any>({
+        jobType: schedule.jobType,
+        payload: schedule.payload,
+        maxAttempts: schedule.maxAttempts,
+        priority: schedule.priority,
+        timeoutMs: schedule.timeoutMs ?? undefined,
+        forceKillOnTimeout: schedule.forceKillOnTimeout,
+        tags: schedule.tags,
+      });
+
+      // Advance to next occurrence
+      const nextRunAt = getNextCronOccurrence(
+        schedule.cronExpression,
+        schedule.timezone,
+      );
+      await backend.updateCronScheduleAfterEnqueue(
+        schedule.id,
+        new Date(),
+        jobId,
+        nextRunAt,
+      );
+      count++;
+    }
+
+    return count;
   };
 
   // Return the job queue API
@@ -153,11 +217,14 @@ export const initJobQueue = <PayloadMap = any>(
       config.verbose ?? false,
     ),
 
-    // Job processing
+    // Job processing — automatically enqueues due cron jobs before each batch
     createProcessor: (
       handlers: JobHandlers<PayloadMap>,
       options?: ProcessorOptions,
-    ) => createProcessor<PayloadMap>(backend, handlers, options),
+    ) =>
+      createProcessor<PayloadMap>(backend, handlers, options, async () => {
+        await enqueueDueCronJobsImpl();
+      }),
 
     // Job events
     getJobEvents: withLogContext(
@@ -182,6 +249,91 @@ export const initJobQueue = <PayloadMap = any>(
     ),
     expireTimedOutTokens: withLogContext(
       () => expireTimedOutWaitpoints(requirePool()),
+      config.verbose ?? false,
+    ),
+
+    // Cron schedule operations
+    addCronJob: withLogContext(
+      <T extends JobType<PayloadMap>>(
+        options: CronScheduleOptions<PayloadMap, T>,
+      ) => {
+        if (!validateCronExpression(options.cronExpression)) {
+          return Promise.reject(
+            new Error(`Invalid cron expression: "${options.cronExpression}"`),
+          );
+        }
+        const nextRunAt = getNextCronOccurrence(
+          options.cronExpression,
+          options.timezone ?? 'UTC',
+        );
+        const input: CronScheduleInput = {
+          scheduleName: options.scheduleName,
+          cronExpression: options.cronExpression,
+          jobType: options.jobType as string,
+          payload: options.payload,
+          maxAttempts: options.maxAttempts ?? 3,
+          priority: options.priority ?? 0,
+          timeoutMs: options.timeoutMs ?? null,
+          forceKillOnTimeout: options.forceKillOnTimeout ?? false,
+          tags: options.tags,
+          timezone: options.timezone ?? 'UTC',
+          allowOverlap: options.allowOverlap ?? false,
+          nextRunAt,
+        };
+        return backend.addCronSchedule(input);
+      },
+      config.verbose ?? false,
+    ),
+    getCronJob: withLogContext(
+      (id: number) => backend.getCronSchedule(id),
+      config.verbose ?? false,
+    ),
+    getCronJobByName: withLogContext(
+      (name: string) => backend.getCronScheduleByName(name),
+      config.verbose ?? false,
+    ),
+    listCronJobs: withLogContext(
+      (status?: CronScheduleStatus) => backend.listCronSchedules(status),
+      config.verbose ?? false,
+    ),
+    removeCronJob: withLogContext(
+      (id: number) => backend.removeCronSchedule(id),
+      config.verbose ?? false,
+    ),
+    pauseCronJob: withLogContext(
+      (id: number) => backend.pauseCronSchedule(id),
+      config.verbose ?? false,
+    ),
+    resumeCronJob: withLogContext(
+      (id: number) => backend.resumeCronSchedule(id),
+      config.verbose ?? false,
+    ),
+    editCronJob: withLogContext(
+      async (id: number, updates: EditCronScheduleOptions) => {
+        if (
+          updates.cronExpression !== undefined &&
+          !validateCronExpression(updates.cronExpression)
+        ) {
+          throw new Error(
+            `Invalid cron expression: "${updates.cronExpression}"`,
+          );
+        }
+        let nextRunAt: Date | null | undefined;
+        if (
+          updates.cronExpression !== undefined ||
+          updates.timezone !== undefined
+        ) {
+          const existing = await backend.getCronSchedule(id);
+          const expr = updates.cronExpression ?? existing?.cronExpression ?? '';
+          const tz = updates.timezone ?? existing?.timezone ?? 'UTC';
+          nextRunAt = getNextCronOccurrence(expr, tz);
+        }
+        await backend.editCronSchedule(id, updates, nextRunAt);
+      },
+      config.verbose ?? false,
+    ),
+    enqueueDueCronJobs: withLogContext(
+      () => enqueueDueCronJobsImpl(),
       config.verbose ?? false,
     ),
 
@@ -213,9 +365,10 @@ const withLogContext =
   };
 
 export * from './types.js';
-export { QueueBackend } from './backend.js';
+export { QueueBackend, CronScheduleInput } from './backend.js';
 export { PostgresBackend } from './backends/postgres.js';
 export {
   validateHandlerSerializable,
   testHandlerSerialization,
 } from './handler-validation.js';
+export { getNextCronOccurrence, validateCronExpression } from './cron.js';

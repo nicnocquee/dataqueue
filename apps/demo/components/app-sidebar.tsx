@@ -24,6 +24,7 @@ import {
   Wrench,
   Monitor,
   LayoutDashboard,
+  CalendarClock,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -38,6 +39,7 @@ const featurePages = [
   { title: 'Waitpoints & Tokens', href: '/features/waitpoints', icon: Pause },
   { title: 'Step Memoization', href: '/features/steps', icon: Layers },
   { title: 'Job Events', href: '/features/events', icon: Activity },
+  { title: 'Cron Schedules', href: '/features/cron', icon: CalendarClock },
   { title: 'Maintenance', href: '/features/maintenance', icon: Wrench },
   { title: 'React SDK', href: '/features/react-sdk', icon: Monitor },
   {

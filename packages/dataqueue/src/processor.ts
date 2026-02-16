@@ -818,16 +818,18 @@ export async function processBatchWithHandlers<PayloadMap>(
 }
 
 /**
- * Start a job processor that continuously processes jobs
- * @param backend - The queue backend
- * @param handlers - The job handlers for this processor instance
+ * Start a job processor that continuously processes jobs.
+ * @param backend - The queue backend.
+ * @param handlers - The job handlers for this processor instance.
  * @param options - The processor options. Leave pollInterval empty to run only once. Use jobType to filter jobs by type.
- * @returns {Processor} The processor instance
+ * @param onBeforeBatch - Optional callback invoked before each batch. Used internally to enqueue due cron jobs.
+ * @returns {Processor} The processor instance.
  */
 export const createProcessor = <PayloadMap = any>(
   backend: QueueBackend,
   handlers: JobHandlers<PayloadMap>,
   options: ProcessorOptions = {},
+  onBeforeBatch?: () => Promise<void>,
 ): Processor => {
   const {
     workerId = `worker-${Math.random().toString(36).substring(2, 9)}`,
@@ -846,6 +848,22 @@ export const createProcessor = <PayloadMap = any>(
 
   const processJobs = async (): Promise<number> => {
     if (!running) return 0;
+
+    // Run pre-batch hook (e.g. enqueue due cron jobs) before processing
+    if (onBeforeBatch) {
+      try {
+        await onBeforeBatch();
+      } catch (hookError) {
+        log(`onBeforeBatch hook error: ${hookError}`);
+        if (onError) {
+          onError(
+            hookError instanceof Error
+              ? hookError
+              : new Error(String(hookError)),
+          );
+        }
+      }
+    }
 
     log(
       `Processing jobs with workerId: ${workerId}${jobType ? ` and jobType: ${Array.isArray(jobType) ? jobType.join(',') : jobType}` : ''}`,

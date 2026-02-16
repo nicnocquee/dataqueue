@@ -43,6 +43,7 @@
     "directory": "packages/dataqueue"
   },
   "dependencies": {
+    "croner": "^10.0.1",
     "pg": "^8.0.0",
     "pg-connection-string": "^2.9.1"
   },
@@ -53,8 +54,8 @@
     "ioredis": "^5.9.3",
     "node-pg-migrate": "^8.0.3",
     "pnpm": "^9.0.0",
-    "ts-node": "^10.9.2",
     "prettier": "^3.6.2",
+    "ts-node": "^10.9.2",
     "tsup": "^8.5.0",
     "turbo": "^1.13.0",
     "typescript": "^5.8.3",
