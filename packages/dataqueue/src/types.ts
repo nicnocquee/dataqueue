@@ -805,8 +805,6 @@ export interface JobQueue<PayloadMap> {
    * Tokens can be completed externally to resume a waiting job.
    * Can be called outside of handlers (e.g., from an API route).
    *
-   * **PostgreSQL backend only.** Throws if the backend is Redis.
-   *
    * @param options - Optional token configuration (timeout, tags).
    * @returns A token object with `id`.
    */
@@ -816,8 +814,6 @@ export interface JobQueue<PayloadMap> {
    * Complete a waitpoint token, resuming the associated waiting job.
    * Can be called from anywhere (API routes, external services, etc.).
    *
-   * **PostgreSQL backend only.** Throws if the backend is Redis.
-   *
    * @param tokenId - The ID of the token to complete.
    * @param data - Optional data to pass to the waiting handler.
    */
@@ -825,8 +821,6 @@ export interface JobQueue<PayloadMap> {
 
   /**
    * Retrieve a waitpoint token by its ID.
-   *
-   * **PostgreSQL backend only.** Throws if the backend is Redis.
    *
    * @param tokenId - The ID of the token to retrieve.
    * @returns The token record, or null if not found.
@@ -836,8 +830,6 @@ export interface JobQueue<PayloadMap> {
   /**
    * Expire timed-out waitpoint tokens and resume their associated jobs.
    * Call this periodically (e.g., alongside `reclaimStuckJobs`).
-   *
-   * **PostgreSQL backend only.** Throws if the backend is Redis.
    *
    * @returns The number of tokens that were expired.
    */

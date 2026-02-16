@@ -931,3 +931,584 @@ describe('Redis cron schedules integration', () => {
     expect(cronJobs).toHaveLength(2);
   });
 });
+
+describe('Redis parity features', () => {
+  let prefix: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+  let redisClient: any;
+
+  beforeEach(async () => {
+    prefix = createRedisTestPrefix();
+    const config: RedisJobQueueConfig = {
+      backend: 'redis',
+      redisConfig: {
+        url: REDIS_URL,
+        keyPrefix: prefix,
+      },
+    };
+    jobQueue = initJobQueue<TestPayloadMap>(config);
+    redisClient = jobQueue.getRedisClient();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await cleanupRedisPrefix(redisClient, prefix);
+    await redisClient.quit();
+  });
+
+  // ── Cursor-based pagination ─────────────────────────────────────────
+
+  it('getJobs supports cursor-based pagination', async () => {
+    // Setup
+    const id1 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'a@example.com' },
+    });
+    const id2 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'b@example.com' },
+    });
+    const id3 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'c@example.com' },
+    });
+
+    // Act — first page (no cursor, limit 2)
+    const page1 = await jobQueue.getJobs({}, 2);
+
+    // Assert
+    expect(page1).toHaveLength(2);
+    // Descending by id: id3, id2
+    expect(page1[0].id).toBe(id3);
+    expect(page1[1].id).toBe(id2);
+
+    // Act — second page using cursor
+    const page2 = await jobQueue.getJobs({ cursor: page1[1].id }, 2);
+
+    // Assert
+    expect(page2).toHaveLength(1);
+    expect(page2[0].id).toBe(id1);
+  });
+
+  // ── retryJob status validation ──────────────────────────────────────
+
+  it('retryJob only retries failed or processing jobs', async () => {
+    // Setup — completed job
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'retry-test' },
+    });
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+    const completedJob = await jobQueue.getJob(jobId);
+    expect(completedJob?.status).toBe('completed');
+
+    // Act — retry a completed job (should be a no-op)
+    await jobQueue.retryJob(jobId);
+
+    // Assert — still completed
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+  });
+
+  it('retryJob retries a failed job', async () => {
+    // Setup
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'fail-retry@example.com' },
+    });
+    const processor = jobQueue.createProcessor({
+      email: async () => {
+        throw new Error('boom');
+      },
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+    const failedJob = await jobQueue.getJob(jobId);
+    expect(failedJob?.status).toBe('failed');
+
+    // Act
+    await jobQueue.retryJob(jobId);
+
+    // Assert
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('pending');
+  });
+
+  // ── cancelJob with waiting status ───────────────────────────────────
+
+  it('cancelJob cancels a waiting job', async () => {
+    // Setup — add a job and manually set it to waiting
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'waiting-cancel@example.com' },
+    });
+    const futureMs = Date.now() + 60_000;
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'status',
+      'waiting',
+      'waitUntil',
+      futureMs.toString(),
+    );
+    await redisClient.srem(`${prefix}status:pending`, jobId.toString());
+    await redisClient.sadd(`${prefix}status:waiting`, jobId.toString());
+    await redisClient.zrem(`${prefix}queue`, jobId.toString());
+
+    // Act
+    await jobQueue.cancelJob(jobId);
+
+    // Assert
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('cancelled');
+    expect(job?.waitUntil).toBeNull();
+    expect(job?.waitTokenId).toBeNull();
+  });
+
+  // ── completeJob clears wait fields ──────────────────────────────────
+
+  it('completeJob clears wait-related fields', async () => {
+    // Setup
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'wait-clear' },
+    });
+    // Manually set wait fields
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'stepData',
+      JSON.stringify({ step1: { __completed: true, result: 42 } }),
+      'waitUntil',
+      (Date.now() + 60000).toString(),
+      'waitTokenId',
+      'wp_test',
+    );
+
+    // Process the job to completion
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    // Assert
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.stepData).toBeUndefined();
+    expect(job?.waitUntil).toBeNull();
+    expect(job?.waitTokenId).toBeNull();
+  });
+
+  // ── cleanupOldJobEvents ─────────────────────────────────────────────
+
+  it('cleanupOldJobEvents removes old events', async () => {
+    // Setup
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'events-cleanup@example.com' },
+    });
+
+    // Create an old event (31 days ago)
+    const oldMs = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    const oldEvent = JSON.stringify({
+      id: 999,
+      jobId,
+      eventType: 'added',
+      createdAt: oldMs,
+      metadata: null,
+    });
+    await redisClient.rpush(`${prefix}events:${jobId}`, oldEvent);
+
+    // Get events before cleanup
+    const eventsBefore = await jobQueue.getJobEvents(jobId);
+    const countBefore = eventsBefore.length;
+    expect(countBefore).toBeGreaterThanOrEqual(2); // at least the original 'added' + our old event
+
+    // Act
+    const deleted = await jobQueue.cleanupOldJobEvents(30);
+
+    // Assert
+    expect(deleted).toBeGreaterThanOrEqual(1);
+    const eventsAfter = await jobQueue.getJobEvents(jobId);
+    expect(eventsAfter.length).toBeLessThan(countBefore);
+  });
+
+  it('cleanupOldJobEvents removes orphaned event lists', async () => {
+    // Setup — create events for a non-existent job
+    const orphanEvent = JSON.stringify({
+      id: 888,
+      jobId: 99999,
+      eventType: 'added',
+      createdAt: Date.now(),
+      metadata: null,
+    });
+    await redisClient.rpush(`${prefix}events:99999`, orphanEvent);
+
+    // Act
+    const deleted = await jobQueue.cleanupOldJobEvents(30);
+
+    // Assert
+    expect(deleted).toBe(1);
+    const remaining = await redisClient.llen(`${prefix}events:99999`);
+    expect(remaining).toBe(0);
+  });
+
+  // ── Waiting system ──────────────────────────────────────────────────
+
+  it('createToken and getToken work via the public API', async () => {
+    // Act
+    const token = await jobQueue.createToken({ timeout: '10m' });
+
+    // Assert
+    expect(token.id).toMatch(/^wp_/);
+    const record = await jobQueue.getToken(token.id);
+    expect(record).not.toBeNull();
+    expect(record!.status).toBe('waiting');
+    expect(record!.timeoutAt).toBeInstanceOf(Date);
+  });
+
+  it('completeToken completes the token and provides data', async () => {
+    // Setup
+    const token = await jobQueue.createToken();
+
+    // Act
+    await jobQueue.completeToken(token.id, { result: 'success' });
+
+    // Assert
+    const record = await jobQueue.getToken(token.id);
+    expect(record!.status).toBe('completed');
+    expect(record!.output).toEqual({ result: 'success' });
+  });
+
+  it('completeToken resumes a waiting job', async () => {
+    // Setup — add a job, process it to create a token, then manually put it in waiting
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'token-resume@example.com' },
+    });
+
+    // Create a token associated with this job
+    // We need to use the backend directly since createToken from public API uses null jobId
+    const backend = jobQueue as any; // accessing the backend is tricky from the public API
+    // Instead, create a token, then manually associate it
+    const token = await jobQueue.createToken();
+
+    // Manually update the token's jobId and put the job in waiting state
+    await redisClient.hset(
+      `${prefix}waitpoint:${token.id}`,
+      'jobId',
+      jobId.toString(),
+    );
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'status',
+      'waiting',
+      'waitTokenId',
+      token.id,
+    );
+    await redisClient.srem(`${prefix}status:pending`, jobId.toString());
+    await redisClient.sadd(`${prefix}status:waiting`, jobId.toString());
+    await redisClient.zrem(`${prefix}queue`, jobId.toString());
+
+    // Act
+    await jobQueue.completeToken(token.id, { data: 42 });
+
+    // Assert
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('pending');
+    expect(job?.waitTokenId).toBeNull();
+  });
+
+  it('expireTimedOutTokens expires tokens past their timeout', async () => {
+    // Setup — create a token with a very short timeout, then backdate it
+    const token = await jobQueue.createToken({ timeout: '1s' });
+    // Force the timeout to be in the past
+    const pastMs = Date.now() - 10_000;
+    await redisClient.hset(
+      `${prefix}waitpoint:${token.id}`,
+      'timeoutAt',
+      pastMs.toString(),
+    );
+    await redisClient.zadd(`${prefix}waitpoint_timeout`, pastMs, token.id);
+
+    // Act
+    const expired = await jobQueue.expireTimedOutTokens();
+
+    // Assert
+    expect(expired).toBe(1);
+    const record = await jobQueue.getToken(token.id);
+    expect(record!.status).toBe('timed_out');
+  });
+
+  it('expireTimedOutTokens resumes a waiting job when its token times out', async () => {
+    // Setup
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'timeout-resume@example.com' },
+    });
+    const token = await jobQueue.createToken({ timeout: '1s' });
+
+    // Associate token with job and put job in waiting
+    await redisClient.hset(
+      `${prefix}waitpoint:${token.id}`,
+      'jobId',
+      jobId.toString(),
+    );
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'status',
+      'waiting',
+      'waitTokenId',
+      token.id,
+    );
+    await redisClient.srem(`${prefix}status:pending`, jobId.toString());
+    await redisClient.sadd(`${prefix}status:waiting`, jobId.toString());
+    await redisClient.zrem(`${prefix}queue`, jobId.toString());
+
+    // Force the timeout to be in the past
+    const pastMs = Date.now() - 10_000;
+    await redisClient.hset(
+      `${prefix}waitpoint:${token.id}`,
+      'timeoutAt',
+      pastMs.toString(),
+    );
+    await redisClient.zadd(`${prefix}waitpoint_timeout`, pastMs, token.id);
+
+    // Act
+    await jobQueue.expireTimedOutTokens();
+
+    // Assert
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('pending');
+    expect(job?.waitTokenId).toBeNull();
+  });
+
+  it('getNextBatch promotes time-based waiting jobs', async () => {
+    // Setup — add a job and manually set it to waiting with a past waitUntil
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'wait-promote' },
+    });
+    const pastMs = Date.now() - 5000;
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'status',
+      'waiting',
+      'waitUntil',
+      pastMs.toString(),
+      'waitTokenId',
+      'null',
+    );
+    await redisClient.srem(`${prefix}status:pending`, jobId.toString());
+    await redisClient.sadd(`${prefix}status:waiting`, jobId.toString());
+    await redisClient.zrem(`${prefix}queue`, jobId.toString());
+    await redisClient.zadd(`${prefix}waiting`, pastMs, jobId.toString());
+
+    // Act — process jobs, the waiting job should get promoted and processed
+    const handler = vi.fn(async () => {});
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: handler,
+    });
+    const processed = await processor.start();
+
+    // Assert
+    expect(processed).toBe(1);
+    expect(handler).toHaveBeenCalled();
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+  });
+
+  it('getNextBatch does NOT promote token-based waiting jobs', async () => {
+    // Setup — add a job waiting for a token
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'token-wait-nopromote' },
+    });
+    const pastMs = Date.now() - 5000;
+    await redisClient.hmset(
+      `${prefix}job:${jobId}`,
+      'status',
+      'waiting',
+      'waitUntil',
+      pastMs.toString(),
+      'waitTokenId',
+      'wp_some_token',
+    );
+    await redisClient.srem(`${prefix}status:pending`, jobId.toString());
+    await redisClient.sadd(`${prefix}status:waiting`, jobId.toString());
+    await redisClient.zrem(`${prefix}queue`, jobId.toString());
+    await redisClient.zadd(`${prefix}waiting`, pastMs, jobId.toString());
+
+    // Act
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    const processed = await processor.start();
+
+    // Assert — should not pick up the token-based waiting job
+    expect(processed).toBe(0);
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('waiting');
+  });
+
+  it('waitFor pauses a job and resumes after time elapses', async () => {
+    // Setup
+    let invocationCount = 0;
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'waitfor-test' },
+    });
+
+    // First invocation: handler calls ctx.waitFor
+    const handler = vi.fn(async (_payload: any, _signal: any, ctx: any) => {
+      invocationCount++;
+      if (invocationCount === 1) {
+        await ctx.waitFor({ seconds: 1 });
+      }
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: handler,
+    });
+    await processor.start();
+
+    // Assert — job should be in waiting state
+    let job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('waiting');
+    expect(job?.waitUntil).toBeInstanceOf(Date);
+    expect(job?.stepData).toBeDefined();
+
+    // Manually advance: set waitUntil to past and add to waiting sorted set
+    const pastMs = Date.now() - 5000;
+    await redisClient.hset(
+      `${prefix}job:${jobId}`,
+      'waitUntil',
+      pastMs.toString(),
+    );
+    await redisClient.zadd(`${prefix}waiting`, pastMs, jobId.toString());
+
+    // Second invocation: job resumes and completes
+    await processor.start();
+
+    // Assert
+    job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(invocationCount).toBe(2);
+  });
+
+  it('ctx.run memoizes step results across re-invocations', async () => {
+    // Setup
+    let invocationCount = 0;
+    let stepCallCount = 0;
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'memoize-test' },
+    });
+
+    const handler = vi.fn(async (_payload: any, _signal: any, ctx: any) => {
+      invocationCount++;
+      const result = await ctx.run('step1', async () => {
+        stepCallCount++;
+        return 42;
+      });
+      expect(result).toBe(42);
+
+      if (invocationCount === 1) {
+        await ctx.waitFor({ seconds: 1 });
+      }
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: handler,
+    });
+
+    // First invocation
+    await processor.start();
+    let job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('waiting');
+    expect(stepCallCount).toBe(1);
+
+    // Advance time
+    const pastMs = Date.now() - 5000;
+    await redisClient.hset(
+      `${prefix}job:${jobId}`,
+      'waitUntil',
+      pastMs.toString(),
+    );
+    await redisClient.zadd(`${prefix}waiting`, pastMs, jobId.toString());
+
+    // Second invocation
+    await processor.start();
+
+    // Assert — step1 should NOT have been called again (memoized)
+    job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(stepCallCount).toBe(1);
+    expect(invocationCount).toBe(2);
+  });
+
+  it('waitForToken pauses and resumes on token completion', async () => {
+    // Setup
+    let invocationCount = 0;
+    let tokenId: string;
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'token-wait-test' },
+    });
+
+    const handler = vi.fn(async (_payload: any, _signal: any, ctx: any) => {
+      invocationCount++;
+      if (invocationCount === 1) {
+        const token = await ctx.createToken({ timeout: '1h' });
+        tokenId = token.id;
+        const result = await ctx.waitForToken(token.id);
+        // Should not reach here on first invocation (throws WaitSignal)
+        expect(result.ok).toBe(true);
+      } else {
+        // Second invocation: token should be completed
+        // The step data should have the result cached
+      }
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: handler,
+    });
+
+    // First invocation — should pause on waitForToken
+    await processor.start();
+
+    let job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('waiting');
+    expect(job?.waitTokenId).toBe(tokenId!);
+
+    // Complete the token externally
+    await jobQueue.completeToken(tokenId!, { answer: 'yes' });
+
+    // Verify job is back to pending
+    job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('pending');
+
+    // Second invocation — should complete
+    await processor.start();
+
+    job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(invocationCount).toBe(2);
+  });
+});

@@ -18,8 +18,6 @@ import {
   WaitpointRecord,
 } from './types.js';
 import { PostgresBackend } from './backends/postgres.js';
-import { randomUUID } from 'crypto';
-import { log } from './log-context.js';
 
 /* Thin wrappers — every function creates a lightweight backend wrapper
    around the given pool and forwards the call.  The class itself holds
@@ -216,12 +214,9 @@ export const updateProgress = async (
   progress: number,
 ): Promise<void> => new PostgresBackend(pool).updateProgress(jobId, progress);
 
-// ── Wait support functions (PostgreSQL-only) ─────────────────────────────────
+// ── Wait support functions (backward-compatible delegates) ────────────────────
 
-/**
- * Transition a job to 'waiting' status with wait_until and/or wait_token_id.
- * Saves step_data so the handler can resume from where it left off.
- */
+/** @deprecated Use backend.waitJob() directly. Delegates to PostgresBackend. */
 export const waitJob = async (
   pool: Pool,
   jobId: number,
@@ -230,266 +225,37 @@ export const waitJob = async (
     waitTokenId?: string;
     stepData: Record<string, any>;
   },
-): Promise<void> => {
-  const client = await pool.connect();
-  try {
-    const result = await client.query(
-      `
-      UPDATE job_queue
-      SET status = 'waiting',
-          wait_until = $2,
-          wait_token_id = $3,
-          step_data = $4,
-          locked_at = NULL,
-          locked_by = NULL,
-          updated_at = NOW()
-      WHERE id = $1 AND status = 'processing'
-    `,
-      [
-        jobId,
-        options.waitUntil ?? null,
-        options.waitTokenId ?? null,
-        JSON.stringify(options.stepData),
-      ],
-    );
-    if (result.rowCount === 0) {
-      log(
-        `Job ${jobId} could not be set to waiting (may have been reclaimed or is no longer processing)`,
-      );
-      return;
-    }
-    await recordJobEvent(pool, jobId, JobEventType.Waiting, {
-      waitUntil: options.waitUntil?.toISOString() ?? null,
-      waitTokenId: options.waitTokenId ?? null,
-    });
-    log(`Job ${jobId} set to waiting`);
-  } catch (error) {
-    log(`Error setting job ${jobId} to waiting: ${error}`);
-    throw error;
-  } finally {
-    client.release();
-  }
-};
+): Promise<void> => new PostgresBackend(pool).waitJob(jobId, options);
 
-/**
- * Update step_data for a job. Called after each ctx.run() step completes
- * to persist intermediate progress.
- */
+/** @deprecated Use backend.updateStepData() directly. Delegates to PostgresBackend. */
 export const updateStepData = async (
   pool: Pool,
   jobId: number,
   stepData: Record<string, any>,
-): Promise<void> => {
-  const client = await pool.connect();
-  try {
-    await client.query(
-      `UPDATE job_queue SET step_data = $2, updated_at = NOW() WHERE id = $1`,
-      [jobId, JSON.stringify(stepData)],
-    );
-  } catch (error) {
-    log(`Error updating step_data for job ${jobId}: ${error}`);
-    // Best-effort: do not throw to avoid killing the running handler
-  } finally {
-    client.release();
-  }
-};
+): Promise<void> => new PostgresBackend(pool).updateStepData(jobId, stepData);
 
-/**
- * Parse a timeout string like '10m', '1h', '24h', '7d' into milliseconds.
- */
-/**
- * Maximum allowed timeout in milliseconds (~365 days).
- * Prevents overflow to Infinity when computing Date offsets.
- */
-const MAX_TIMEOUT_MS = 365 * 24 * 60 * 60 * 1000;
-
-function parseTimeoutString(timeout: string): number {
-  const match = timeout.match(/^(\d+)(s|m|h|d)$/);
-  if (!match) {
-    throw new Error(
-      `Invalid timeout format: "${timeout}". Expected format like "10m", "1h", "24h", "7d".`,
-    );
-  }
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  let ms: number;
-  switch (unit) {
-    case 's':
-      ms = value * 1000;
-      break;
-    case 'm':
-      ms = value * 60 * 1000;
-      break;
-    case 'h':
-      ms = value * 60 * 60 * 1000;
-      break;
-    case 'd':
-      ms = value * 24 * 60 * 60 * 1000;
-      break;
-    default:
-      throw new Error(`Unknown timeout unit: "${unit}"`);
-  }
-  if (!Number.isFinite(ms) || ms > MAX_TIMEOUT_MS) {
-    throw new Error(
-      `Timeout value "${timeout}" is too large. Maximum allowed is 365 days.`,
-    );
-  }
-  return ms;
-}
-
-/**
- * Create a waitpoint token in the database.
- * The token can be used to pause a job until an external signal completes it.
- *
- * @param pool - The database pool
- * @param jobId - The job ID to associate with the token (null if created outside a handler)
- * @param options - Optional timeout and tags
- * @returns The created waitpoint token
- */
+/** @deprecated Use backend.createWaitpoint() directly. Delegates to PostgresBackend. */
 export const createWaitpoint = async (
   pool: Pool,
   jobId: number | null,
   options?: { timeout?: string; tags?: string[] },
-): Promise<{ id: string }> => {
-  const client = await pool.connect();
-  try {
-    const id = `wp_${randomUUID()}`;
-    let timeoutAt: Date | null = null;
+): Promise<{ id: string }> =>
+  new PostgresBackend(pool).createWaitpoint(jobId, options);
 
-    if (options?.timeout) {
-      const ms = parseTimeoutString(options.timeout);
-      timeoutAt = new Date(Date.now() + ms);
-    }
-
-    await client.query(
-      `INSERT INTO waitpoints (id, job_id, status, timeout_at, tags) VALUES ($1, $2, 'waiting', $3, $4)`,
-      [id, jobId, timeoutAt, options?.tags ?? null],
-    );
-
-    log(`Created waitpoint ${id} for job ${jobId}`);
-    return { id };
-  } catch (error) {
-    log(`Error creating waitpoint: ${error}`);
-    throw error;
-  } finally {
-    client.release();
-  }
-};
-
-/**
- * Complete a waitpoint token, optionally providing output data.
- * This also moves the associated job from 'waiting' back to 'pending' so
- * it gets picked up by the polling loop.
- */
+/** @deprecated Use backend.completeWaitpoint() directly. Delegates to PostgresBackend. */
 export const completeWaitpoint = async (
   pool: Pool,
   tokenId: string,
   data?: any,
-): Promise<void> => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+): Promise<void> => new PostgresBackend(pool).completeWaitpoint(tokenId, data);
 
-    // Update the waitpoint
-    const wpResult = await client.query(
-      `UPDATE waitpoints SET status = 'completed', output = $2, completed_at = NOW()
-       WHERE id = $1 AND status = 'waiting'
-       RETURNING job_id`,
-      [tokenId, data != null ? JSON.stringify(data) : null],
-    );
-
-    if (wpResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      log(`Waitpoint ${tokenId} not found or already completed`);
-      return;
-    }
-
-    const jobId = wpResult.rows[0].job_id;
-
-    // Move the associated job back to 'pending' so it gets picked up
-    if (jobId != null) {
-      await client.query(
-        `UPDATE job_queue
-         SET status = 'pending', wait_token_id = NULL, wait_until = NULL, updated_at = NOW()
-         WHERE id = $1 AND status = 'waiting'`,
-        [jobId],
-      );
-    }
-
-    await client.query('COMMIT');
-    log(`Completed waitpoint ${tokenId} for job ${jobId}`);
-  } catch (error) {
-    await client.query('ROLLBACK');
-    log(`Error completing waitpoint ${tokenId}: ${error}`);
-    throw error;
-  } finally {
-    client.release();
-  }
-};
-
-/**
- * Retrieve a waitpoint token by its ID.
- */
+/** @deprecated Use backend.getWaitpoint() directly. Delegates to PostgresBackend. */
 export const getWaitpoint = async (
   pool: Pool,
   tokenId: string,
-): Promise<WaitpointRecord | null> => {
-  const client = await pool.connect();
-  try {
-    const result = await client.query(
-      `SELECT id, job_id AS "jobId", status, output, timeout_at AS "timeoutAt", created_at AS "createdAt", completed_at AS "completedAt", tags FROM waitpoints WHERE id = $1`,
-      [tokenId],
-    );
-    if (result.rows.length === 0) return null;
-    return result.rows[0] as WaitpointRecord;
-  } catch (error) {
-    log(`Error getting waitpoint ${tokenId}: ${error}`);
-    throw error;
-  } finally {
-    client.release();
-  }
-};
+): Promise<WaitpointRecord | null> =>
+  new PostgresBackend(pool).getWaitpoint(tokenId);
 
-/**
- * Expire timed-out waitpoint tokens and move their associated jobs back to 'pending'.
- * Should be called periodically (e.g., alongside reclaimStuckJobs).
- */
-export const expireTimedOutWaitpoints = async (pool: Pool): Promise<number> => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    // Find and expire timed-out waitpoints
-    const result = await client.query(
-      `UPDATE waitpoints
-       SET status = 'timed_out'
-       WHERE status = 'waiting' AND timeout_at IS NOT NULL AND timeout_at <= NOW()
-       RETURNING id, job_id`,
-    );
-
-    // Move associated jobs back to 'pending'
-    for (const row of result.rows) {
-      if (row.job_id != null) {
-        await client.query(
-          `UPDATE job_queue
-           SET status = 'pending', wait_token_id = NULL, wait_until = NULL, updated_at = NOW()
-           WHERE id = $1 AND status = 'waiting'`,
-          [row.job_id],
-        );
-      }
-    }
-
-    await client.query('COMMIT');
-    const count = result.rowCount || 0;
-    if (count > 0) {
-      log(`Expired ${count} timed-out waitpoints`);
-    }
-    return count;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    log(`Error expiring timed-out waitpoints: ${error}`);
-    throw error;
-  } finally {
-    client.release();
-  }
-};
+/** @deprecated Use backend.expireTimedOutWaitpoints() directly. Delegates to PostgresBackend. */
+export const expireTimedOutWaitpoints = async (pool: Pool): Promise<number> =>
+  new PostgresBackend(pool).expireTimedOutWaitpoints();

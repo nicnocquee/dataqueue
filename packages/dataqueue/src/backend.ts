@@ -9,6 +9,8 @@ import {
   CronScheduleRecord,
   CronScheduleStatus,
   EditCronScheduleOptions,
+  WaitpointRecord,
+  CreateTokenOptions,
 } from './types.js';
 
 /**
@@ -221,6 +223,70 @@ export interface QueueBackend {
     lastJobId: number,
     nextRunAt: Date | null,
   ): Promise<void>;
+
+  // ── Wait / step-data support ────────────────────────────────────────
+
+  /**
+   * Transition a job from 'processing' to 'waiting' status.
+   * Persists step data so the handler can resume from where it left off.
+   *
+   * @param jobId - The job to pause.
+   * @param options - Wait configuration including optional waitUntil date, token ID, and step data.
+   */
+  waitJob(
+    jobId: number,
+    options: {
+      waitUntil?: Date;
+      waitTokenId?: string;
+      stepData: Record<string, any>;
+    },
+  ): Promise<void>;
+
+  /**
+   * Persist step data for a job. Called after each `ctx.run()` step completes
+   * to save intermediate progress. Best-effort: should not throw.
+   *
+   * @param jobId - The job to update.
+   * @param stepData - The step data to persist.
+   */
+  updateStepData(jobId: number, stepData: Record<string, any>): Promise<void>;
+
+  /**
+   * Create a waitpoint token that can pause a job until an external signal completes it.
+   *
+   * @param jobId - The job ID to associate with the token (null if created outside a handler).
+   * @param options - Optional timeout string (e.g. '10m', '1h') and tags.
+   * @returns The created waitpoint with its unique ID.
+   */
+  createWaitpoint(
+    jobId: number | null,
+    options?: CreateTokenOptions,
+  ): Promise<{ id: string }>;
+
+  /**
+   * Complete a waitpoint token, optionally providing output data.
+   * Moves the associated job from 'waiting' back to 'pending' so it gets picked up.
+   *
+   * @param tokenId - The waitpoint token ID to complete.
+   * @param data - Optional data to pass to the waiting handler.
+   */
+  completeWaitpoint(tokenId: string, data?: any): Promise<void>;
+
+  /**
+   * Retrieve a waitpoint token by its ID.
+   *
+   * @param tokenId - The waitpoint token ID to look up.
+   * @returns The waitpoint record, or null if not found.
+   */
+  getWaitpoint(tokenId: string): Promise<WaitpointRecord | null>;
+
+  /**
+   * Expire timed-out waitpoint tokens and move their associated jobs back to 'pending'.
+   * Should be called periodically (e.g., alongside reclaimStuckJobs).
+   *
+   * @returns The number of tokens that were expired.
+   */
+  expireTimedOutWaitpoints(): Promise<number>;
 
   // ── Internal helpers ──────────────────────────────────────────────────
 

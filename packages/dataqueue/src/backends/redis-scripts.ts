@@ -15,6 +15,10 @@
  *   dq:idempotency:{key}   – String mapping idempotency key → job ID
  *   dq:all                 – Sorted Set of all jobs (score = createdAt ms, for ordering)
  *   dq:event_id_seq        – INCR counter for event IDs
+ *   dq:waiting             – Sorted Set of time-based waiting job IDs (score = waitUntil ms)
+ *   dq:waitpoint:{id}      – Hash with waitpoint fields (id, jobId, status, output, timeoutAt, etc.)
+ *   dq:waitpoint_timeout   – Sorted Set of waitpoint IDs with timeouts (score = timeoutAt ms)
+ *   dq:waitpoint_id_seq    – INCR counter for waitpoint sequence (used if needed)
  */
 
 // ─── Score helpers ──────────────────────────────────────────────────────
@@ -82,7 +86,10 @@ redis.call('HMSET', jobKey,
   'lastFailedAt', 'null',
   'lastCancelledAt', 'null',
   'tags', tagsJson,
-  'idempotencyKey', idempotencyKey
+  'idempotencyKey', idempotencyKey,
+  'waitUntil', 'null',
+  'waitTokenId', 'null',
+  'stepData', 'null'
 )
 
 -- Status index
@@ -174,7 +181,25 @@ for _, jobId in ipairs(retries) do
   redis.call('ZREM', prefix .. 'retry', jobId)
 end
 
--- 3. Parse job type filter
+-- 3. Move ready waiting jobs (time-based, no token) into queue
+local waitingJobs = redis.call('ZRANGEBYSCORE', prefix .. 'waiting', '-inf', nowMs, 'LIMIT', 0, 200)
+for _, jobId in ipairs(waitingJobs) do
+  local jk = prefix .. 'job:' .. jobId
+  local status = redis.call('HGET', jk, 'status')
+  local waitTokenId = redis.call('HGET', jk, 'waitTokenId')
+  if status == 'waiting' and (waitTokenId == false or waitTokenId == 'null') then
+    local pri = tonumber(redis.call('HGET', jk, 'priority') or '0')
+    local ca = tonumber(redis.call('HGET', jk, 'createdAt'))
+    local score = pri * ${SCORE_RANGE} + (${SCORE_RANGE} - ca)
+    redis.call('ZADD', prefix .. 'queue', score, jobId)
+    redis.call('SREM', prefix .. 'status:waiting', jobId)
+    redis.call('SADD', prefix .. 'status:pending', jobId)
+    redis.call('HMSET', jk, 'status', 'pending', 'waitUntil', 'null')
+  end
+  redis.call('ZREM', prefix .. 'waiting', jobId)
+end
+
+-- 4. Parse job type filter
 local filterTypes = nil
 if jobTypeFilter ~= "null" then
   -- Could be a JSON array or a plain string
@@ -187,7 +212,7 @@ if jobTypeFilter ~= "null" then
   end
 end
 
--- 4. Pop candidates from queue (highest score first)
+-- 5. Pop candidates from queue (highest score first)
 -- We pop more than batchSize because some may be filtered out
 local popCount = batchSize * 3
 local candidates = redis.call('ZPOPMAX', prefix .. 'queue', popCount)
@@ -277,7 +302,10 @@ local jk = prefix .. 'job:' .. jobId
 redis.call('HMSET', jk,
   'status', 'completed',
   'updatedAt', nowMs,
-  'completedAt', nowMs
+  'completedAt', nowMs,
+  'stepData', 'null',
+  'waitUntil', 'null',
+  'waitTokenId', 'null'
 )
 redis.call('SREM', prefix .. 'status:processing', jobId)
 redis.call('SADD', prefix .. 'status:completed', jobId)
@@ -338,7 +366,7 @@ return 1
 `;
 
 /**
- * RETRY JOB
+ * RETRY JOB (only if failed or processing)
  * KEYS: [prefix]
  * ARGV: [jobId, nowMs]
  */
@@ -349,6 +377,7 @@ local nowMs = tonumber(ARGV[2])
 local jk = prefix .. 'job:' .. jobId
 
 local oldStatus = redis.call('HGET', jk, 'status')
+if oldStatus ~= 'failed' and oldStatus ~= 'processing' then return 0 end
 
 redis.call('HMSET', jk,
   'status', 'pending',
@@ -360,9 +389,7 @@ redis.call('HMSET', jk,
 )
 
 -- Remove from old status, add to pending
-if oldStatus then
-  redis.call('SREM', prefix .. 'status:' .. oldStatus, jobId)
-end
+redis.call('SREM', prefix .. 'status:' .. oldStatus, jobId)
 redis.call('SADD', prefix .. 'status:pending', jobId)
 
 -- Remove from retry sorted set if present
@@ -378,7 +405,7 @@ return 1
 `;
 
 /**
- * CANCEL JOB (only if pending)
+ * CANCEL JOB (only if pending or waiting)
  * KEYS: [prefix]
  * ARGV: [jobId, nowMs]
  */
@@ -389,18 +416,21 @@ local nowMs = ARGV[2]
 local jk = prefix .. 'job:' .. jobId
 
 local status = redis.call('HGET', jk, 'status')
-if status ~= 'pending' then return 0 end
+if status ~= 'pending' and status ~= 'waiting' then return 0 end
 
 redis.call('HMSET', jk,
   'status', 'cancelled',
   'updatedAt', nowMs,
-  'lastCancelledAt', nowMs
+  'lastCancelledAt', nowMs,
+  'waitUntil', 'null',
+  'waitTokenId', 'null'
 )
-redis.call('SREM', prefix .. 'status:pending', jobId)
+redis.call('SREM', prefix .. 'status:' .. status, jobId)
 redis.call('SADD', prefix .. 'status:cancelled', jobId)
--- Remove from queue / delayed
+-- Remove from queue / delayed / waiting
 redis.call('ZREM', prefix .. 'queue', jobId)
 redis.call('ZREM', prefix .. 'delayed', jobId)
+redis.call('ZREM', prefix .. 'waiting', jobId)
 
 return 1
 `;
@@ -530,6 +560,148 @@ for i = 2, #ARGV do
 
     count = count + 1
   end
+end
+
+return count
+`;
+
+/**
+ * WAIT JOB — Transition a job from 'processing' to 'waiting'.
+ * KEYS: [prefix]
+ * ARGV: [jobId, waitUntilMs, waitTokenId, stepDataJson, nowMs]
+ * waitUntilMs: timestamp ms or "null"
+ * waitTokenId: string or "null"
+ * Returns: 1 if successful, 0 if job was not in 'processing' state
+ */
+export const WAIT_JOB_SCRIPT = `
+local prefix = KEYS[1]
+local jobId = ARGV[1]
+local waitUntilMs = ARGV[2]
+local waitTokenId = ARGV[3]
+local stepDataJson = ARGV[4]
+local nowMs = ARGV[5]
+local jk = prefix .. 'job:' .. jobId
+
+local status = redis.call('HGET', jk, 'status')
+if status ~= 'processing' then return 0 end
+
+redis.call('HMSET', jk,
+  'status', 'waiting',
+  'waitUntil', waitUntilMs,
+  'waitTokenId', waitTokenId,
+  'stepData', stepDataJson,
+  'lockedAt', 'null',
+  'lockedBy', 'null',
+  'updatedAt', nowMs
+)
+redis.call('SREM', prefix .. 'status:processing', jobId)
+redis.call('SADD', prefix .. 'status:waiting', jobId)
+
+-- Add to waiting sorted set if time-based wait
+if waitUntilMs ~= 'null' then
+  redis.call('ZADD', prefix .. 'waiting', tonumber(waitUntilMs), jobId)
+end
+
+return 1
+`;
+
+/**
+ * COMPLETE WAITPOINT — Mark a waitpoint as completed and resume associated job.
+ * KEYS: [prefix]
+ * ARGV: [tokenId, outputJson, nowMs]
+ * outputJson: JSON string or "null"
+ * Returns: 1 if successful, 0 if waitpoint not found or already completed
+ */
+export const COMPLETE_WAITPOINT_SCRIPT = `
+local prefix = KEYS[1]
+local tokenId = ARGV[1]
+local outputJson = ARGV[2]
+local nowMs = ARGV[3]
+local wpk = prefix .. 'waitpoint:' .. tokenId
+
+local wpStatus = redis.call('HGET', wpk, 'status')
+if not wpStatus or wpStatus ~= 'waiting' then return 0 end
+
+redis.call('HMSET', wpk,
+  'status', 'completed',
+  'output', outputJson,
+  'completedAt', nowMs
+)
+
+-- Move associated job back to pending
+local jobId = redis.call('HGET', wpk, 'jobId')
+if jobId and jobId ~= 'null' then
+  local jk = prefix .. 'job:' .. jobId
+  local jobStatus = redis.call('HGET', jk, 'status')
+  if jobStatus == 'waiting' then
+    redis.call('HMSET', jk,
+      'status', 'pending',
+      'waitTokenId', 'null',
+      'waitUntil', 'null',
+      'updatedAt', nowMs
+    )
+    redis.call('SREM', prefix .. 'status:waiting', jobId)
+    redis.call('SADD', prefix .. 'status:pending', jobId)
+    redis.call('ZREM', prefix .. 'waiting', jobId)
+
+    -- Re-add to queue
+    local priority = tonumber(redis.call('HGET', jk, 'priority') or '0')
+    local createdAt = tonumber(redis.call('HGET', jk, 'createdAt'))
+    local score = priority * ${SCORE_RANGE} + (${SCORE_RANGE} - createdAt)
+    redis.call('ZADD', prefix .. 'queue', score, jobId)
+  end
+end
+
+return 1
+`;
+
+/**
+ * EXPIRE TIMED OUT WAITPOINTS — Expire waitpoints past their timeout and resume jobs.
+ * KEYS: [prefix]
+ * ARGV: [nowMs]
+ * Returns: count of expired waitpoints
+ */
+export const EXPIRE_TIMED_OUT_WAITPOINTS_SCRIPT = `
+local prefix = KEYS[1]
+local nowMs = tonumber(ARGV[1])
+
+local expiredIds = redis.call('ZRANGEBYSCORE', prefix .. 'waitpoint_timeout', '-inf', nowMs)
+local count = 0
+
+for _, tokenId in ipairs(expiredIds) do
+  local wpk = prefix .. 'waitpoint:' .. tokenId
+  local wpStatus = redis.call('HGET', wpk, 'status')
+  if wpStatus == 'waiting' then
+    redis.call('HMSET', wpk,
+      'status', 'timed_out'
+    )
+
+    -- Move associated job back to pending
+    local jobId = redis.call('HGET', wpk, 'jobId')
+    if jobId and jobId ~= 'null' then
+      local jk = prefix .. 'job:' .. jobId
+      local jobStatus = redis.call('HGET', jk, 'status')
+      if jobStatus == 'waiting' then
+        redis.call('HMSET', jk,
+          'status', 'pending',
+          'waitTokenId', 'null',
+          'waitUntil', 'null',
+          'updatedAt', nowMs
+        )
+        redis.call('SREM', prefix .. 'status:waiting', jobId)
+        redis.call('SADD', prefix .. 'status:pending', jobId)
+        redis.call('ZREM', prefix .. 'waiting', jobId)
+
+        local priority = tonumber(redis.call('HGET', jk, 'priority') or '0')
+        local createdAt = tonumber(redis.call('HGET', jk, 'createdAt'))
+        local score = priority * ${SCORE_RANGE} + (${SCORE_RANGE} - createdAt)
+        redis.call('ZADD', prefix .. 'queue', score, jobId)
+      end
+    end
+
+    count = count + 1
+  end
+  redis.call('ZREM', prefix .. 'waitpoint_timeout', tokenId)
 end
 
 return count

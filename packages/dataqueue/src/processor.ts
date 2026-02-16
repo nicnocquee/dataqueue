@@ -1,5 +1,4 @@
 import { Worker } from 'worker_threads';
-import { Pool } from 'pg';
 import {
   JobRecord,
   ProcessorOptions,
@@ -15,68 +14,7 @@ import {
   WaitTokenResult,
 } from './types.js';
 import { QueueBackend } from './backend.js';
-import { PostgresBackend } from './backends/postgres.js';
-import {
-  waitJob,
-  updateStepData,
-  createWaitpoint,
-  getWaitpoint,
-} from './queue.js';
 import { log, setLogContext } from './log-context.js';
-
-/**
- * Try to extract the underlying pg Pool from a QueueBackend.
- * Returns null for non-PostgreSQL backends.
- */
-function tryExtractPool(backend: QueueBackend): Pool | null {
-  if (backend instanceof PostgresBackend) {
-    return backend.getPool();
-  }
-  return null;
-}
-
-/**
- * Build a JobContext without wait support (for non-PostgreSQL backends).
- * prolong/onTimeout work normally; wait-related methods throw helpful errors.
- */
-function buildBasicContext(
-  backend: QueueBackend,
-  jobId: number,
-  baseCtx: {
-    prolong: JobContext['prolong'];
-    onTimeout: JobContext['onTimeout'];
-  },
-): JobContext {
-  const waitError = () =>
-    new Error(
-      'Wait features (waitFor, waitUntil, createToken, waitForToken, ctx.run) are currently only supported with the PostgreSQL backend.',
-    );
-  return {
-    prolong: baseCtx.prolong,
-    onTimeout: baseCtx.onTimeout,
-    run: async <T>(_stepName: string, fn: () => Promise<T>): Promise<T> => {
-      // Without PostgreSQL, just execute the function directly (no persistence)
-      return fn();
-    },
-    waitFor: async () => {
-      throw waitError();
-    },
-    waitUntil: async () => {
-      throw waitError();
-    },
-    createToken: async () => {
-      throw waitError();
-    },
-    waitForToken: async () => {
-      throw waitError();
-    },
-    setProgress: async (percent: number) => {
-      if (percent < 0 || percent > 100)
-        throw new Error('Progress must be between 0 and 100');
-      await backend.updateProgress(jobId, Math.round(percent));
-    },
-  };
-}
 
 /**
  * Validates that a handler can be serialized for worker thread execution.
@@ -388,7 +326,7 @@ function createNoOpContext(
  * Marks pending waits as completed and fetches token outputs.
  */
 async function resolveCompletedWaits(
-  pool: Pool,
+  backend: QueueBackend,
   stepData: Record<string, any>,
 ): Promise<void> {
   for (const key of Object.keys(stepData)) {
@@ -401,7 +339,7 @@ async function resolveCompletedWaits(
       stepData[key] = { ...entry, completed: true };
     } else if (entry.type === 'token' && entry.tokenId) {
       // Token-based wait -- fetch the waitpoint result
-      const wp = await getWaitpoint(pool, entry.tokenId);
+      const wp = await backend.getWaitpoint(entry.tokenId);
       if (wp && wp.status === 'completed') {
         stepData[key] = {
           ...entry,
@@ -422,10 +360,10 @@ async function resolveCompletedWaits(
 
 /**
  * Build the extended JobContext with step tracking and wait support.
+ * Works with any QueueBackend (Postgres or Redis).
  */
 function buildWaitContext(
   backend: QueueBackend,
-  pool: Pool,
   jobId: number,
   stepData: Record<string, any>,
   baseCtx: {
@@ -455,7 +393,7 @@ function buildWaitContext(
 
       // Persist step result
       stepData[stepName] = { __completed: true, result };
-      await updateStepData(pool, jobId, stepData);
+      await backend.updateStepData(jobId, stepData);
 
       return result;
     },
@@ -498,7 +436,7 @@ function buildWaitContext(
     },
 
     createToken: async (options?) => {
-      const token = await createWaitpoint(pool, jobId, options);
+      const token = await backend.createWaitpoint(jobId, options);
       return token;
     },
 
@@ -517,7 +455,7 @@ function buildWaitContext(
       }
 
       // Check if the token is already completed (e.g., completed while job was still processing)
-      const wp = await getWaitpoint(pool, tokenId);
+      const wp = await backend.getWaitpoint(tokenId);
       if (wp && wp.status === 'completed') {
         const result: WaitTokenResult<T> = {
           ok: true,
@@ -529,7 +467,7 @@ function buildWaitContext(
           completed: true,
           result,
         };
-        await updateStepData(pool, jobId, stepData);
+        await backend.updateStepData(jobId, stepData);
         return result;
       }
       if (wp && wp.status === 'timed_out') {
@@ -543,7 +481,7 @@ function buildWaitContext(
           completed: true,
           result,
         };
-        await updateStepData(pool, jobId, stepData);
+        await backend.updateStepData(jobId, stepData);
         return result;
       }
 
@@ -591,17 +529,14 @@ export async function processJobWithHandlers<
   // Load step data (may contain completed steps from previous invocations)
   const stepData: Record<string, any> = { ...(job.stepData || {}) };
 
-  // Try to get pool for wait features (PostgreSQL-only)
-  const pool = tryExtractPool(backend);
-
   // If resuming from a wait, resolve any pending wait entries
   const hasStepHistory = Object.keys(stepData).some((k) =>
     k.startsWith('__wait_'),
   );
-  if (hasStepHistory && pool) {
-    await resolveCompletedWaits(pool, stepData);
+  if (hasStepHistory) {
+    await resolveCompletedWaits(backend, stepData);
     // Persist the resolved step data
-    await updateStepData(pool, job.id, stepData);
+    await backend.updateStepData(job.id, stepData);
   }
 
   // Per-job timeout logic
@@ -685,10 +620,8 @@ export async function processJobWithHandlers<
             },
           };
 
-      // Build context: full wait support for PostgreSQL, basic for others
-      const ctx = pool
-        ? buildWaitContext(backend, pool, job.id, stepData, baseCtx)
-        : buildBasicContext(backend, job.id, baseCtx);
+      // Build context: full wait support for all backends
+      const ctx = buildWaitContext(backend, job.id, stepData, baseCtx);
 
       // If forceKillOnTimeout was set but timeoutMs was missing, warn
       if (forceKillOnTimeout && !hasTimeout) {
@@ -720,22 +653,10 @@ export async function processJobWithHandlers<
 
     // Check if this is a WaitSignal (not a real error)
     if (error instanceof WaitSignal) {
-      if (!pool) {
-        // Wait signals should never happen with non-PostgreSQL backends
-        // since the context methods throw, but guard just in case
-        await backend.failJob(
-          job.id,
-          new Error(
-            'WaitSignal received but wait features require the PostgreSQL backend.',
-          ),
-          FailureReason.HandlerError,
-        );
-        return;
-      }
       log(
         `Job ${job.id} entering wait: type=${error.type}, waitUntil=${error.waitUntil?.toISOString() ?? 'none'}, tokenId=${error.tokenId ?? 'none'}`,
       );
-      await waitJob(pool, job.id, {
+      await backend.waitJob(job.id, {
         waitUntil: error.waitUntil,
         waitTokenId: error.tokenId,
         stepData: error.stepData,
