@@ -40,6 +40,11 @@
   ],
   "author": "Nico Prananta",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicnocquee/dataqueue.git",
+    "directory": "packages/dataqueue"
+  },
   "dependencies": {
     "pg": "^8.0.0",
     "pg-connection-string": "^2.9.1"
