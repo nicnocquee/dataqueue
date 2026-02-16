@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { retryJob } from '@/app/jobs/retry';
 import { cancelSingleJob } from '@/app/jobs/cancel-job';
 import { completeToken } from '@/app/jobs/complete-token';
-import { processJobs } from '@/app/jobs/process-jobs';
 import { Loader2 } from 'lucide-react';
 
 type SerializedJob = {
@@ -84,19 +83,6 @@ export function JobDetailActions({ job }: { job: SerializedJob }) {
           </Button>
         </div>
       )}
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={isPending}
-        onClick={() =>
-          startTransition(async () => {
-            await processJobs();
-            setResult('Processing triggered');
-          })
-        }
-      >
-        Process Jobs Now
-      </Button>
       {result && (
         <span className="text-sm text-muted-foreground">{result}</span>
       )}

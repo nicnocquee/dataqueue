@@ -11,8 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { useState, useTransition } from 'react';
 import { addGenericJob } from '@/app/jobs/add-job';
-import { processJobs } from '@/app/jobs/process-jobs';
-import { Loader2, Info } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 type JobDefinition = {
   label: string;
@@ -125,25 +124,7 @@ export function QuickActions() {
               {job.label}
             </Button>
           ))}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => {
-              startTransition(async () => {
-                await processJobs();
-              });
-            }}
-          >
-            {isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-            Process Jobs Now
-          </Button>
         </div>
-        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Info className="h-3 w-3 shrink-0" />
-          This demo has no cron job or long-running worker. Click &quot;Process
-          Jobs Now&quot; to manually trigger job processing.
-        </p>
       </div>
 
       <Dialog

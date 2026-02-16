@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { addGenericJob } from '@/app/jobs/add-job';
-import { processJobs } from '@/app/jobs/process-jobs';
 import { Loader2 } from 'lucide-react';
 
 export function TimeoutDemo() {
@@ -162,21 +161,6 @@ export function TimeoutDemo() {
               </CardContent>
             </Card>
           </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isPending}
-            onClick={() =>
-              startTransition(async () => {
-                await processJobs();
-                setResult('Processing triggered');
-              })
-            }
-          >
-            {isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-            Process Jobs Now
-          </Button>
 
           {result && <p className="text-sm text-muted-foreground">{result}</p>}
         </CardContent>

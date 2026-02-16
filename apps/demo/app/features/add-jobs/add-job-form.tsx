@@ -20,7 +20,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { addGenericJob } from '@/app/jobs/add-job';
-import { processJobs } from '@/app/jobs/process-jobs';
 import { useState, useTransition } from 'react';
 import { Loader2 } from 'lucide-react';
 
@@ -98,13 +97,6 @@ export function AddJobForm() {
       } catch (err) {
         setResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
       }
-    });
-  };
-
-  const handleProcess = () => {
-    startTransition(async () => {
-      await processJobs();
-      setResult('Processing triggered');
     });
   };
 
@@ -225,14 +217,6 @@ export function AddJobForm() {
           <Button onClick={handleSubmit} disabled={isPending}>
             {isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
             Add Job
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleProcess}
-            disabled={isPending}
-          >
-            {isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-            Process Jobs Now
           </Button>
         </div>
 
