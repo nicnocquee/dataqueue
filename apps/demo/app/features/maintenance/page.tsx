@@ -8,6 +8,16 @@ export default function MaintenancePage() {
     <FeaturePage
       title="Maintenance"
       description="Keep your queue healthy with built-in maintenance operations: clean up old completed jobs, clean up old event logs, and reclaim jobs stuck in processing state."
+      docsLinks={[
+        {
+          label: 'Cleanup Jobs',
+          url: 'https://docs.dataqueue.dev/usage/cleanup-jobs',
+        },
+        {
+          label: 'Reclaim Jobs',
+          url: 'https://docs.dataqueue.dev/usage/reclaim-jobs',
+        },
+      ]}
     >
       <RefreshPeriodically action={refresh} interval={5000} />
       <MaintenanceActions />

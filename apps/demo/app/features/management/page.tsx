@@ -18,6 +18,20 @@ export default async function ManagementPage() {
     <FeaturePage
       title="Job Management"
       description="Manage individual jobs: retry failed or cancelled jobs, cancel pending jobs, and edit pending job properties (priority, tags, schedule)."
+      docsLinks={[
+        {
+          label: 'Failed Jobs',
+          url: 'https://docs.dataqueue.dev/usage/failed-jobs',
+        },
+        {
+          label: 'Cancel Jobs',
+          url: 'https://docs.dataqueue.dev/usage/cancel-jobs',
+        },
+        {
+          label: 'Edit Jobs',
+          url: 'https://docs.dataqueue.dev/usage/edit-jobs',
+        },
+      ]}
     >
       <RefreshPeriodically action={refresh} interval={5000} />
       <ManagementActions
