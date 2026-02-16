@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { addGenericJob } from '@/app/jobs/add-job';
-import { Loader2 } from 'lucide-react';
 
 export function TimeoutDemo() {
   const [isPending, startTransition] = useTransition();

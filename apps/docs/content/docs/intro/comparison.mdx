@@ -9,7 +9,7 @@ Choosing a job queue depends on your stack, infrastructure preferences, and the 
 | ----------------------- | ----------------------------------------------- | ------------------------------------------- | --------------------------------------- |
 | **Backend**             | PostgreSQL or Redis                             | Redis only                                  | Cloud or self-hosted (Postgres + Redis) |
 | **Type Safety**         | Full generic `PayloadMap`                       | Basic types                                 | Full TypeScript tasks                   |
-| **Scheduling**          | `runAt`, `waitFor`, `waitUntil`                 | Cron, delayed, recurring                    | Cron, delayed                           |
+| **Scheduling**          | `runAt`, Cron                                   | Cron, delayed, recurring                    | Cron, delayed                           |
 | **Retries**             | Exponential backoff, configurable `maxAttempts` | Exponential backoff, custom strategies, DLQ | Auto retries, bulk replay, DLQ          |
 | **Priority**            | Integer priority                                | Priority levels                             | Queue-based priority                    |
 | **Concurrency Control** | `batchSize` + `concurrency`                     | Built-in                                    | Per-task + shared limits                |
