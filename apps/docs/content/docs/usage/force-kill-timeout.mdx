@@ -94,7 +94,7 @@ if (!testResult.isSerializable) {
 
 ## Limitations
 
-- **`prolong` and `onTimeout` are not supported** with `forceKillOnTimeout: true`. Because the handler runs in a separate Worker Thread, the `JobContext` methods (`prolong` and `onTimeout`) are no-ops in force-kill mode. If you need to extend timeouts dynamically, use the default graceful shutdown (`forceKillOnTimeout: false`) instead. See [Job Timeout](/docs/usage/job-timeout) for details on extending timeouts.
+- **`prolong` and `onTimeout` are not supported** with `forceKillOnTimeout: true`. Because the handler runs in a separate Worker Thread, the `JobContext` methods (`prolong` and `onTimeout`) are no-ops in force-kill mode. If you need to extend timeouts dynamically, use the default graceful shutdown (`forceKillOnTimeout: false`) instead. See [Job Timeout](/usage/job-timeout) for details on extending timeouts.
 
 ## Best Practices
 

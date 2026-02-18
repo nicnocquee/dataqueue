@@ -84,4 +84,4 @@ In the example above, calling `sendWelcomeEmail` multiple times for the same `us
 - **No key provided**: Works exactly as before, no uniqueness check is performed.
 - **Key provided, no conflict**: The job is inserted and its new ID is returned.
 - **Key provided, conflict**: The existing job's ID is returned. The existing job is **not** updated.
-- **Scope**: The key is unique across the entire `job_queue` table regardless of job status. Once a key exists, it cannot be reused until the job is cleaned up via [`cleanupOldJobs`](/docs/usage/cleanup-jobs).
+- **Scope**: The key is unique across the entire `job_queue` table regardless of job status. Once a key exists, it cannot be reused until the job is cleaned up via [`cleanupOldJobs`](/usage/cleanup-jobs).

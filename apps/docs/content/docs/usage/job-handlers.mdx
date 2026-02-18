@@ -79,4 +79,4 @@ The third argument provides methods for timeout management and progress reportin
 - `ctx.onTimeout(callback)` — Register a callback that fires when the timeout is about to hit, before the `AbortSignal` is triggered. Return a number (ms) to extend, or return nothing to let the timeout proceed.
 - `ctx.setProgress(percent)` — Report progress as a percentage (0–100). The value is persisted to the database and can be read by clients via `getJob()` or the React SDK's `useJob()` hook.
 
-See [Job Timeout](/docs/usage/job-timeout) for timeout examples and [Progress Tracking](/docs/usage/progress-tracking) for progress reporting.
+See [Job Timeout](/usage/job-timeout) for timeout examples and [Progress Tracking](/usage/progress-tracking) for progress reporting.
