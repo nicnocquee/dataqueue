@@ -33,7 +33,7 @@ const processor = jobQueue.createProcessor(jobHandlers, {
 processor.startInBackground();
 ```
 
-When a full batch is returned (i.e., the number of processed jobs equals `batchSize`), the processor immediately polls again without waiting, so it can drain a large backlog quickly. Once a batch returns fewer jobs than `batchSize`, it waits `pollInterval` before checking again.
+When a full batch is returned (i.e., the number of processed jobs equals `batchSize`), the processor immediately fetches the next batch when the current batch is finished, so it can drain a large backlog quickly. Once a batch returns fewer jobs than `batchSize`, it waits `pollInterval` before fetching the next batch.
 
 ### Configuration Tips
 
