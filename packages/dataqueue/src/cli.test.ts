@@ -22,6 +22,7 @@ function makeDeps() {
     exit: vi.fn(),
     spawnSyncImpl: vi.fn(() => makeSpawnSyncReturns(0)),
     migrationsDir: '/migrations',
+    runInitImpl: vi.fn(),
   } satisfies CliDeps;
 }
 
@@ -34,18 +35,28 @@ describe('runCli', () => {
 
   it('prints usage and exits with code 1 for no command', () => {
     runCli(['node', 'cli.js'], deps);
-    expect(deps.log).toHaveBeenCalledWith(
-      'Usage: dataqueue-cli migrate [--envPath <path>] [-s <schema> | --schema <schema>]',
-    );
+    expect(deps.log).toHaveBeenCalledWith('Usage:');
+    expect(deps.log).toHaveBeenCalledWith('  dataqueue-cli init');
     expect(deps.exit).toHaveBeenCalledWith(1);
   });
 
   it('prints usage and exits with code 1 for unknown command', () => {
     runCli(['node', 'cli.js', 'unknown'], deps);
-    expect(deps.log).toHaveBeenCalledWith(
-      'Usage: dataqueue-cli migrate [--envPath <path>] [-s <schema> | --schema <schema>]',
-    );
+    expect(deps.log).toHaveBeenCalledWith('Usage:');
+    expect(deps.log).toHaveBeenCalledWith('  dataqueue-cli init');
     expect(deps.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('routes init command to runInitImpl', () => {
+    runCli(['node', 'cli.js', 'init'], deps);
+    expect(deps.runInitImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        log: deps.log,
+        error: deps.error,
+        exit: deps.exit,
+      }),
+    );
+    expect(deps.spawnSyncImpl).not.toHaveBeenCalled();
   });
 
   it('calls spawnSyncImpl with correct args for migrate', () => {

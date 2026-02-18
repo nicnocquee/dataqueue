@@ -2,6 +2,7 @@
 import { spawnSync, SpawnSyncReturns } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { InitDeps, runInit } from './init-command.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,25 +13,35 @@ export interface CliDeps {
   exit?: (code: number) => void;
   spawnSyncImpl?: (...args: any[]) => SpawnSyncReturns<any>;
   migrationsDir?: string;
+  initDeps?: InitDeps;
+  runInitImpl?: (deps?: InitDeps) => void;
 }
 
 export function runCli(
   argv: string[],
   {
     log = console.log,
+    error = console.error,
     exit = (code: number) => process.exit(code),
     spawnSyncImpl = spawnSync,
     migrationsDir = path.join(__dirname, '../migrations'),
+    initDeps,
+    runInitImpl = runInit,
   }: CliDeps = {},
 ): void {
   const [, , command, ...restArgs] = argv;
 
+  /**
+   * Prints CLI usage and exits with non-zero code.
+   */
   function printUsage() {
+    log('Usage:');
     log(
-      'Usage: dataqueue-cli migrate [--envPath <path>] [-s <schema> | --schema <schema>]',
+      '  dataqueue-cli migrate [--envPath <path>] [-s <schema> | --schema <schema>]',
     );
+    log('  dataqueue-cli init');
     log('');
-    log('Options:');
+    log('Options for migrate:');
     log(
       '  --envPath <path>   Path to a .env file to load environment variables (passed to node-pg-migrate)',
     );
@@ -47,6 +58,14 @@ export function runCli(
     );
     log(
       '    Example: PGSSLMODE=require NODE_EXTRA_CA_CERTS=/absolute/path/to/ca.crt PG_DATAQUEUE_DATABASE=... npx dataqueue-cli migrate',
+    );
+    log('');
+    log('Notes for init:');
+    log(
+      '  - Supports both Next.js App Router and Pages Router (prefers App Router if both exist).',
+    );
+    log(
+      '  - Scaffolds endpoint, cron.sh, queue placeholder, and package.json entries.',
     );
     exit(1);
   }
@@ -89,6 +108,13 @@ export function runCli(
       { stdio: 'inherit' },
     );
     exit(result.status ?? 1);
+  } else if (command === 'init') {
+    runInitImpl({
+      log,
+      error,
+      exit,
+      ...initDeps,
+    });
   } else {
     printUsage();
   }
