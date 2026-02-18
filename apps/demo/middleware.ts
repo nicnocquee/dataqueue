@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/challenge', '/_next', '/favicon.ico', '/api/cron'];
+const BYPASS_PATHS = [
+  '/challenge',
+  '/_next',
+  '/favicon.ico',
+  '/api/dataqueue/manage',
+];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
+  if (BYPASS_PATHS.some((path) => pathname.startsWith(path))) {
     return NextResponse.next();
   }
 
