@@ -92,3 +92,15 @@ For Vercel cron, set the `CRON_SECRET` environment variable, as it's sent in the
 ```
 Authorization: Bearer <VALUE_OF_CRON_SECRET>
 ```
+
+During development, you can create a small script to run the cron job continuously in the background. For example, you can create a `cron.sh` file like [this one](https://github.com/nicnocquee/dataqueue/blob/main/apps/demo/cron.sh), then add it to your `package.json` scripts:
+
+```json title="package.json"
+{
+  "scripts": {
+    "cron": "bash cron.sh"
+  }
+}
+```
+
+Then, you can run the cron job by running `pnpm cron` from the apps/demo directory.

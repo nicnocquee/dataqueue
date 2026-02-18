@@ -12,7 +12,7 @@ In this docs, we'll use a Next.js with App Router project which is deployed to V
 3. [Initialize the job queue](/usage/init-queue)
 4. [Add a job](/usage/add-job)
 5. Create three API routes to [process jobs](/usage/process-jobs), [reclaim stuck jobs](/usage/reclaim-jobs), and [cleanup old jobs](/usage/cleanup-jobs)
-6. Call those API routes periodically.
+6. [Call those API routes periodically](/usage/process-jobs#triggering-the-processor-via-cron) via a cron service (like Vercel cron) or a small script like [this one](https://github.com/nicnocquee/dataqueue/blob/main/apps/demo/cron.sh) during development.
 
 ## Redis Backend
 
@@ -21,7 +21,7 @@ In this docs, we'll use a Next.js with App Router project which is deployed to V
 3. [Initialize the job queue with Redis config](/usage/init-queue#redis)
 4. [Add a job](/usage/add-job)
 5. Create three API routes to [process jobs](/usage/process-jobs), [reclaim stuck jobs](/usage/reclaim-jobs), and [cleanup old jobs](/usage/cleanup-jobs)
-6. Call those API routes periodically.
+6. [Call those API routes periodically](/usage/process-jobs#triggering-the-processor-via-cron) via a cron service (like Vercel cron) or a small script like [this one](https://github.com/nicnocquee/dataqueue/blob/main/apps/demo/cron.sh) during development.
 
 <Callout>
   The Redis backend requires **no database migrations**. Just install `ioredis`,
