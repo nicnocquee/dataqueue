@@ -9,9 +9,16 @@ During a job handler you can wait for a period of time, until a specific date, o
 Unlike traditional job queues where you would schedule separate jobs for each step, DataQueue's wait feature lets you write linear, async code. Under the hood:
 
 1. When a wait is triggered, the handler throws a `WaitSignal` internally
-2. The job moves to `'waiting'` status and the handler stops
+2. The job moves to `'waiting'` status, the handler stops, and **the worker lock is released**
 3. After the wait condition is met, the job is re-picked by the processor
 4. The handler re-runs from the top, but **completed steps are replayed from cache**
+
+<Callout>
+  Waiting jobs are completely idle — they don't hold a worker lock, don't occupy
+  a concurrency slot, and don't consume any processing resources. You can safely
+  have thousands of jobs waiting in parallel with zero impact on queue
+  throughput.
+</Callout>
 
 This means your handlers need to use `ctx.run()` to wrap side-effectful work (like sending emails) so it doesn't re-execute on re-invocation.
 
@@ -196,6 +203,7 @@ The wait feature is fully backward compatible. Existing handlers that don't use 
 
 - **Step names must be stable**: Don't change step names between deployments while jobs are waiting. The handler uses step names to replay cached results.
 - **Wait counter is position-based**: If you add or remove `waitFor`/`waitUntil`/`waitForToken` calls between deployments while jobs are mid-wait, the counter may mismatch. Either deploy changes when no jobs are in `'waiting'` status, or create a new job type with the updated handler instead of editing the existing one. Existing waiting jobs will continue with the old logic safely.
+- **Waiting is free**: A waiting job releases its worker lock and concurrency slot. It sits passively in the database until resumed, consuming no processing resources.
 - **Waiting does not consume attempts**: When a job resumes from a wait, the attempt counter is not incremented. Only real failures count.
 - **Cancel waiting jobs**: You can cancel a job in `'waiting'` status just like a pending job using `jobQueue.cancelJob(jobId)`.
 - **`forceKillOnTimeout` limitation**: Wait features (`ctx.run`, `ctx.waitFor`, etc.) are not available when `forceKillOnTimeout` is enabled, since that mode runs handlers in isolated worker threads without database access.
