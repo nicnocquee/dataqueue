@@ -120,6 +120,12 @@ const JobPage = async ({ params }: { params: Promise<{ id: string }> }) => {
                 <TableCell className="font-medium">Attempts</TableCell>
                 <TableCell>
                   {job.attempts} / {job.maxAttempts}
+                  {job.attempts === job.maxAttempts ? (
+                    <strong>
+                      {`(max attempts reached, job is permanently failed and
+                      will not be retried again)`}
+                    </strong>
+                  ) : null}
                 </TableCell>
               </TableRow>
               {job.timeoutMs && (
