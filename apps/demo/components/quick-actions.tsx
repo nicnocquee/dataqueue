@@ -28,7 +28,7 @@ const jobDefinitions: JobDefinition[] = [
     label: 'Add Email Job',
     title: 'Email Job',
     description:
-      'Simulates sending an email. A simple fire-and-forget job that calls the email service with to, subject, and body fields. This handler throws error 50% of the time. Note that since there is no cron job running to automatically process jobs, you will need to press the "Process Jobs Now" button at the top of the page to process this job.',
+      'Simulates sending an email. A simple fire-and-forget job that calls the email service with to, subject, and body fields. This handler throws error 50% of the time.',
     features: ['Basic job creation and processing'],
     jobType: 'send_email',
     payload: () => ({
@@ -41,7 +41,7 @@ const jobDefinitions: JobDefinition[] = [
     label: 'Add Report Job',
     title: 'Report Job',
     description:
-      'Simulates generating a report for a user. Another straightforward job demonstrating basic job creation and processing. This handler throws error 50% of the time. Note that since there is no cron job running to automatically process jobs, you will need to press the "Process Jobs Now" button at the top of the page to process this job.',
+      'Simulates generating a report for a user. Another straightforward job demonstrating basic job creation and processing. This handler throws error 50% of the time.',
     features: ['Basic job creation and processing'],
     jobType: 'generate_report',
     payload: () => ({
@@ -53,7 +53,7 @@ const jobDefinitions: JobDefinition[] = [
     label: 'Add Image Job',
     title: 'Image Job',
     description:
-      'Simulates AI image generation with a 5-second timeout. Demonstrates timeout handling features. This handler throws error 50% of the time. Note that since there is no cron job running to automatically process jobs, you will need to press the "Process Jobs Now" button at the top of the page to process this job.',
+      'Simulates AI image generation with a 5-second timeout. Demonstrates timeout handling features. This handler throws error 50% of the time.',
     features: [
       'ctx.onTimeout() to extend the deadline before abort',
       'ctx.prolong() for heartbeat-style timeout extensions',
@@ -66,7 +66,7 @@ const jobDefinitions: JobDefinition[] = [
     label: 'Add Pipeline Job',
     title: 'Pipeline Job',
     description:
-      'A multi-step data processing pipeline (fetch, transform, load). Demonstrates durable, resumable workflows. Note that since there is no cron job running to automatically process jobs, you will need to press the "Process Jobs Now" button at the top of the page to process this job.',
+      'A multi-step data processing pipeline (fetch, transform, load). Demonstrates durable, resumable workflows.',
     features: [
       'ctx.run() for step memoization — steps survive retries',
       'ctx.waitFor() for time-based pauses between steps',
@@ -81,7 +81,7 @@ const jobDefinitions: JobDefinition[] = [
     label: 'Add Approval Job',
     title: 'Approval Job',
     description:
-      'A human-in-the-loop approval workflow. The job pauses until an external signal (token) is completed. Note that since there is no cron job running to automatically process jobs, you will need to press the "Process Jobs Now" button at the top of the page to process this job.',
+      'A human-in-the-loop approval workflow. The job pauses until an external signal (token) is completed.',
     features: [
       'ctx.createToken() to create an external approval token',
       'ctx.waitForToken() to pause until the token is resolved',

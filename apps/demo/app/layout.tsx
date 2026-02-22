@@ -9,7 +9,7 @@ import {
 import { AppSidebar } from '@/components/app-sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
-import { ProcessButton } from '@/components/process-button';
+import { AutoProcessor } from '@/components/auto-processor';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -46,7 +46,7 @@ export default function RootLayout({
                 <span className="text-sm text-muted-foreground">
                   Dataqueue Feature Demo
                 </span>
-                <ProcessButton className="ml-auto" />
+                <AutoProcessor className="ml-auto" />
               </header>
               <main className="flex-1 overflow-auto p-6">{children}</main>
             </SidebarInset>
