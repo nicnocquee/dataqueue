@@ -103,8 +103,6 @@ Thank you for your interest in contributing to **dataqueue**! Your help is great
 ## Submitting Changes
 
 - Ensure your branch is up to date with `main` before opening a PR.
-- Run `pnpm changeset:add` from the **repo root** to add a new changeset. Here you can choose the type of change (major, minor, patch) and the affected packages.
-- Make changes in the changeset if needed. Then commit the changeset.
 - Provide a clear description of your changes in the PR.
 - Reference any related issues (e.g., `Resolves #123`).
 - Be responsive to feedback and make requested changes promptly.
@@ -113,9 +111,8 @@ Thank you for your interest in contributing to **dataqueue**! Your help is great
 
 ## Publishing
 
-1. Run `pnpm changeset:version` from the **repo root** to bump versions of all affected packages and update changelogs.
-2. Commit the changes and push to the `main` branch.
-3. Create a new GitHub Release. All packages with bumped versions are published to npm automatically by CI.
+- **Production release:** Create a new GitHub Release. All publishable packages are published to npm automatically by CI.
+- **Beta release:** Every push to `main` automatically publishes a beta pre-release to npm under the `beta` dist-tag.
 
 ## Reporting Issues
 
