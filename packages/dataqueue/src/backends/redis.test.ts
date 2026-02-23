@@ -580,6 +580,167 @@ describe('Redis backend integration', () => {
     const job = await jobQueue.getJob(jobId);
     expect(job?.status).toBe('pending');
   });
+
+  // ── Configurable retry strategy tests ────────────────────────────────
+
+  it('stores retry config on a job', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'retry-config@example.com' },
+      retryDelay: 30,
+      retryBackoff: false,
+      retryDelayMax: 120,
+    });
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.retryDelay).toBe(30);
+    expect(job?.retryBackoff).toBe(false);
+    expect(job?.retryDelayMax).toBe(120);
+  });
+
+  it('returns null retry config for jobs without it', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'no-retry-config@example.com' },
+    });
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.retryDelay).toBeNull();
+    expect(job?.retryBackoff).toBeNull();
+    expect(job?.retryDelayMax).toBeNull();
+  });
+
+  it('uses legacy backoff when no retry config is set', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'legacy-retry@example.com' },
+      maxAttempts: 3,
+    });
+
+    const handler = vi.fn(async () => {
+      throw new Error('fail');
+    });
+    const processor = jobQueue.createProcessor({
+      email: handler,
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.nextAttemptAt).not.toBeNull();
+    const delayMs =
+      job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime();
+    // Legacy: 2^1 * 60s = 120s = 120000ms
+    expect(delayMs).toBeGreaterThanOrEqual(115000);
+    expect(delayMs).toBeLessThanOrEqual(125000);
+  });
+
+  it('uses fixed delay when retryBackoff is false', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'fixed-retry@example.com' },
+      maxAttempts: 3,
+      retryDelay: 10,
+      retryBackoff: false,
+    });
+
+    const handler = vi.fn(async () => {
+      throw new Error('fail');
+    });
+    const processor = jobQueue.createProcessor({
+      email: handler,
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.nextAttemptAt).not.toBeNull();
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(9);
+    expect(delaySec).toBeLessThanOrEqual(11);
+  });
+
+  it('uses exponential backoff with custom retryDelay', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'expo-retry@example.com' },
+      maxAttempts: 3,
+      retryDelay: 5,
+      retryBackoff: true,
+    });
+
+    const handler = vi.fn(async () => {
+      throw new Error('fail');
+    });
+    const processor = jobQueue.createProcessor({
+      email: handler,
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.nextAttemptAt).not.toBeNull();
+    // 5 * 2^1 = 10s, with jitter [5, 10]
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(4);
+    expect(delaySec).toBeLessThanOrEqual(11);
+  });
+
+  it('caps exponential backoff with retryDelayMax', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'capped-retry@example.com' },
+      maxAttempts: 5,
+      retryDelay: 100,
+      retryBackoff: true,
+      retryDelayMax: 30,
+    });
+
+    const handler = vi.fn(async () => {
+      throw new Error('fail');
+    });
+    const processor = jobQueue.createProcessor({
+      email: handler,
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.nextAttemptAt).not.toBeNull();
+    // 100 * 2^1 = 200 capped to 30, with jitter [15, 30]
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(14);
+    expect(delaySec).toBeLessThanOrEqual(31);
+  });
+
+  it('allows editing retry config via editJob', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'edit-retry@example.com' },
+    });
+
+    await jobQueue.editJob(jobId, {
+      retryDelay: 15,
+      retryBackoff: false,
+      retryDelayMax: 60,
+    });
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.retryDelay).toBe(15);
+    expect(job?.retryBackoff).toBe(false);
+    expect(job?.retryDelayMax).toBe(60);
+  });
 });
 
 describe('Redis cron schedules integration', () => {

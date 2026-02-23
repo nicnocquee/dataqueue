@@ -78,6 +78,23 @@ await queue.addJob({
 
 Returns existing job ID if key already exists. Key persists until `cleanupOldJobs` removes the job.
 
+## Retry Strategy
+
+```typescript
+await queue.addJob({
+  jobType: 'email',
+  payload,
+  retryDelay: 10, // base 10s
+  retryBackoff: true, // exponential (default)
+  retryDelayMax: 300, // cap at 5 min
+});
+```
+
+- `retryBackoff: false` — fixed delay of `retryDelay` seconds.
+- `retryBackoff: true` (default) — `retryDelay * 2^attempts` with jitter, capped by `retryDelayMax`.
+- No config — legacy `2^attempts * 60s` formula (backward compatible).
+- Cron schedules propagate retry config to enqueued jobs.
+
 ## Scaling
 
 - Increase `batchSize` and `concurrency` for higher throughput.

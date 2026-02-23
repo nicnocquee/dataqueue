@@ -31,7 +31,8 @@ const SCORE_RANGE = '1000000000000000'; // 1e15
  * ADD JOB
  * KEYS: [prefix]
  * ARGV: [jobType, payloadJson, maxAttempts, priority, runAtMs, timeoutMs,
- *        forceKillOnTimeout, tagsJson, idempotencyKey, nowMs]
+ *        forceKillOnTimeout, tagsJson, idempotencyKey, nowMs,
+ *        retryDelay, retryBackoff, retryDelayMax]
  * Returns: job ID (number)
  */
 export const ADD_JOB_SCRIPT = `
@@ -46,6 +47,9 @@ local forceKillOnTimeout = ARGV[7]
 local tagsJson = ARGV[8] -- "null" or JSON array string
 local idempotencyKey = ARGV[9] -- "null" string if not set
 local nowMs = tonumber(ARGV[10])
+local retryDelay = ARGV[11]       -- "null" or seconds string
+local retryBackoff = ARGV[12]     -- "null" or "true"/"false"
+local retryDelayMax = ARGV[13]    -- "null" or seconds string
 
 -- Idempotency check
 if idempotencyKey ~= "null" then
@@ -89,7 +93,10 @@ redis.call('HMSET', jobKey,
   'idempotencyKey', idempotencyKey,
   'waitUntil', 'null',
   'waitTokenId', 'null',
-  'stepData', 'null'
+  'stepData', 'null',
+  'retryDelay', retryDelay,
+  'retryBackoff', retryBackoff,
+  'retryDelayMax', retryDelayMax
 )
 
 -- Status index
@@ -330,11 +337,38 @@ local jk = prefix .. 'job:' .. jobId
 local attempts = tonumber(redis.call('HGET', jk, 'attempts'))
 local maxAttempts = tonumber(redis.call('HGET', jk, 'maxAttempts'))
 
--- Compute next_attempt_at: 2^attempts minutes from now
+-- Read per-job retry config (may be "null")
+local rdRaw = redis.call('HGET', jk, 'retryDelay')
+local rbRaw = redis.call('HGET', jk, 'retryBackoff')
+local rmRaw = redis.call('HGET', jk, 'retryDelayMax')
+
 local nextAttemptAt = 'null'
 if attempts < maxAttempts then
-  local delayMs = math.pow(2, attempts) * 60000
-  nextAttemptAt = nowMs + delayMs
+  local allNull = (rdRaw == 'null' or rdRaw == false)
+               and (rbRaw == 'null' or rbRaw == false)
+               and (rmRaw == 'null' or rmRaw == false)
+  if allNull then
+    -- Legacy formula: 2^attempts minutes
+    local delayMs = math.pow(2, attempts) * 60000
+    nextAttemptAt = nowMs + delayMs
+  else
+    local retryDelaySec = 60
+    if rdRaw and rdRaw ~= 'null' then retryDelaySec = tonumber(rdRaw) end
+    local useBackoff = true
+    if rbRaw and rbRaw ~= 'null' then useBackoff = (rbRaw == 'true') end
+    local maxDelaySec = nil
+    if rmRaw and rmRaw ~= 'null' then maxDelaySec = tonumber(rmRaw) end
+
+    local delaySec
+    if useBackoff then
+      delaySec = retryDelaySec * math.pow(2, attempts)
+      if maxDelaySec then delaySec = math.min(delaySec, maxDelaySec) end
+      delaySec = delaySec * (0.5 + 0.5 * math.random())
+    else
+      delaySec = retryDelaySec
+    end
+    nextAttemptAt = nowMs + math.floor(delaySec * 1000)
+  end
 end
 
 -- Append to error_history

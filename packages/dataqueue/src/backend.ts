@@ -39,6 +39,9 @@ export interface JobUpdates {
   runAt?: Date | null;
   timeoutMs?: number | null;
   tags?: string[] | null;
+  retryDelay?: number | null;
+  retryBackoff?: boolean | null;
+  retryDelayMax?: number | null;
 }
 
 /**
@@ -58,6 +61,9 @@ export interface CronScheduleInput {
   timezone: string;
   allowOverlap: boolean;
   nextRunAt: Date | null;
+  retryDelay: number | null;
+  retryBackoff: boolean | null;
+  retryDelayMax: number | null;
 }
 
 /**

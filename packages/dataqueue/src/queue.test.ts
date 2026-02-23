@@ -1958,4 +1958,156 @@ describe('getJobs', () => {
     const batch3 = await queue.getNextBatch(pool, 'worker-1', 1);
     expect(batch3.length).toBe(0);
   });
+
+  // ── Configurable retry strategy tests ────────────────────────────────
+
+  it('uses legacy backoff when no retry config is set', async () => {
+    // Setup
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'legacy@example.com' },
+      maxAttempts: 3,
+    });
+
+    // Act
+    await queue.getNextBatch(pool, 'worker-1', 1);
+    await queue.failJob(pool, jobId, new Error('fail'));
+
+    // Assert — legacy formula: 2^1 * 60s = 120s from now
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.nextAttemptAt).not.toBeNull();
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(115);
+    expect(delaySec).toBeLessThanOrEqual(125);
+  });
+
+  it('uses fixed delay when retryBackoff is false', async () => {
+    // Setup
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'fixed@example.com' },
+      maxAttempts: 3,
+      retryDelay: 10,
+      retryBackoff: false,
+    });
+
+    // Act
+    await queue.getNextBatch(pool, 'worker-1', 1);
+    await queue.failJob(pool, jobId, new Error('fail'));
+
+    // Assert — fixed 10s delay
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.nextAttemptAt).not.toBeNull();
+    expect(job?.retryDelay).toBe(10);
+    expect(job?.retryBackoff).toBe(false);
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(9);
+    expect(delaySec).toBeLessThanOrEqual(11);
+  });
+
+  it('uses exponential backoff with custom retryDelay', async () => {
+    // Setup
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'expo@example.com' },
+      maxAttempts: 3,
+      retryDelay: 5,
+      retryBackoff: true,
+    });
+
+    // Act — attempt 1
+    await queue.getNextBatch(pool, 'worker-1', 1);
+    await queue.failJob(pool, jobId, new Error('fail'));
+
+    // Assert — exponential: 5 * 2^1 = 10s, with jitter [5, 10]
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.nextAttemptAt).not.toBeNull();
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(4);
+    expect(delaySec).toBeLessThanOrEqual(11);
+  });
+
+  it('caps exponential backoff with retryDelayMax', async () => {
+    // Setup
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'capped@example.com' },
+      maxAttempts: 5,
+      retryDelay: 100,
+      retryBackoff: true,
+      retryDelayMax: 30,
+    });
+
+    // Act — attempt 1
+    await queue.getNextBatch(pool, 'worker-1', 1);
+    await queue.failJob(pool, jobId, new Error('fail'));
+
+    // Assert — 100 * 2^1 = 200s but capped at 30s, with jitter [15, 30]
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.nextAttemptAt).not.toBeNull();
+    expect(job?.retryDelayMax).toBe(30);
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(14);
+    expect(delaySec).toBeLessThanOrEqual(31);
+  });
+
+  it('stores retry config on job record', async () => {
+    // Setup
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'config@example.com' },
+      retryDelay: 30,
+      retryBackoff: false,
+      retryDelayMax: 120,
+    });
+
+    // Act
+    const job = await queue.getJob(pool, jobId);
+
+    // Assert
+    expect(job?.retryDelay).toBe(30);
+    expect(job?.retryBackoff).toBe(false);
+    expect(job?.retryDelayMax).toBe(120);
+  });
+
+  it('returns null retry config for jobs without it', async () => {
+    // Setup
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'noconfig@example.com' },
+    });
+
+    // Act
+    const job = await queue.getJob(pool, jobId);
+
+    // Assert
+    expect(job?.retryDelay).toBeNull();
+    expect(job?.retryBackoff).toBeNull();
+    expect(job?.retryDelayMax).toBeNull();
+  });
+
+  it('allows editing retry config via editJob', async () => {
+    // Setup
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'edit@example.com' },
+    });
+
+    // Act
+    await queue.editJob(pool, jobId, {
+      retryDelay: 15,
+      retryBackoff: false,
+      retryDelayMax: 60,
+    });
+
+    // Assert
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.retryDelay).toBe(15);
+    expect(job?.retryBackoff).toBe(false);
+    expect(job?.retryDelayMax).toBe(60);
+  });
 });

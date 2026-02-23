@@ -73,6 +73,26 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    * Once a key exists, it cannot be reused until the job is cleaned up (via `cleanupOldJobs`).
    */
   idempotencyKey?: string;
+  /**
+   * Base delay between retries in seconds. When `retryBackoff` is true (the default),
+   * this is the base for exponential backoff: `retryDelay * 2^attempts`.
+   * When `retryBackoff` is false, retries use this fixed delay.
+   * @default 60
+   */
+  retryDelay?: number;
+  /**
+   * Whether to use exponential backoff for retries. When true, delay doubles
+   * with each attempt and includes jitter to prevent thundering herd.
+   * When false, a fixed `retryDelay` is used between every retry.
+   * @default true
+   */
+  retryBackoff?: boolean;
+  /**
+   * Maximum delay between retries in seconds. Caps the exponential backoff
+   * so retries never wait longer than this value. Only meaningful when
+   * `retryBackoff` is true. No limit when omitted.
+   */
+  retryDelayMax?: number;
 }
 
 /**
@@ -196,6 +216,18 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * Updated by the handler via `ctx.setProgress(percent)`.
    */
   progress?: number | null;
+  /**
+   * Base delay between retries in seconds, or null if using legacy default.
+   */
+  retryDelay?: number | null;
+  /**
+   * Whether exponential backoff is enabled for retries, or null if using legacy default.
+   */
+  retryBackoff?: boolean | null;
+  /**
+   * Maximum delay cap for retries in seconds, or null if no cap.
+   */
+  retryDelayMax?: number | null;
 }
 
 /**
@@ -677,6 +709,12 @@ export interface CronScheduleOptions<
    * is still pending, processing, or waiting.
    */
   allowOverlap?: boolean;
+  /** Base delay between retries in seconds for each job instance (default: 60). */
+  retryDelay?: number;
+  /** Whether to use exponential backoff for retries (default: true). */
+  retryBackoff?: boolean;
+  /** Maximum delay cap for retries in seconds. */
+  retryDelayMax?: number;
 }
 
 /**
@@ -701,6 +739,9 @@ export interface CronScheduleRecord {
   nextRunAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  retryDelay: number | null;
+  retryBackoff: boolean | null;
+  retryDelayMax: number | null;
 }
 
 /**
@@ -717,6 +758,9 @@ export interface EditCronScheduleOptions {
   tags?: string[] | null;
   timezone?: string;
   allowOverlap?: boolean;
+  retryDelay?: number | null;
+  retryBackoff?: boolean | null;
+  retryDelayMax?: number | null;
 }
 
 export interface JobQueue<PayloadMap> {
