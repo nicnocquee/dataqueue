@@ -1904,3 +1904,172 @@ describe('Redis addJobs batch insert', () => {
     expect(job2?.tags).toEqual(['low']);
   });
 });
+
+describe('Redis event hooks', () => {
+  let prefix: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+  let redisClient: any;
+
+  beforeEach(async () => {
+    prefix = createRedisTestPrefix();
+    jobQueue = initJobQueue<TestPayloadMap>({
+      backend: 'redis',
+      redisConfig: { url: REDIS_URL, keyPrefix: prefix },
+    });
+    redisClient = jobQueue.getRedisClient();
+  });
+
+  afterEach(async () => {
+    jobQueue.removeAllListeners();
+    await cleanupRedisPrefix(redisClient, prefix);
+    await redisClient.quit();
+  });
+
+  it('emits job:added on addJob', async () => {
+    const listener = vi.fn();
+    jobQueue.on('job:added', listener);
+
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'test@example.com' },
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ jobId, jobType: 'email' });
+  });
+
+  it('emits job:added for each job in addJobs', async () => {
+    const listener = vi.fn();
+    jobQueue.on('job:added', listener);
+
+    const ids = await jobQueue.addJobs([
+      { jobType: 'email', payload: { to: 'a@test.com' } },
+      { jobType: 'sms', payload: { to: '+1234' } },
+    ]);
+
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledWith({ jobId: ids[0], jobType: 'email' });
+    expect(listener).toHaveBeenCalledWith({ jobId: ids[1], jobType: 'sms' });
+  });
+
+  it('emits job:cancelled on cancelJob', async () => {
+    const listener = vi.fn();
+    jobQueue.on('job:cancelled', listener);
+
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'test@example.com' },
+    });
+    await jobQueue.cancelJob(jobId);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ jobId });
+  });
+
+  it('emits job:retried on retryJob', async () => {
+    const listener = vi.fn();
+    jobQueue.on('job:retried', listener);
+
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'test@example.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {
+        throw new Error('fail');
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    await jobQueue.retryJob(jobId);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ jobId });
+  });
+
+  it('emits job:processing and job:completed on successful processing', async () => {
+    const processingListener = vi.fn();
+    const completedListener = vi.fn();
+    jobQueue.on('job:processing', processingListener);
+    jobQueue.on('job:completed', completedListener);
+
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'test@example.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    expect(processingListener).toHaveBeenCalledTimes(1);
+    expect(processingListener).toHaveBeenCalledWith({
+      jobId,
+      jobType: 'email',
+    });
+    expect(completedListener).toHaveBeenCalledTimes(1);
+    expect(completedListener).toHaveBeenCalledWith({
+      jobId,
+      jobType: 'email',
+    });
+  });
+
+  it('emits job:failed with willRetry flag', async () => {
+    const listener = vi.fn();
+    jobQueue.on('job:failed', listener);
+
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'test@example.com' },
+      maxAttempts: 1,
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId,
+        jobType: 'email',
+        willRetry: false,
+        error: expect.any(Error),
+      }),
+    );
+  });
+
+  it('once fires only once then auto-unsubscribes', async () => {
+    const listener = vi.fn();
+    jobQueue.once('job:added', listener);
+
+    await jobQueue.addJob({ jobType: 'email', payload: { to: 'a@test.com' } });
+    await jobQueue.addJob({ jobType: 'sms', payload: { to: '+1234' } });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('off removes a listener', async () => {
+    const listener = vi.fn();
+    jobQueue.on('job:added', listener);
+
+    await jobQueue.addJob({ jobType: 'email', payload: { to: 'a@test.com' } });
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    jobQueue.off('job:added', listener);
+
+    await jobQueue.addJob({ jobType: 'sms', payload: { to: '+1234' } });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+});

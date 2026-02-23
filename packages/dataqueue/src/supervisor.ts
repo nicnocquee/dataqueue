@@ -1,6 +1,11 @@
 import { QueueBackend } from './backend.js';
 import { setLogContext, log } from './log-context.js';
-import { Supervisor, SupervisorOptions, SupervisorRunResult } from './types.js';
+import {
+  Supervisor,
+  SupervisorOptions,
+  SupervisorRunResult,
+  QueueEmitFn,
+} from './types.js';
 
 /**
  * Creates a background supervisor that periodically runs maintenance tasks:
@@ -9,12 +14,14 @@ import { Supervisor, SupervisorOptions, SupervisorRunResult } from './types.js';
  *
  * @param backend - The queue backend (Postgres or Redis) to run maintenance against.
  * @param options - Configuration for intervals, retention, and feature toggles.
+ * @param emit - Optional callback to emit events to the queue's EventEmitter.
  * @returns A {@link Supervisor} with `start`, `startInBackground`, `stop`,
  *   `stopAndDrain`, and `isRunning` methods.
  */
 export const createSupervisor = (
   backend: QueueBackend,
   options: SupervisorOptions = {},
+  emit?: QueueEmitFn,
 ): Supervisor => {
   const {
     intervalMs = 60_000,
@@ -58,7 +65,9 @@ export const createSupervisor = (
           log(`Supervisor: reclaimed ${result.reclaimedJobs} stuck jobs`);
         }
       } catch (e) {
-        onError(e instanceof Error ? e : new Error(String(e)));
+        const err = e instanceof Error ? e : new Error(String(e));
+        onError(err);
+        emit?.('error', err);
       }
     }
 
@@ -72,7 +81,9 @@ export const createSupervisor = (
           log(`Supervisor: cleaned up ${result.cleanedUpJobs} old jobs`);
         }
       } catch (e) {
-        onError(e instanceof Error ? e : new Error(String(e)));
+        const err = e instanceof Error ? e : new Error(String(e));
+        onError(err);
+        emit?.('error', err);
       }
     }
 
@@ -88,7 +99,9 @@ export const createSupervisor = (
           );
         }
       } catch (e) {
-        onError(e instanceof Error ? e : new Error(String(e)));
+        const err = e instanceof Error ? e : new Error(String(e));
+        onError(err);
+        emit?.('error', err);
       }
     }
 
@@ -99,7 +112,9 @@ export const createSupervisor = (
           log(`Supervisor: expired ${result.expiredTokens} timed-out tokens`);
         }
       } catch (e) {
-        onError(e instanceof Error ? e : new Error(String(e)));
+        const err = e instanceof Error ? e : new Error(String(e));
+        onError(err);
+        emit?.('error', err);
       }
     }
 

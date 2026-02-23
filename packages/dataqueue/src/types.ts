@@ -812,6 +812,49 @@ export interface EditCronScheduleOptions {
   retryDelayMax?: number | null;
 }
 
+// ── Event hooks ──────────────────────────────────────────────────────
+
+/**
+ * Payload types for each event emitted by the job queue.
+ */
+export interface QueueEventMap {
+  /** Fired after a job is successfully added to the queue. */
+  'job:added': { jobId: number; jobType: string };
+  /** Fired when a processor claims a job and begins executing its handler. */
+  'job:processing': { jobId: number; jobType: string };
+  /** Fired when a job handler completes successfully. */
+  'job:completed': { jobId: number; jobType: string };
+  /** Fired when a job handler fails. `willRetry` indicates whether the job will be retried. */
+  'job:failed': {
+    jobId: number;
+    jobType: string;
+    error: Error;
+    willRetry: boolean;
+  };
+  /** Fired after a job is cancelled via `cancelJob()`. */
+  'job:cancelled': { jobId: number };
+  /** Fired after a failed job is manually retried via `retryJob()`. */
+  'job:retried': { jobId: number };
+  /** Fired when a job enters the `waiting` state (via `ctx.waitFor`, `ctx.waitUntil`, or `ctx.waitForToken`). */
+  'job:waiting': { jobId: number; jobType: string };
+  /** Fired when a job reports progress via `ctx.setProgress()`. */
+  'job:progress': { jobId: number; progress: number };
+  /** Fired on internal errors from the processor or supervisor. */
+  error: Error;
+}
+
+/** Union of all event names supported by the job queue. */
+export type QueueEventName = keyof QueueEventMap;
+
+/**
+ * Callback type for `emit`. Used internally to pass the emitter
+ * from `initJobQueue` into the processor and supervisor.
+ */
+export type QueueEmitFn = <K extends QueueEventName>(
+  event: K,
+  data: QueueEventMap[K],
+) => void;
+
 export interface JobQueue<PayloadMap> {
   /**
    * Add a job to the job queue.
@@ -1106,6 +1149,51 @@ export interface JobQueue<PayloadMap> {
    * @returns The number of jobs that were enqueued.
    */
   enqueueDueCronJobs: () => Promise<number>;
+
+  // ── Event hooks ───────────────────────────────────────────────────────
+
+  /**
+   * Register a listener for a queue event. The listener is called every
+   * time the event fires. Works identically with both PostgreSQL and Redis.
+   *
+   * @param event - The event name (e.g. `'job:completed'`, `'error'`).
+   * @param listener - Callback receiving the event payload.
+   */
+  on: <K extends QueueEventName>(
+    event: K,
+    listener: (data: QueueEventMap[K]) => void,
+  ) => void;
+
+  /**
+   * Register a one-time listener. The listener is automatically removed
+   * after it fires once.
+   *
+   * @param event - The event name.
+   * @param listener - Callback receiving the event payload.
+   */
+  once: <K extends QueueEventName>(
+    event: K,
+    listener: (data: QueueEventMap[K]) => void,
+  ) => void;
+
+  /**
+   * Remove a previously registered listener.
+   *
+   * @param event - The event name.
+   * @param listener - The exact function reference passed to `on` or `once`.
+   */
+  off: <K extends QueueEventName>(
+    event: K,
+    listener: (data: QueueEventMap[K]) => void,
+  ) => void;
+
+  /**
+   * Remove all listeners for a specific event, or all listeners for
+   * all events when called without arguments.
+   *
+   * @param event - Optional event name. If omitted, removes everything.
+   */
+  removeAllListeners: (event?: QueueEventName) => void;
 
   // ── Advanced access ───────────────────────────────────────────────────
 

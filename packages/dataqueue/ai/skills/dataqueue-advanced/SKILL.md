@@ -170,6 +170,56 @@ await queue.addJob({
 - Handler must be serializable (no closures over external variables).
 - `prolong`, `onTimeout`, `ctx.run`, waits are NOT available.
 
+## Event Hooks
+
+Subscribe to real-time job lifecycle events. Works identically with PostgreSQL and Redis.
+
+```typescript
+const queue = initJobQueue<MyPayloadMap>(config);
+
+queue.on('job:completed', ({ jobId, jobType }) => {
+  console.log(`Job ${jobId} (${jobType}) completed`);
+});
+
+queue.on('job:failed', ({ jobId, jobType, error, willRetry }) => {
+  console.error(`Job ${jobId} failed: ${error.message}`);
+  if (!willRetry) {
+    alertOps(`Permanent failure for job ${jobId}`);
+  }
+});
+
+queue.on('error', (error) => {
+  Sentry.captureException(error);
+});
+```
+
+### Available events
+
+| Event            | Payload                                |
+| ---------------- | -------------------------------------- |
+| `job:added`      | `{ jobId, jobType }`                   |
+| `job:processing` | `{ jobId, jobType }`                   |
+| `job:completed`  | `{ jobId, jobType }`                   |
+| `job:failed`     | `{ jobId, jobType, error, willRetry }` |
+| `job:cancelled`  | `{ jobId }`                            |
+| `job:retried`    | `{ jobId }`                            |
+| `job:waiting`    | `{ jobId, jobType }`                   |
+| `job:progress`   | `{ jobId, progress }`                  |
+| `error`          | `Error`                                |
+
+### Listener management
+
+```typescript
+const listener = ({ jobId }) => console.log(jobId);
+queue.on('job:completed', listener);
+queue.off('job:completed', listener);
+queue.once('job:added', ({ jobId }) => console.log('First job:', jobId));
+queue.removeAllListeners('job:completed');
+queue.removeAllListeners(); // all events
+```
+
+The `error` event fires alongside `onError` callbacks in `ProcessorOptions` and `SupervisorOptions` -- both mechanisms work independently.
+
 ## Tags
 
 ```typescript
