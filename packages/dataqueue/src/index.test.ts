@@ -78,9 +78,7 @@ describe('index integration', () => {
       },
       { pollInterval: 100 },
     );
-    processor.start();
-    await new Promise((r) => setTimeout(r, 300));
-    processor.stop();
+    await processor.start();
     const job = await jobQueue.getJob(jobId);
     expect(handler).toHaveBeenCalledWith(
       { foo: 'bar' },
@@ -432,9 +430,7 @@ describe('index integration', () => {
       },
       { pollInterval: 100 },
     );
-    processor.start();
-    await new Promise((r) => setTimeout(r, 300));
-    processor.stop();
+    await processor.start();
 
     expect(handler).toHaveBeenCalledWith(
       { foo: 'updated@example.com' },
@@ -459,9 +455,7 @@ describe('index integration', () => {
       },
       { pollInterval: 100 },
     );
-    processor.start();
-    await new Promise((r) => setTimeout(r, 300));
-    processor.stop();
+    await processor.start();
 
     const originalJob = await jobQueue.getJob(jobId1);
     expect(originalJob?.status).toBe('completed');
@@ -494,7 +488,7 @@ describe('index integration', () => {
       jobType: 'email',
       payload: { to: 'processing@example.com' },
     });
-    processor2.start();
+    const startPromise = processor2.start();
     // Wait a bit for job to be picked up
     await new Promise((r) => setTimeout(r, 150));
     // Job should be processing now
@@ -510,7 +504,7 @@ describe('index integration', () => {
         expect(job2?.payload).toEqual({ to: 'processing@example.com' });
       }
     }
-    processor2.stop();
+    await startPromise;
   });
 
   it('should record edited event when editing via JobQueue API', async () => {
