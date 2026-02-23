@@ -69,12 +69,23 @@ const processor = queue.createProcessor(handlers, {
 await processor.start();
 ```
 
-**Long-running** — call `processor.startInBackground()` which polls continuously:
+**Long-running** — call `processor.startInBackground()` which polls continuously, and `createSupervisor()` to automate maintenance:
 
 ```typescript
 processor.startInBackground();
+
+const supervisor = queue.createSupervisor({
+  intervalMs: 60_000,
+  stuckJobsTimeoutMinutes: 10,
+  cleanupJobsDaysToKeep: 30,
+});
+supervisor.startInBackground();
+
 process.on('SIGTERM', async () => {
-  await processor.stopAndDrain(30000);
+  await Promise.all([
+    processor.stopAndDrain(30000),
+    supervisor.stopAndDrain(30000),
+  ]);
   queue.getPool().end(); // or queue.getRedisClient().quit() for Redis
   process.exit(0);
 });
@@ -85,6 +96,6 @@ process.on('SIGTERM', async () => {
 1. Creating `initJobQueue` per request — use a singleton.
 2. Missing handler for a job type — fails with `NoHandler`. Type as `JobHandlers<PayloadMap>`.
 3. Not checking `signal.aborted` in long handlers — timed-out jobs keep running.
-4. Forgetting `reclaimStuckJobs()` — crashed workers leave jobs stuck.
+4. Skipping maintenance — use `createSupervisor()` to automate reclaim, cleanup, and token expiry. Without it, stuck jobs and old data accumulate.
 5. Skipping migrations (PostgreSQL) — run `dataqueue-cli migrate` first. Redis needs none.
 6. Using `stop()` instead of `stopAndDrain()` — leaves in-flight jobs stuck.

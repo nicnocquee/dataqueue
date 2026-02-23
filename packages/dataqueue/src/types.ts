@@ -452,6 +452,91 @@ export interface Processor {
   start: () => Promise<number>;
 }
 
+export interface SupervisorOptions {
+  /**
+   * How often the maintenance loop runs, in milliseconds.
+   * @default 60000 (1 minute)
+   */
+  intervalMs?: number;
+  /**
+   * Reclaim jobs stuck in `processing` longer than this many minutes.
+   * @default 10
+   */
+  stuckJobsTimeoutMinutes?: number;
+  /**
+   * Auto-delete completed jobs older than this many days. Set to 0 to disable.
+   * @default 30
+   */
+  cleanupJobsDaysToKeep?: number;
+  /**
+   * Auto-delete job events older than this many days. Set to 0 to disable.
+   * @default 30
+   */
+  cleanupEventsDaysToKeep?: number;
+  /**
+   * Batch size for cleanup deletions.
+   * @default 1000
+   */
+  cleanupBatchSize?: number;
+  /**
+   * Whether to reclaim stuck jobs each cycle.
+   * @default true
+   */
+  reclaimStuckJobs?: boolean;
+  /**
+   * Whether to expire timed-out waitpoint tokens each cycle.
+   * @default true
+   */
+  expireTimedOutTokens?: boolean;
+  /**
+   * Called when a maintenance task throws. One failure does not block other tasks.
+   * @default console.error
+   */
+  onError?: (error: Error) => void;
+  /** Enable verbose logging. */
+  verbose?: boolean;
+}
+
+export interface SupervisorRunResult {
+  /** Number of stuck jobs reclaimed back to pending. */
+  reclaimedJobs: number;
+  /** Number of old completed jobs deleted. */
+  cleanedUpJobs: number;
+  /** Number of old job events deleted. */
+  cleanedUpEvents: number;
+  /** Number of timed-out waitpoint tokens expired. */
+  expiredTokens: number;
+}
+
+export interface Supervisor {
+  /**
+   * Run all maintenance tasks once and return the results.
+   * Ideal for serverless or cron-triggered invocations.
+   */
+  start: () => Promise<SupervisorRunResult>;
+  /**
+   * Start the maintenance loop in the background.
+   * Runs every `intervalMs` milliseconds (default: 60 000).
+   * Call `stop()` or `stopAndDrain()` to halt the loop.
+   */
+  startInBackground: () => void;
+  /**
+   * Stop the background maintenance loop immediately.
+   * Does not wait for an in-flight maintenance run to complete.
+   */
+  stop: () => void;
+  /**
+   * Stop the background loop and wait for the current maintenance run
+   * (if any) to finish before resolving.
+   *
+   * @param timeoutMs - Maximum time to wait (default: 30 000 ms).
+   *   If the run does not finish within this time the promise resolves anyway.
+   */
+  stopAndDrain: (timeoutMs?: number) => Promise<void>;
+  /** Whether the background maintenance loop is currently running. */
+  isRunning: () => boolean;
+}
+
 export interface DatabaseSSLConfig {
   /**
    * CA certificate as PEM string or file path. If the value starts with 'file://', it will be loaded from file, otherwise treated as PEM string.
@@ -794,6 +879,13 @@ export interface JobQueue<PayloadMap> {
     handlers: JobHandlers<PayloadMap>,
     options?: ProcessorOptions,
   ) => Processor;
+
+  /**
+   * Create a background supervisor that automatically reclaims stuck jobs,
+   * cleans up old completed jobs/events, and expires timed-out waitpoint
+   * tokens on a configurable interval.
+   */
+  createSupervisor: (options?: SupervisorOptions) => Supervisor;
 
   /**
    * Get the job events for a job.

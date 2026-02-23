@@ -75,7 +75,78 @@ process.on('SIGINT', shutdown);
   leave jobs stuck in the `processing` state until they are reclaimed.
 </Callout>
 
-## Scheduling Maintenance Tasks
+## Background Supervisor
+
+In production, you need periodic maintenance: reclaiming stuck jobs, cleaning up old completed jobs/events, and expiring timed-out waitpoint tokens. The **supervisor** automates all of this.
+
+```typescript
+const supervisor = jobQueue.createSupervisor({
+  intervalMs: 60_000, // run maintenance every 60 seconds
+  stuckJobsTimeoutMinutes: 10, // reclaim jobs stuck > 10 minutes
+  cleanupJobsDaysToKeep: 30, // delete completed jobs older than 30 days
+  cleanupEventsDaysToKeep: 30, // delete job events older than 30 days
+  onError: (error) => {
+    console.error('Supervisor error:', error);
+  },
+});
+
+supervisor.startInBackground();
+```
+
+The supervisor runs independently from the processor. Each maintenance task is isolated -- if one fails, the others still run. All operations are idempotent, so it's safe to run multiple supervisor instances across a cluster.
+
+### Supervisor Options
+
+| Option                    | Default         | Description                                                  |
+| ------------------------- | --------------- | ------------------------------------------------------------ |
+| `intervalMs`              | `60000`         | How often the maintenance loop runs (ms)                     |
+| `stuckJobsTimeoutMinutes` | `10`            | Reclaim jobs stuck in `processing` longer than this          |
+| `cleanupJobsDaysToKeep`   | `30`            | Delete completed jobs older than this (days). `0` to disable |
+| `cleanupEventsDaysToKeep` | `30`            | Delete job events older than this (days). `0` to disable     |
+| `cleanupBatchSize`        | `1000`          | Batch size for cleanup deletions                             |
+| `reclaimStuckJobs`        | `true`          | Enable/disable stuck job reclaiming                          |
+| `expireTimedOutTokens`    | `true`          | Enable/disable waitpoint token expiry                        |
+| `onError`                 | `console.error` | Called when a maintenance task throws                        |
+| `verbose`                 | `false`         | Enable verbose logging                                       |
+
+### Graceful Shutdown with the Supervisor
+
+When shutting down, drain both the processor and the supervisor:
+
+```typescript
+async function shutdown() {
+  console.log('Shutting down...');
+
+  await Promise.all([
+    processor.stopAndDrain(30000),
+    supervisor.stopAndDrain(30000),
+  ]);
+
+  jobQueue.getPool().end();
+  console.log('Shutdown complete');
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+```
+
+### One-Shot Mode (Serverless)
+
+If you prefer to run maintenance from a cron-triggered API route or a serverless function, use `start()` instead of `startInBackground()`. It runs all tasks once and returns the results:
+
+```typescript
+const supervisor = jobQueue.createSupervisor();
+const result = await supervisor.start();
+// { reclaimedJobs: 3, cleanedUpJobs: 120, cleanedUpEvents: 45, expiredTokens: 0 }
+```
+
+## Manual Maintenance
+
+<Callout>
+  The supervisor above is the recommended approach. Manual maintenance is still
+  supported if you need fine-grained control over individual tasks.
+</Callout>
 
 In a serverless setup, you use cron-triggered API routes for [cleanup](/usage/cleanup-jobs) and [reclaim](/usage/reclaim-jobs). In a long-running server, you can use `setInterval` instead.
 
@@ -125,12 +196,6 @@ async function shutdown() {
 }
 ```
 
-<Callout>
-  If you use the [wait/token](/usage/wait) feature (PostgreSQL only), also call
-  `expireTimedOutTokens()` on an interval to expire tokens that have passed
-  their timeout.
-</Callout>
-
 ## Full Example
 
 Here is a complete Express server that ties everything together:
@@ -160,29 +225,18 @@ const processor = jobQueue.createProcessor(jobHandlers, {
 
 processor.startInBackground();
 
-// --- Schedule maintenance ---
-const reclaimInterval = setInterval(
-  async () => {
-    try {
-      await jobQueue.reclaimStuckJobs(10);
-    } catch (e) {
-      console.error('Reclaim error:', e);
-    }
+// --- Start the background supervisor ---
+const supervisor = jobQueue.createSupervisor({
+  intervalMs: 60_000,
+  stuckJobsTimeoutMinutes: 10,
+  cleanupJobsDaysToKeep: 30,
+  cleanupEventsDaysToKeep: 30,
+  onError: (error) => {
+    console.error('Supervisor error:', error);
   },
-  10 * 60 * 1000,
-);
+});
 
-const cleanupInterval = setInterval(
-  async () => {
-    try {
-      await jobQueue.cleanupOldJobs(30);
-      await jobQueue.cleanupOldJobEvents(30);
-    } catch (e) {
-      console.error('Cleanup error:', e);
-    }
-  },
-  24 * 60 * 60 * 1000,
-);
+supervisor.startInBackground();
 
 // --- Express app ---
 const app = express();
@@ -211,12 +265,11 @@ async function shutdown() {
   // Stop accepting new HTTP connections
   server.close();
 
-  // Clear maintenance intervals
-  clearInterval(reclaimInterval);
-  clearInterval(cleanupInterval);
-
-  // Wait for in-flight jobs to finish
-  await processor.stopAndDrain(30000);
+  // Wait for in-flight work to finish
+  await Promise.all([
+    processor.stopAndDrain(30000),
+    supervisor.stopAndDrain(30000),
+  ]);
 
   // Close the database pool
   jobQueue.getPool().end();

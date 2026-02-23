@@ -114,8 +114,20 @@ const processor = queue.createProcessor(handlers, {
 });
 processor.startInBackground();
 
+// Automate maintenance (reclaim stuck jobs, cleanup old data, expire tokens)
+const supervisor = queue.createSupervisor({
+  intervalMs: 60_000,
+  stuckJobsTimeoutMinutes: 10,
+  cleanupJobsDaysToKeep: 30,
+  cleanupEventsDaysToKeep: 30,
+});
+supervisor.startInBackground();
+
 process.on('SIGTERM', async () => {
-  await processor.stopAndDrain(30000);
+  await Promise.all([
+    processor.stopAndDrain(30000),
+    supervisor.stopAndDrain(30000),
+  ]);
   queue.getPool().end();
   process.exit(0);
 });
@@ -126,6 +138,6 @@ process.on('SIGTERM', async () => {
 1. **Creating a new queue per request** — always use a singleton. Each `initJobQueue` creates a DB pool.
 2. **Missing handler for a job type** — the job fails with `FailureReason.NoHandler`. Let TypeScript enforce completeness by typing handlers as `JobHandlers<PayloadMap>`.
 3. **Not checking `signal.aborted`** — timed-out jobs keep running in the background. Always check the signal in long-running handlers.
-4. **Forgetting `reclaimStuckJobs`** — crashed workers leave jobs stuck in `processing`. Call `reclaimStuckJobs()` periodically.
+4. **Skipping maintenance** — use `createSupervisor()` to automate reclaiming stuck jobs, cleaning up old data, and expiring tokens. Without it, crashed workers leave jobs stuck in `processing` and tables grow unbounded.
 5. **Forgetting to run migrations** — PostgreSQL requires `dataqueue-cli migrate` before use. Redis needs no migrations.
 6. **Not calling `stopAndDrain` on shutdown** — use `stopAndDrain()` (not `stop()`) for graceful shutdown to avoid stuck jobs.

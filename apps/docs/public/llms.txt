@@ -19,7 +19,7 @@
 - [Initialize Queue](https://docs.dataqueue.dev/usage/init-queue): PostgreSQL and Redis configuration
 - [Add Job](https://docs.dataqueue.dev/usage/add-job): Enqueue jobs with priority, scheduling, tags, idempotency
 - [Process Jobs](https://docs.dataqueue.dev/usage/process-jobs): Serverless batch processing with cron
-- [Long-Running Server](https://docs.dataqueue.dev/usage/long-running-server): Background processor with graceful shutdown
+- [Long-Running Server](https://docs.dataqueue.dev/usage/long-running-server): Background processor, supervisor (auto-reclaim, auto-cleanup), and graceful shutdown
 - [Failed Jobs](https://docs.dataqueue.dev/usage/failed-jobs): Retry behavior and error history
 - [Job Timeout](https://docs.dataqueue.dev/usage/job-timeout): AbortSignal, prolong, onTimeout
 - [Force Kill on Timeout](https://docs.dataqueue.dev/usage/force-kill-timeout): Worker thread termination

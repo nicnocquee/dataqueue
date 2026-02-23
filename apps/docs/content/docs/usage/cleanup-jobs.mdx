@@ -2,6 +2,12 @@
 title: Cleanup Jobs
 ---
 
+<Callout>
+  Running a long-lived server? Use
+  [`createSupervisor()`](/usage/long-running-server#background-supervisor) to
+  automate job cleanup instead of calling `cleanupOldJobs` manually.
+</Callout>
+
 If you have a lot of jobs, you may want to clean up old ones—for example, keeping only jobs from the last 30 days. You can do this by calling the `cleanupOldJobs` method. The example below shows an API route (`/api/cron/cleanup`) that can be triggered by a cron job:
 
 ```typescript title="@/app/api/cron/cleanup.ts"

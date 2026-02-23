@@ -83,7 +83,7 @@ Returns existing job ID if key already exists. Key persists until `cleanupOldJob
 - Increase `batchSize` and `concurrency` for higher throughput.
 - Run multiple processor instances with unique `workerId` values — `FOR UPDATE SKIP LOCKED` (PostgreSQL) or Lua scripts (Redis) prevent double-claiming.
 - Use `jobType` filter for specialized workers.
-- Call `cleanupOldJobs` and `reclaimStuckJobs` on intervals.
+- Use `createSupervisor()` to automate maintenance (reclaim stuck jobs, cleanup, token expiry). Safe to run across multiple instances.
 
 ## Progress Tracking
 
