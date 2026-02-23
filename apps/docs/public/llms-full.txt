@@ -352,6 +352,42 @@ interface AddJobOptions {
 
 - `db` — An external database client (e.g., a `pg.PoolClient` inside a transaction). When provided, the INSERT runs on this client instead of the internal pool. **PostgreSQL only.** Throws if used with the Redis backend.
 
+### addJobs
+
+```ts
+addJobs(jobs: JobOptions[], options?: AddJobOptions): Promise<number[]>
+```
+
+Adds multiple jobs to the queue in a single operation. More efficient than calling `addJob` in a loop because it batches the INSERT into a single database round-trip (PostgreSQL) or a single atomic Lua script (Redis).
+
+Returns an array of job IDs in the same order as the input array.
+
+Each job can independently have its own `priority`, `runAt`, `tags`, `idempotencyKey`, and other options. Idempotency keys are handled per-job — duplicates resolve to the existing job's ID without creating a new row.
+
+Passing an empty array returns `[]` immediately without touching the database.
+
+```ts
+const jobIds = await jobQueue.addJobs([
+  {
+    jobType: 'email',
+    payload: { to: 'a@example.com', subject: 'Hi', body: '...' },
+  },
+  {
+    jobType: 'email',
+    payload: { to: 'b@example.com', subject: 'Hi', body: '...' },
+    priority: 10,
+  },
+  {
+    jobType: 'report',
+    payload: { reportId: '123', userId: '456' },
+    tags: ['monthly'],
+  },
+]);
+// jobIds = [1, 2, 3]
+```
+
+The `{ db }` option works the same as `addJob` — pass a transactional client to batch-insert within an existing transaction (PostgreSQL only).
+
 #### DatabaseClient
 
 ```ts
@@ -1617,6 +1653,40 @@ In the example above, a job is added to the queue to send an email. The job type
 When adding a job, you can set its `priority`, schedule when it should run using `runAt`, and specify a timeout in milliseconds with `timeoutMs`.
 
 You can also add `tags` (an array of strings) to group, search, or batch jobs by category. See [Tags](/api/tags) for more details.
+
+## Batch Insert
+
+When you need to enqueue many jobs at once, use `addJobs` instead of calling `addJob` in a loop. It batches the inserts into a single database round-trip (PostgreSQL) or a single atomic Lua script (Redis), which is significantly faster.
+
+```typescript title="@/app/actions/send-bulk.ts"
+'use server';
+
+import { getJobQueue } from '@/lib/queue';
+
+export const sendBulkEmails = async (
+  recipients: { email: string; name: string }[],
+) => {
+  const jobQueue = getJobQueue();const jobIds = await jobQueue.addJobs(
+    recipients.map((r) => ({
+      jobType: 'send_email' as const,
+      payload: {
+        to: r.email,
+        subject: 'Newsletter',
+        body: `Hi ${r.name}, here's your update!`,
+      },
+      tags: ['newsletter'],
+    })),
+  );
+  // jobIds[i] corresponds to recipients[i]
+  return { jobIds };
+};
+```
+
+`addJobs` returns an array of job IDs in the **same order** as the input array. Each job can independently have its own `priority`, `runAt`, `tags`, `idempotencyKey`, and other options.
+
+- **Empty array**: `addJobs([])` returns `[]` immediately without touching the database.
+- **Idempotency**: Each job's `idempotencyKey` is handled independently. Duplicate keys resolve to the existing job's ID.
+- **Transactional**: The `{ db }` option works with `addJobs` the same way as `addJob` (PostgreSQL only).
 
 ## Idempotency
 
@@ -2890,12 +2960,6 @@ await jobQueue.editJob(jobId, {
   retryBackoff: false,
 });
 ```
-
-## Backward compatibility
-
-Jobs created before the retry configuration feature was added will continue to use the legacy `2^attempts * 1 minute` formula. The new retry options only apply when explicitly set.
-
-The migration adds nullable columns, so no data migration is needed.
 
 ---
 

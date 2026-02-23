@@ -62,6 +62,32 @@ jobQueue = initJobQueue<JobPayloadMap>({
 
 The library will **not** close externally provided connections on shutdown.
 
+## Adding Jobs
+
+Use `addJob` for a single job, `addJobs` for bulk inserts (single DB round-trip).
+
+```typescript
+const id = await queue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'a@x.com', subject: 'Hi', body: '...' },
+});
+
+const ids = await queue.addJobs([
+  {
+    jobType: 'send_email',
+    payload: { to: 'a@x.com', subject: 'Hi', body: '...' },
+  },
+  {
+    jobType: 'send_email',
+    payload: { to: 'b@x.com', subject: 'Hi', body: '...' },
+    priority: 10,
+  },
+]);
+// ids[i] corresponds to the i-th input job
+```
+
+Both support `idempotencyKey`, `priority`, `runAt`, `tags`, and `{ db }` for transactional inserts (PostgreSQL only).
+
 ## Handlers
 
 Type handlers as `JobHandlers<PayloadMap>` so TypeScript enforces a handler for every job type.

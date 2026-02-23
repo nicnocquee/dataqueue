@@ -235,6 +235,189 @@ export class PostgresBackend implements QueueBackend {
     }
   }
 
+  /**
+   * Insert multiple jobs in a single database round-trip.
+   *
+   * Uses a multi-row INSERT with ON CONFLICT handling for idempotency keys.
+   * Returns IDs in the same order as the input array.
+   */
+  async addJobs<PayloadMap, T extends JobType<PayloadMap>>(
+    jobs: JobOptions<PayloadMap, T>[],
+    options?: AddJobOptions,
+  ): Promise<number[]> {
+    if (jobs.length === 0) return [];
+
+    const externalClient = options?.db;
+    const client: DatabaseClient =
+      externalClient ?? (await this.pool.connect());
+    try {
+      const COLS_PER_JOB = 12;
+      const valueClauses: string[] = [];
+      const params: any[] = [];
+
+      const hasAnyIdempotencyKey = jobs.some((j) => j.idempotencyKey);
+
+      for (let i = 0; i < jobs.length; i++) {
+        const {
+          jobType,
+          payload,
+          maxAttempts = 3,
+          priority = 0,
+          runAt = null,
+          timeoutMs = undefined,
+          forceKillOnTimeout = false,
+          tags = undefined,
+          idempotencyKey = undefined,
+          retryDelay = undefined,
+          retryBackoff = undefined,
+          retryDelayMax = undefined,
+        } = jobs[i];
+
+        const base = i * COLS_PER_JOB;
+        valueClauses.push(
+          `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, ` +
+            `COALESCE($${base + 5}::timestamptz, CURRENT_TIMESTAMP), ` +
+            `$${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, ` +
+            `$${base + 10}, $${base + 11}, $${base + 12})`,
+        );
+        params.push(
+          jobType,
+          payload,
+          maxAttempts,
+          priority,
+          runAt,
+          timeoutMs ?? null,
+          forceKillOnTimeout ?? false,
+          tags ?? null,
+          idempotencyKey ?? null,
+          retryDelay ?? null,
+          retryBackoff ?? null,
+          retryDelayMax ?? null,
+        );
+      }
+
+      const onConflict = hasAnyIdempotencyKey
+        ? `ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`
+        : '';
+
+      const result = await client.query(
+        `INSERT INTO job_queue
+          (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max)
+         VALUES ${valueClauses.join(', ')}
+         ${onConflict}
+         RETURNING id, idempotency_key`,
+        params,
+      );
+
+      // Build a map of idempotency_key -> id from returned rows
+      const returnedKeyToId = new Map<string, number>();
+      const returnedNullKeyIds: number[] = [];
+      for (const row of result.rows) {
+        if (row.idempotency_key != null) {
+          returnedKeyToId.set(row.idempotency_key, row.id);
+        } else {
+          returnedNullKeyIds.push(row.id);
+        }
+      }
+
+      // Identify idempotency keys that conflicted (not in RETURNING)
+      const missingKeys: string[] = [];
+      for (const job of jobs) {
+        if (job.idempotencyKey && !returnedKeyToId.has(job.idempotencyKey)) {
+          missingKeys.push(job.idempotencyKey);
+        }
+      }
+
+      // Batch-fetch existing IDs for conflicted keys
+      if (missingKeys.length > 0) {
+        const existing = await client.query(
+          `SELECT id, idempotency_key FROM job_queue WHERE idempotency_key = ANY($1)`,
+          [missingKeys],
+        );
+        for (const row of existing.rows) {
+          returnedKeyToId.set(row.idempotency_key, row.id);
+        }
+      }
+
+      // Assemble result array in input order
+      let nullKeyIdx = 0;
+      const ids: number[] = [];
+      for (const job of jobs) {
+        if (job.idempotencyKey) {
+          const id = returnedKeyToId.get(job.idempotencyKey);
+          if (id === undefined) {
+            throw new Error(
+              `Failed to resolve job ID for idempotency key "${job.idempotencyKey}"`,
+            );
+          }
+          ids.push(id);
+        } else {
+          ids.push(returnedNullKeyIds[nullKeyIdx++]);
+        }
+      }
+
+      log(`Batch-inserted ${jobs.length} jobs, IDs: [${ids.join(', ')}]`);
+
+      // Record 'added' events — only for newly inserted jobs
+      const newJobEvents: {
+        jobId: number;
+        eventType: JobEventType;
+        metadata?: any;
+      }[] = [];
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        const wasInserted =
+          !job.idempotencyKey || !missingKeys.includes(job.idempotencyKey);
+        if (wasInserted) {
+          newJobEvents.push({
+            jobId: ids[i],
+            eventType: JobEventType.Added,
+            metadata: {
+              jobType: job.jobType,
+              payload: job.payload,
+              tags: job.tags,
+              idempotencyKey: job.idempotencyKey,
+            },
+          });
+        }
+      }
+
+      if (newJobEvents.length > 0) {
+        if (externalClient) {
+          // Record events on the same transaction client
+          const evtValues: string[] = [];
+          const evtParams: any[] = [];
+          let evtIdx = 1;
+          for (const evt of newJobEvents) {
+            evtValues.push(`($${evtIdx++}, $${evtIdx++}, $${evtIdx++})`);
+            evtParams.push(
+              evt.jobId,
+              evt.eventType,
+              evt.metadata ? JSON.stringify(evt.metadata) : null,
+            );
+          }
+          try {
+            await client.query(
+              `INSERT INTO job_events (job_id, event_type, metadata) VALUES ${evtValues.join(', ')}`,
+              evtParams,
+            );
+          } catch (error) {
+            log(`Error recording batch job events: ${error}`);
+          }
+        } else {
+          await this.recordJobEventsBatch(newJobEvents);
+        }
+      }
+
+      return ids;
+    } catch (error) {
+      log(`Error batch-inserting jobs: ${error}`);
+      throw error;
+    } finally {
+      if (!externalClient) (client as any).release();
+    }
+  }
+
   async getJob<PayloadMap, T extends JobType<PayloadMap>>(
     id: number,
   ): Promise<JobRecord<PayloadMap, T> | null> {

@@ -2166,3 +2166,232 @@ describe('queue.addJob with db option (BYOC)', () => {
     expect(job?.payload).toEqual({ to: 'commit@example.com' });
   });
 });
+
+describe('addJobs batch insert', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('inserts multiple jobs and returns IDs in order', async () => {
+    // Act
+    const ids = await queue.addJobs<
+      { email: { to: string }; report: { id: string } },
+      'email' | 'report'
+    >(pool, [
+      { jobType: 'email', payload: { to: 'a@test.com' } },
+      { jobType: 'report', payload: { id: 'r1' } },
+      { jobType: 'email', payload: { to: 'b@test.com' } },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toBeLessThan(ids[1]);
+    expect(ids[1]).toBeLessThan(ids[2]);
+
+    const job0 = await queue.getJob(pool, ids[0]);
+    expect(job0?.jobType).toBe('email');
+    expect(job0?.payload).toEqual({ to: 'a@test.com' });
+
+    const job1 = await queue.getJob(pool, ids[1]);
+    expect(job1?.jobType).toBe('report');
+    expect(job1?.payload).toEqual({ id: 'r1' });
+
+    const job2 = await queue.getJob(pool, ids[2]);
+    expect(job2?.jobType).toBe('email');
+    expect(job2?.payload).toEqual({ to: 'b@test.com' });
+  });
+
+  it('returns empty array for empty input', async () => {
+    // Act
+    const ids = await queue.addJobs(pool, []);
+
+    // Assert
+    expect(ids).toEqual([]);
+  });
+
+  it('respects priority and runAt per job', async () => {
+    // Setup
+    const futureDate = new Date(Date.now() + 60_000);
+
+    // Act
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(pool, [
+      { jobType: 'task', payload: { n: 1 }, priority: 5 },
+      { jobType: 'task', payload: { n: 2 }, priority: 10, runAt: futureDate },
+    ]);
+
+    // Assert
+    const job0 = await queue.getJob(pool, ids[0]);
+    expect(job0?.priority).toBe(5);
+
+    const job1 = await queue.getJob(pool, ids[1]);
+    expect(job1?.priority).toBe(10);
+    expect(job1?.runAt.getTime()).toBeCloseTo(futureDate.getTime(), -3);
+  });
+
+  it('handles idempotency keys for new jobs', async () => {
+    // Act
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(pool, [
+      { jobType: 'task', payload: { n: 1 }, idempotencyKey: 'key-a' },
+      { jobType: 'task', payload: { n: 2 }, idempotencyKey: 'key-b' },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+
+    const job0 = await queue.getJob(pool, ids[0]);
+    expect(job0?.idempotencyKey).toBe('key-a');
+
+    const job1 = await queue.getJob(pool, ids[1]);
+    expect(job1?.idempotencyKey).toBe('key-b');
+  });
+
+  it('returns existing IDs for conflicting idempotency keys', async () => {
+    // Setup — insert a job first
+    const existingId = await queue.addJob<{ task: { n: number } }, 'task'>(
+      pool,
+      { jobType: 'task', payload: { n: 0 }, idempotencyKey: 'dup-key' },
+    );
+
+    // Act — batch includes a duplicate key
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(pool, [
+      { jobType: 'task', payload: { n: 1 } },
+      { jobType: 'task', payload: { n: 2 }, idempotencyKey: 'dup-key' },
+      { jobType: 'task', payload: { n: 3 } },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(3);
+    expect(ids[1]).toBe(existingId);
+    expect(ids[0]).not.toBe(existingId);
+    expect(ids[2]).not.toBe(existingId);
+  });
+
+  it('handles mix of keyed and non-keyed jobs', async () => {
+    // Act
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(pool, [
+      { jobType: 'task', payload: { n: 1 } },
+      { jobType: 'task', payload: { n: 2 }, idempotencyKey: 'mix-1' },
+      { jobType: 'task', payload: { n: 3 } },
+      { jobType: 'task', payload: { n: 4 }, idempotencyKey: 'mix-2' },
+      { jobType: 'task', payload: { n: 5 } },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(5);
+    const uniqueIds = new Set(ids);
+    expect(uniqueIds.size).toBe(5);
+
+    const job1 = await queue.getJob(pool, ids[1]);
+    expect(job1?.idempotencyKey).toBe('mix-1');
+
+    const job3 = await queue.getJob(pool, ids[3]);
+    expect(job3?.idempotencyKey).toBe('mix-2');
+  });
+
+  it('records added events only for newly inserted jobs', async () => {
+    // Setup — pre-insert a job with a known key
+    const existingId = await queue.addJob<{ task: { n: number } }, 'task'>(
+      pool,
+      { jobType: 'task', payload: { n: 0 }, idempotencyKey: 'evt-key' },
+    );
+
+    // Act
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(pool, [
+      { jobType: 'task', payload: { n: 1 } },
+      { jobType: 'task', payload: { n: 2 }, idempotencyKey: 'evt-key' },
+    ]);
+
+    // Assert — the new job should have an event from addJobs
+    const events0 = await queue.getJobEvents(pool, ids[0]);
+    const addedEvents0 = events0.filter(
+      (e: JobEvent) => e.eventType === JobEventType.Added,
+    );
+    expect(addedEvents0).toHaveLength(1);
+
+    // The duplicate should only have the original event from addJob, not a second from addJobs
+    const eventsExisting = await queue.getJobEvents(pool, existingId);
+    const addedEventsExisting = eventsExisting.filter(
+      (e: JobEvent) => e.eventType === JobEventType.Added,
+    );
+    expect(addedEventsExisting).toHaveLength(1);
+  });
+
+  it('stores tags correctly per job', async () => {
+    // Act
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(pool, [
+      { jobType: 'task', payload: { n: 1 }, tags: ['urgent', 'billing'] },
+      { jobType: 'task', payload: { n: 2 }, tags: ['low-priority'] },
+      { jobType: 'task', payload: { n: 3 } },
+    ]);
+
+    // Assert
+    const job0 = await queue.getJob(pool, ids[0]);
+    expect(job0?.tags).toEqual(['urgent', 'billing']);
+
+    const job1 = await queue.getJob(pool, ids[1]);
+    expect(job1?.tags).toEqual(['low-priority']);
+
+    const job2 = await queue.getJob(pool, ids[2]);
+    expect(job2?.tags).toBeNull();
+  });
+
+  it('works with transactional db option — commit', async () => {
+    // Setup
+    const client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Act
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(
+      pool,
+      [
+        { jobType: 'task', payload: { n: 1 } },
+        { jobType: 'task', payload: { n: 2 } },
+      ],
+      { db: client },
+    );
+    await client.query('COMMIT');
+    client.release();
+
+    // Assert
+    expect(ids).toHaveLength(2);
+    const job0 = await queue.getJob(pool, ids[0]);
+    expect(job0).not.toBeNull();
+    const job1 = await queue.getJob(pool, ids[1]);
+    expect(job1).not.toBeNull();
+  });
+
+  it('works with transactional db option — rollback', async () => {
+    // Setup
+    const client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Act
+    const ids = await queue.addJobs<{ task: { n: number } }, 'task'>(
+      pool,
+      [
+        { jobType: 'task', payload: { n: 1 } },
+        { jobType: 'task', payload: { n: 2 } },
+      ],
+      { db: client },
+    );
+    await client.query('ROLLBACK');
+    client.release();
+
+    // Assert — jobs should not exist after rollback
+    const job0 = await queue.getJob(pool, ids[0]);
+    expect(job0).toBeNull();
+    const job1 = await queue.getJob(pool, ids[1]);
+    expect(job1).toBeNull();
+  });
+});

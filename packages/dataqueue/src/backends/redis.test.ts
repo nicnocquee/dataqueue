@@ -1752,3 +1752,155 @@ describe('Redis BYOC: addJob with db option throws', () => {
     ).rejects.toThrow('The db option is not supported with the Redis backend.');
   });
 });
+
+describe('Redis addJobs batch insert', () => {
+  let prefix: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+  let redisClient: any;
+
+  beforeEach(async () => {
+    prefix = createRedisTestPrefix();
+    jobQueue = initJobQueue<TestPayloadMap>({
+      backend: 'redis',
+      redisConfig: { url: REDIS_URL, keyPrefix: prefix },
+    });
+    redisClient = jobQueue.getRedisClient();
+  });
+
+  afterEach(async () => {
+    await cleanupRedisPrefix(redisClient, prefix);
+    await redisClient.quit();
+  });
+
+  it('inserts multiple jobs and returns IDs in order', async () => {
+    // Act
+    const ids = await jobQueue.addJobs([
+      { jobType: 'email', payload: { to: 'a@test.com' } },
+      { jobType: 'sms', payload: { to: '+1234' } },
+      { jobType: 'email', payload: { to: 'b@test.com' } },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(3);
+
+    const job0 = await jobQueue.getJob(ids[0]);
+    expect(job0?.jobType).toBe('email');
+    expect(job0?.payload).toEqual({ to: 'a@test.com' });
+
+    const job1 = await jobQueue.getJob(ids[1]);
+    expect(job1?.jobType).toBe('sms');
+    expect(job1?.payload).toEqual({ to: '+1234' });
+
+    const job2 = await jobQueue.getJob(ids[2]);
+    expect(job2?.jobType).toBe('email');
+    expect(job2?.payload).toEqual({ to: 'b@test.com' });
+  });
+
+  it('returns empty array for empty input', async () => {
+    // Act
+    const ids = await jobQueue.addJobs([]);
+
+    // Assert
+    expect(ids).toEqual([]);
+  });
+
+  it('handles idempotency keys for new jobs', async () => {
+    // Act
+    const ids = await jobQueue.addJobs([
+      {
+        jobType: 'email',
+        payload: { to: 'a@test.com' },
+        idempotencyKey: 'r-key-a',
+      },
+      {
+        jobType: 'email',
+        payload: { to: 'b@test.com' },
+        idempotencyKey: 'r-key-b',
+      },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+
+    const job0 = await jobQueue.getJob(ids[0]);
+    expect(job0?.idempotencyKey).toBe('r-key-a');
+  });
+
+  it('returns existing IDs for conflicting idempotency keys', async () => {
+    // Setup
+    const existingId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'existing@test.com' },
+      idempotencyKey: 'r-dup',
+    });
+
+    // Act
+    const ids = await jobQueue.addJobs([
+      { jobType: 'email', payload: { to: 'new@test.com' } },
+      {
+        jobType: 'email',
+        payload: { to: 'dup@test.com' },
+        idempotencyKey: 'r-dup',
+      },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).toBe(existingId);
+    expect(ids[0]).not.toBe(existingId);
+  });
+
+  it('records added events for each inserted job', async () => {
+    // Act
+    const ids = await jobQueue.addJobs([
+      { jobType: 'email', payload: { to: 'a@test.com' } },
+      { jobType: 'sms', payload: { to: '+999' } },
+    ]);
+
+    // Assert
+    const events0 = await jobQueue.getJobEvents(ids[0]);
+    expect(events0.filter((e) => e.eventType === 'added')).toHaveLength(1);
+
+    const events1 = await jobQueue.getJobEvents(ids[1]);
+    expect(events1.filter((e) => e.eventType === 'added')).toHaveLength(1);
+  });
+
+  it('throws when db option is used with addJobs', async () => {
+    // Setup
+    const fakeDb = { query: async () => ({ rows: [], rowCount: 0 }) };
+
+    // Act & Assert
+    await expect(
+      jobQueue.addJobs(
+        [{ jobType: 'email', payload: { to: 'fail@test.com' } }],
+        { db: fakeDb },
+      ),
+    ).rejects.toThrow('The db option is not supported with the Redis backend.');
+  });
+
+  it('stores tags and priority correctly per job', async () => {
+    // Act
+    const ids = await jobQueue.addJobs([
+      {
+        jobType: 'email',
+        payload: { to: 'a@test.com' },
+        tags: ['urgent'],
+        priority: 10,
+      },
+      { jobType: 'sms', payload: { to: '+1' }, priority: 5 },
+      { jobType: 'email', payload: { to: 'c@test.com' }, tags: ['low'] },
+    ]);
+
+    // Assert
+    const job0 = await jobQueue.getJob(ids[0]);
+    expect(job0?.tags).toEqual(['urgent']);
+    expect(job0?.priority).toBe(10);
+
+    const job1 = await jobQueue.getJob(ids[1]);
+    expect(job1?.priority).toBe(5);
+
+    const job2 = await jobQueue.getJob(ids[2]);
+    expect(job2?.tags).toEqual(['low']);
+  });
+});
