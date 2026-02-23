@@ -172,7 +172,18 @@ function deserializeJob<PayloadMap, T extends JobType<PayloadMap>>(
           ? false
           : null,
     retryDelayMax: numOrNull(h.retryDelayMax),
+    output: parseJsonField(h.output),
   };
+}
+
+/** Parse a JSON field from a Redis hash, returning null for missing/null values. */
+function parseJsonField(raw: string | undefined): unknown {
+  if (!raw || raw === 'null') return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** Parse step data from a Redis hash field. */
@@ -593,9 +604,18 @@ export class RedisBackend implements QueueBackend {
     return jobs;
   }
 
-  async completeJob(jobId: number): Promise<void> {
+  async completeJob(jobId: number, output?: unknown): Promise<void> {
     const now = this.nowMs();
-    await this.client.eval(COMPLETE_JOB_SCRIPT, 1, this.prefix, jobId, now);
+    const outputArg =
+      output !== undefined ? JSON.stringify(output) : '__NONE__';
+    await this.client.eval(
+      COMPLETE_JOB_SCRIPT,
+      1,
+      this.prefix,
+      jobId,
+      now,
+      outputArg,
+    );
     await this.recordJobEvent(jobId, JobEventType.Completed);
     log(`Completed job ${jobId}`);
   }
@@ -656,6 +676,24 @@ export class RedisBackend implements QueueBackend {
     } catch (error) {
       log(`Error updating progress for job ${jobId}: ${error}`);
       // Best-effort: do not throw to avoid killing the running handler
+    }
+  }
+
+  // ── Output ────────────────────────────────────────────────────────────
+
+  async updateOutput(jobId: number, output: unknown): Promise<void> {
+    try {
+      const now = this.nowMs();
+      await this.client.hset(
+        `${this.prefix}job:${jobId}`,
+        'output',
+        JSON.stringify(output),
+        'updatedAt',
+        now.toString(),
+      );
+      log(`Updated output for job ${jobId}`);
+    } catch (error) {
+      log(`Error updating output for job ${jobId}: ${error}`);
     }
   }
 

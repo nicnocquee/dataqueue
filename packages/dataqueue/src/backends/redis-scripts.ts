@@ -421,22 +421,30 @@ return results
 /**
  * COMPLETE JOB
  * KEYS: [prefix]
- * ARGV: [jobId, nowMs]
+ * ARGV: [jobId, nowMs, outputJson]
  */
 export const COMPLETE_JOB_SCRIPT = `
 local prefix = KEYS[1]
 local jobId = ARGV[1]
 local nowMs = ARGV[2]
+local outputJson = ARGV[3]
 local jk = prefix .. 'job:' .. jobId
 
-redis.call('HMSET', jk,
+local fields = {
   'status', 'completed',
   'updatedAt', nowMs,
   'completedAt', nowMs,
   'stepData', 'null',
   'waitUntil', 'null',
   'waitTokenId', 'null'
-)
+}
+
+if outputJson ~= '__NONE__' then
+  fields[#fields + 1] = 'output'
+  fields[#fields + 1] = outputJson
+end
+
+redis.call('HMSET', jk, unpack(fields))
 redis.call('SREM', prefix .. 'status:processing', jobId)
 redis.call('SADD', prefix .. 'status:completed', jobId)
 

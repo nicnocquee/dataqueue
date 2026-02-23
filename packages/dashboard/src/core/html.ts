@@ -792,6 +792,15 @@ function JobDetailPage({ jobId, onBack, showToast }) {
         )
       : null,
 
+    job.output != null
+      ? h('div', { className: 'dq-card', style: { marginBottom: '16px' } },
+          h('div', { className: 'dq-card-header' }, 'Output'),
+          h('div', { className: 'dq-card-body' },
+            h('pre', { className: 'dq-code-block' }, prettyJSON(job.output)),
+          ),
+        )
+      : null,
+
     h('div', { className: 'dq-card' },
       h('div', { className: 'dq-card-header' }, 'Events (' + events.length + ')'),
       h('div', { className: 'dq-card-body' }, h(EventTimeline, { events })),

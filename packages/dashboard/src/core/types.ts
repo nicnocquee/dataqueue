@@ -98,6 +98,7 @@ export interface SerializedJobRecord {
   waitTokenId?: string | null;
   stepData?: Record<string, unknown>;
   progress?: number | null;
+  output?: unknown;
 }
 
 /**

@@ -80,8 +80,11 @@ export const getNextBatch = async <
     jobType,
   );
 
-export const completeJob = async (pool: Pool, jobId: number): Promise<void> =>
-  new PostgresBackend(pool).completeJob(jobId);
+export const completeJob = async (
+  pool: Pool,
+  jobId: number,
+  output?: unknown,
+): Promise<void> => new PostgresBackend(pool).completeJob(jobId, output);
 
 export const prolongJob = async (pool: Pool, jobId: number): Promise<void> =>
   new PostgresBackend(pool).prolongJob(jobId);

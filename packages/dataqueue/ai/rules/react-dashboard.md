@@ -10,7 +10,7 @@ Install: `npm install @nicnocquee/dataqueue-react` (requires React 18+).
 'use client';
 import { useJob } from '@nicnocquee/dataqueue-react';
 
-const { status, progress, data, isLoading, error } = useJob(jobId, {
+const { status, progress, output, data, isLoading, error } = useJob(jobId, {
   fetcher: (id) =>
     fetch(`/api/jobs/${id}`)
       .then((r) => r.json())
@@ -81,3 +81,7 @@ Wrap handlers with your auth middleware before exporting GET/POST.
 ## Progress Tracking
 
 Use `ctx.setProgress(percent)` in handlers (0–100). The value appears in `useJob`'s `progress` field and the dashboard detail view.
+
+## Job Output
+
+Store results via `ctx.setOutput(data)` or by returning a value from the handler. The value appears in `useJob`'s `output` field and the dashboard detail view. If both are used, `ctx.setOutput()` takes precedence.

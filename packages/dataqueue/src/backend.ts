@@ -148,8 +148,8 @@ export interface QueueBackend {
     jobType?: string | string[],
   ): Promise<JobRecord<PayloadMap, T>[]>;
 
-  /** Mark a job as completed. */
-  completeJob(jobId: number): Promise<void>;
+  /** Mark a job as completed, optionally storing output data. */
+  completeJob(jobId: number, output?: unknown): Promise<void>;
 
   /** Mark a job as failed with error info and schedule retry. */
   failJob(
@@ -194,6 +194,9 @@ export interface QueueBackend {
 
   /** Update the progress percentage (0-100) for a job. */
   updateProgress(jobId: number, progress: number): Promise<void>;
+
+  /** Update the output data for a job. Best-effort: should not throw. */
+  updateOutput(jobId: number, output: unknown): Promise<void>;
 
   // ── Events ────────────────────────────────────────────────────────────
 

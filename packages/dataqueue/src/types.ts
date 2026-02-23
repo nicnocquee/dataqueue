@@ -244,6 +244,11 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    */
   progress?: number | null;
   /**
+   * Handler output stored via `ctx.setOutput(data)` or by returning a value
+   * from the handler. `null` if no output has been stored.
+   */
+  output?: unknown;
+  /**
    * Base delay between retries in seconds, or null if using legacy default.
    */
   retryDelay?: number | null;
@@ -351,6 +356,17 @@ export interface JobContext {
    * @throws If percent is outside the 0-100 range.
    */
   setProgress: (percent: number) => Promise<void>;
+
+  /**
+   * Store an output/result for this job. The value is persisted to the database
+   * as JSONB and can be read by clients via `getJob()` or the React SDK's `useJob()` hook.
+   *
+   * Can be called multiple times — each call overwrites the previous value.
+   * If `setOutput()` is called, the handler's return value is ignored.
+   *
+   * @param data - Any JSON-serializable value to store as the job's output.
+   */
+  setOutput: (data: unknown) => Promise<void>;
 }
 
 /**
@@ -439,7 +455,7 @@ export type JobHandler<PayloadMap, T extends keyof PayloadMap> = (
   payload: PayloadMap[T],
   signal: AbortSignal,
   ctx: JobContext,
-) => Promise<void>;
+) => Promise<unknown>;
 
 export type JobHandlers<PayloadMap> = {
   [K in keyof PayloadMap]: JobHandler<PayloadMap, K>;
@@ -839,6 +855,8 @@ export interface QueueEventMap {
   'job:waiting': { jobId: number; jobType: string };
   /** Fired when a job reports progress via `ctx.setProgress()`. */
   'job:progress': { jobId: number; progress: number };
+  /** Fired when a job stores output via `ctx.setOutput()`. */
+  'job:output': { jobId: number; output: unknown };
   /** Fired on internal errors from the processor or supervisor. */
   error: Error;
 }
