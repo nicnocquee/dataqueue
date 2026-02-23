@@ -774,8 +774,7 @@ export class PostgresBackend implements QueueBackend {
   async completeJob(jobId: number, output?: unknown): Promise<void> {
     const client = await this.pool.connect();
     try {
-      const outputJson =
-        output !== undefined ? JSON.stringify(output) : null;
+      const outputJson = output !== undefined ? JSON.stringify(output) : null;
       const result = await client.query(
         `
         UPDATE job_queue

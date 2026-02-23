@@ -3766,7 +3766,9 @@ export const jobHandlers: JobHandlers<JobPayloadMap> = {
       const url = await processImage(image);
       results.push(url);
 
-      await ctx.setProgress(Math.round((results.length / payload.images.length) * 100));
+      await ctx.setProgress(
+        Math.round((results.length / payload.images.length) * 100),
+      );
       await ctx.setOutput({ processedUrls: results });}
   },
 };

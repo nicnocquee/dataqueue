@@ -1285,7 +1285,9 @@ describe('Redis parity features', () => {
 
     const job = await jobQueue.getJob(jobId);
     expect(job?.status).toBe('completed');
-    expect(job?.output).toEqual({ reportUrl: 'https://example.com/report.pdf' });
+    expect(job?.output).toEqual({
+      reportUrl: 'https://example.com/report.pdf',
+    });
   });
 
   it('stores handler return value as output when setOutput is not called', async () => {

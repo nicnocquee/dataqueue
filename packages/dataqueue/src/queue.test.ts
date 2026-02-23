@@ -85,7 +85,9 @@ describe('queue integration', () => {
       payload: { to: 'output@example.com' },
     });
     await queue.getNextBatch(pool, 'worker-output', 1);
-    await queue.completeJob(pool, jobId, { url: 'https://example.com/report.pdf' });
+    await queue.completeJob(pool, jobId, {
+      url: 'https://example.com/report.pdf',
+    });
     const job = await queue.getJob(pool, jobId);
     expect(job?.status).toBe('completed');
     expect(job?.output).toEqual({ url: 'https://example.com/report.pdf' });
