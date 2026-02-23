@@ -1,0 +1,45 @@
+---
+title: CLI
+description: Command-line tools for managing DataQueue migrations, project scaffolding, and AI integrations.
+---
+
+DataQueue ships a CLI tool called `dataqueue-cli` that you can run directly with `npx`:
+
+```bash
+npx dataqueue-cli <command> [options]
+```
+
+## Commands
+
+| Command                                 | Description                                       |
+| --------------------------------------- | ------------------------------------------------- |
+| [`migrate`](/cli/migrate)               | Run PostgreSQL database migrations                |
+| [`init`](/cli/init)                     | Scaffold a Next.js project for DataQueue          |
+| [`install-skills`](/cli/install-skills) | Install AI skill files for coding assistants      |
+| [`install-rules`](/cli/install-rules)   | Install agent rule sets for AI clients            |
+| [`install-mcp`](/cli/install-mcp)       | Configure the DataQueue MCP server for AI clients |
+| [`mcp`](/cli/mcp)                       | Start the DataQueue MCP server over stdio         |
+
+## Usage
+
+Running `dataqueue-cli` without a command (or with an unrecognized command) prints the help output:
+
+```
+Usage:
+  dataqueue-cli migrate [--envPath <path>] [-s <schema> | --schema <schema>]
+  dataqueue-cli init
+  dataqueue-cli install-skills
+  dataqueue-cli install-rules
+  dataqueue-cli install-mcp
+  dataqueue-cli mcp
+
+Options for migrate:
+  --envPath <path>         Path to a .env file to load environment variables
+  -s, --schema <schema>   Set the schema to use
+
+AI tooling commands:
+  install-skills     Install DataQueue skill files for AI assistants
+  install-rules      Install DataQueue agent rules for AI clients
+  install-mcp        Configure the DataQueue MCP server for AI clients
+  mcp                Start the DataQueue MCP server (stdio)
+```

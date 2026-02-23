@@ -1,0 +1,82 @@
+---
+title: init
+description: Scaffold a Next.js project for DataQueue with a single command.
+---
+
+Scaffolds your Next.js project with everything needed to start using DataQueue — API routes, a job queue singleton, a cron script, and all required dependencies.
+
+```bash
+npx dataqueue-cli init
+```
+
+## What It Does
+
+The `init` command auto-detects your project structure (App Router vs Pages Router, `src/` directory vs root) and creates the following:
+
+### Files Created
+
+| File                                            | Purpose                                                |
+| ----------------------------------------------- | ------------------------------------------------------ |
+| `app/api/dataqueue/manage/[[...task]]/route.ts` | API route for queue management (App Router)            |
+| `pages/api/dataqueue/manage/[[...task]].ts`     | API route for queue management (Pages Router)          |
+| `lib/dataqueue/queue.ts`                        | Job queue singleton with a sample `send_email` handler |
+| `cron.sh`                                       | Shell script for local development cron jobs           |
+
+<Callout>
+  Only the API route matching your detected router is created. Existing files
+  are never overwritten.
+</Callout>
+
+### Dependencies Added
+
+**Production:**
+
+- `@nicnocquee/dataqueue`
+- `@nicnocquee/dataqueue-dashboard`
+- `@nicnocquee/dataqueue-react`
+
+**Development:**
+
+- `dotenv-cli`
+- `ts-node`
+- `node-pg-migrate`
+
+### Scripts Added
+
+| Script              | Command                                         |
+| ------------------- | ----------------------------------------------- |
+| `cron`              | `bash cron.sh`                                  |
+| `migrate-dataqueue` | `dotenv -e .env.local -- dataqueue-cli migrate` |
+
+## After Running
+
+1. Install the newly added dependencies:
+
+```bash
+npm install
+```
+
+2. Set up your environment variables in `.env.local`:
+
+```bash
+PG_DATAQUEUE_DATABASE=postgresql://user:password@localhost:5432/mydb
+CRON_SECRET=your-secret-here
+```
+
+3. Run database migrations:
+
+```bash
+npm run migrate-dataqueue
+```
+
+4. Start your Next.js dev server and the cron script:
+
+```bash
+npm run dev
+npm run cron
+```
+
+## Requirements
+
+- Must be run in a Next.js project directory (looks for `next` in `package.json` dependencies)
+- Must have either an `app/` or `pages/` directory

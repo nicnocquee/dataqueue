@@ -1,0 +1,59 @@
+---
+title: install-mcp
+description: Configure the DataQueue MCP server for AI coding clients.
+---
+
+Configures the DataQueue [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server in your AI client's configuration. This gives your AI assistant direct access to DataQueue documentation.
+
+```bash
+npx dataqueue-cli install-mcp
+```
+
+## Interactive Prompt
+
+The command prompts you to select your AI client:
+
+```
+DataQueue MCP Server Installer
+
+Select your AI client:
+
+  1) Cursor
+  2) Claude Code
+  3) VS Code (Copilot)
+  4) Windsurf
+
+Enter choice (1-4):
+```
+
+## What It Configures
+
+The installer adds a `"dataqueue"` server entry to your client's MCP config file:
+
+```json
+{
+  "mcpServers": {
+    "dataqueue": {
+      "command": "npx",
+      "args": ["dataqueue-cli", "mcp"]
+    }
+  }
+}
+```
+
+If the config file already exists, the `dataqueue` entry is merged in without affecting other servers.
+
+## Install Locations
+
+| Client            | Config File                           |
+| ----------------- | ------------------------------------- |
+| Cursor            | `.cursor/mcp.json`                    |
+| Claude Code       | `.mcp.json`                           |
+| VS Code (Copilot) | `.vscode/mcp.json`                    |
+| Windsurf          | `~/.codeium/windsurf/mcp_config.json` |
+
+<Callout>
+  After installing, your AI client will automatically start the MCP server when
+  needed. See the [`mcp`](/cli/mcp) command for details on what the server
+  exposes.
+</Callout>

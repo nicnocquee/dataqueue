@@ -1,6 +1,6 @@
 {
   "title": "DataQueue",
   "icon": "MyIcon",
-  "pages": ["intro", "usage", "example", "api"],
+  "pages": ["intro", "usage", "cli", "example", "api"],
   "defaultOpen": true
 }

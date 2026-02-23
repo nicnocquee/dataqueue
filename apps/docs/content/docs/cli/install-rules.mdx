@@ -1,0 +1,56 @@
+---
+title: install-rules
+description: Install DataQueue agent rules for AI coding clients.
+---
+
+Installs comprehensive DataQueue rule sets into your AI client's configuration. Rules give AI assistants detailed guidance for generating correct DataQueue code.
+
+```bash
+npx dataqueue-cli install-rules
+```
+
+## Interactive Prompt
+
+The command prompts you to select your AI client:
+
+```
+DataQueue Agent Rules Installer
+
+Select your AI client:
+
+  1) Cursor
+  2) Claude Code
+  3) AGENTS.md (Codex, Jules, OpenCode)
+  4) GitHub Copilot
+  5) Windsurf
+
+Enter choice (1-5):
+```
+
+## Rules Installed
+
+Three rule files are installed, covering the full surface area of DataQueue:
+
+| Rule File            | What It Covers                                                |
+| -------------------- | ------------------------------------------------------------- |
+| `basic.md`           | Core API — initialization, adding jobs, processing, handlers  |
+| `advanced.md`        | Advanced features — waits, cron, tokens, cancellation, events |
+| `react-dashboard.md` | React SDK and Dashboard components                            |
+
+## Install Locations
+
+| Client         | Installs To                                                                                                                |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Cursor         | `.cursor/rules/dataqueue-basic.mdc`, `.cursor/rules/dataqueue-advanced.mdc`, `.cursor/rules/dataqueue-react-dashboard.mdc` |
+| Claude Code    | `CLAUDE.md` (appended between markers)                                                                                     |
+| AGENTS.md      | `AGENTS.md` (appended between markers)                                                                                     |
+| GitHub Copilot | `.github/copilot-instructions.md` (appended between markers)                                                               |
+| Windsurf       | `CONVENTIONS.md` (appended between markers)                                                                                |
+
+<Callout>
+  For Cursor, each rule file is written separately. For all other clients, the
+  rules are combined and appended to a single file between `&lt;!-- DATAQUEUE
+  RULES START --&gt;` and `&lt;!-- DATAQUEUE RULES END --&gt;` markers.
+  Re-running the command updates the content between the markers without
+  duplicating it.
+</Callout>

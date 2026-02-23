@@ -1,0 +1,67 @@
+---
+title: migrate
+description: Run PostgreSQL database migrations for DataQueue.
+---
+
+Runs the DataQueue database migrations against your PostgreSQL database using [node-pg-migrate](https://github.com/salsita/node-pg-migrate).
+
+```bash
+npx dataqueue-cli migrate [options]
+```
+
+## Options
+
+| Option                  | Description                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `--envPath <path>`      | Path to a `.env` file to load environment variables from                       |
+| `-s, --schema <schema>` | PostgreSQL schema to use. Automatically creates the schema if it doesn't exist |
+
+## Environment Variables
+
+The migration reads the connection string from the `PG_DATAQUEUE_DATABASE` environment variable. You can set it directly or load it from a `.env` file using `--envPath`.
+
+## Examples
+
+Run migrations using environment variables already set in your shell:
+
+```bash
+npx dataqueue-cli migrate
+```
+
+Load environment variables from a specific `.env` file:
+
+```bash
+npx dataqueue-cli migrate --envPath .env.local
+```
+
+Run migrations in a custom PostgreSQL schema:
+
+```bash
+npx dataqueue-cli migrate --schema my_schema
+```
+
+Combine both options:
+
+```bash
+npx dataqueue-cli migrate --envPath .env.local --schema my_schema
+```
+
+## How It Works
+
+Under the hood, `dataqueue-cli migrate` runs:
+
+```bash
+npx node-pg-migrate up \
+  -t dataqueuedev_migrations \
+  -d PG_DATAQUEUE_DATABASE \
+  -m <bundled-migrations-dir> \
+  [--envPath <path>] \
+  [-s <schema> --create-schema]
+```
+
+The migrations directory is bundled with the `@nicnocquee/dataqueue` package, so you don't need to manage migration files yourself.
+
+<Callout>
+  This command is only needed for the PostgreSQL backend. The Redis backend
+  requires no migrations.
+</Callout>

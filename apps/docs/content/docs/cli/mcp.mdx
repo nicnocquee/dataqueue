@@ -1,0 +1,40 @@
+---
+title: mcp
+description: Start the DataQueue MCP server for AI-powered documentation access.
+---
+
+Starts the DataQueue MCP (Model Context Protocol) server over stdio. This server gives AI coding assistants live access to the full DataQueue documentation.
+
+```bash
+npx dataqueue-cli mcp
+```
+
+<Callout>
+  You typically don't run this command directly. Use
+  [`install-mcp`](/cli/install-mcp) to configure your AI client, which will
+  start the server automatically.
+</Callout>
+
+## Tools Exposed
+
+The MCP server exposes three tools that AI assistants can call:
+
+| Tool             | Description                                                                    |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `list-doc-pages` | Lists all available documentation pages with titles and descriptions           |
+| `get-doc-page`   | Fetches a specific page by slug (e.g., `"usage/add-job"` or `"api/job-queue"`) |
+| `search-docs`    | Full-text search across all documentation pages with term matching             |
+
+## Resources
+
+The server also exposes a resource:
+
+| URI                    | Description                                             |
+| ---------------------- | ------------------------------------------------------- |
+| `dataqueue://llms.txt` | Machine-readable DataQueue overview for LLM consumption |
+
+## How It Works
+
+The server loads a bundled `docs-content.json` file containing all DataQueue documentation pages. Search uses simple term matching across page titles, descriptions, and content, returning the top 5 results with relevant excerpts.
+
+Communication happens over stdio using the [Model Context Protocol](https://modelcontextprotocol.io/), so it works with any MCP-compatible client.

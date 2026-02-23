@@ -1,0 +1,13 @@
+{
+  "title": "CLI",
+  "icon": "MyIcon",
+  "pages": [
+    "migrate",
+    "init",
+    "install-skills",
+    "install-rules",
+    "install-mcp",
+    "mcp"
+  ],
+  "defaultOpen": true
+}

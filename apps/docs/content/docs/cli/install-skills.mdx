@@ -1,0 +1,41 @@
+---
+title: install-skills
+description: Install DataQueue skill files for AI coding assistants.
+---
+
+Copies DataQueue skill files (`SKILL.md`) into your AI coding assistant's skills directory. Skills teach AI assistants DataQueue patterns and best practices.
+
+```bash
+npx dataqueue-cli install-skills
+```
+
+## Skills Installed
+
+| Skill                | What It Covers                                                     |
+| -------------------- | ------------------------------------------------------------------ |
+| `dataqueue-core`     | Core patterns — initialization, adding jobs, processing, handlers  |
+| `dataqueue-advanced` | Advanced features — waits, cron jobs, tokens, cancellation, events |
+| `dataqueue-react`    | React SDK and Dashboard integration                                |
+
+## Auto-Detection
+
+The command automatically detects which AI tools are present by checking for their config directories:
+
+| AI Tool        | Detected By | Skills Installed To |
+| -------------- | ----------- | ------------------- |
+| Cursor         | `.cursor/`  | `.cursor/skills/`   |
+| Claude Code    | `.claude/`  | `.claude/skills/`   |
+| GitHub Copilot | `.github/`  | `.github/skills/`   |
+
+If no AI tool directories are detected, it defaults to `.cursor/skills/`.
+
+## Example Output
+
+```
+Installing skills for Cursor...
+  ✓ dataqueue-core
+  ✓ dataqueue-advanced
+  ✓ dataqueue-react
+
+Done! Installed 3 skill(s) for Cursor.
+```
