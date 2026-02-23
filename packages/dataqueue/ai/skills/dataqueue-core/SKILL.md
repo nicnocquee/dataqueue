@@ -38,7 +38,8 @@ export const jobHandlers: JobHandlers<JobPayloadMap> = {
   },
   generate_report: async (payload, signal) => {
     if (signal.aborted) return;
-    await generateReport(payload.reportId, payload.userId);
+    const url = await generateReport(payload.reportId, payload.userId);
+    return { url }; // stored as job output, readable via getJob()
   },
 };
 ```

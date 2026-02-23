@@ -136,6 +136,7 @@ export function useJob(
     data,
     status: data?.status ?? null,
     progress: data?.progress ?? null,
+    output: data?.output ?? null,
     isLoading,
     error,
   };

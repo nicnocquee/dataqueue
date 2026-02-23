@@ -79,6 +79,45 @@ describe('queue integration', () => {
     expect(job?.status).toBe('completed');
   });
 
+  it('should store output when completing a job', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'output@example.com' },
+    });
+    await queue.getNextBatch(pool, 'worker-output', 1);
+    await queue.completeJob(pool, jobId, { url: 'https://example.com/report.pdf' });
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({ url: 'https://example.com/report.pdf' });
+  });
+
+  it('should have null output when completing without output', async () => {
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'no-output@example.com' },
+    });
+    await queue.getNextBatch(pool, 'worker-no-output', 1);
+    await queue.completeJob(pool, jobId);
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toBeNull();
+  });
+
+  it('should preserve output set via updateOutput when completing without output arg', async () => {
+    const { PostgresBackend } = await import('./backends/postgres.js');
+    const backend = new PostgresBackend(pool);
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'pre-output@example.com' },
+    });
+    await queue.getNextBatch(pool, 'worker-pre-output', 1);
+    await backend.updateOutput(jobId, { interim: true });
+    await queue.completeJob(pool, jobId);
+    const job = await queue.getJob(pool, jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({ interim: true });
+  });
+
   it('should get the next batch of jobs to process', async () => {
     // Add jobs (do not set runAt, use DB default)
     const jobId1 = await queue.addJob<{ email: { to: string } }, 'email'>(

@@ -39,6 +39,7 @@ function serializeJob(job: JobRecord<any, any>): SerializedJobRecord {
     waitTokenId: job.waitTokenId,
     stepData: job.stepData,
     progress: job.progress,
+    output: job.output ?? null,
   };
 }
 

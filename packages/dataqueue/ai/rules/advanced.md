@@ -130,7 +130,7 @@ queue.on('job:failed', ({ jobId, jobType, error, willRetry }) => {
 queue.on('error', (error) => Sentry.captureException(error));
 ```
 
-Events: `job:added`, `job:processing`, `job:completed`, `job:failed` (with `willRetry`), `job:cancelled`, `job:retried`, `job:waiting`, `job:progress`, `error`.
+Events: `job:added`, `job:processing`, `job:completed`, `job:failed` (with `willRetry`), `job:cancelled`, `job:retried`, `job:waiting`, `job:progress`, `job:output`, `error`.
 
 `error` events fire alongside `onError` callbacks in `ProcessorOptions` / `SupervisorOptions` — both mechanisms work independently.
 
@@ -148,3 +148,23 @@ await ctx.setProgress(50); // 0–100, persisted to DB
 ```
 
 Read via `queue.getJob(id)` (`progress` field) or React SDK's `useJob` hook.
+
+## Job Output
+
+Store results via `ctx.setOutput(data)` or by returning a value from the handler:
+
+```typescript
+// Option 1: return a value
+const handler = async (payload, signal, ctx) => {
+  const result = await doWork(payload);
+  return { url: result.downloadUrl };
+};
+
+// Option 2: ctx.setOutput (takes precedence over return value)
+const handler = async (payload, signal, ctx) => {
+  const result = await doWork(payload);
+  await ctx.setOutput({ url: result.downloadUrl });
+};
+```
+
+Read via `queue.getJob(id)` (`output` field) or React SDK's `useJob` hook (`output` property).

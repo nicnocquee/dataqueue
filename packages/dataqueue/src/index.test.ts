@@ -1436,6 +1436,143 @@ describe('event hooks', () => {
     expect(listener).toHaveBeenCalledWith({ jobId, progress: 100 });
   });
 
+  it('stores output from ctx.setOutput() and retrieves it via getJob', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'output@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async (_payload, _signal, ctx) => {
+        await ctx.setOutput({ reportUrl: 'https://example.com/report.pdf' });
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({
+      reportUrl: 'https://example.com/report.pdf',
+    });
+  });
+
+  it('stores handler return value as output when setOutput is not called', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'return@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {
+        return { processed: true, count: 42 };
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({ processed: true, count: 42 });
+  });
+
+  it('setOutput takes precedence over handler return value', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'precedence@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async (_payload, _signal, ctx) => {
+        await ctx.setOutput({ fromSetOutput: true });
+        return { fromReturn: true };
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({ fromSetOutput: true });
+  });
+
+  it('output is null for jobs that do not set output (backward compat)', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'no-output@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toBeNull();
+  });
+
+  it('emits job:output when handler calls ctx.setOutput', async () => {
+    const listener = vi.fn();
+    jobQueue.on('job:output', listener);
+
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'event-output@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async (_payload, _signal, ctx) => {
+        await ctx.setOutput({ result: 'done' });
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      jobId,
+      output: { result: 'done' },
+    });
+  });
+
+  it('stores scalar output values (string, number, array)', async () => {
+    const jobId1 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'string-output@test.com' },
+    });
+    const jobId2 = await jobQueue.addJob({
+      jobType: 'sms',
+      payload: { to: '+123' },
+    });
+    const jobId3 = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'arr' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => 'simple string'),
+      sms: vi.fn(async () => 42),
+      test: vi.fn(async () => [1, 2, 3]),
+    });
+    await processor.start();
+
+    const job1 = await jobQueue.getJob(jobId1);
+    expect(job1?.output).toBe('simple string');
+
+    const job2 = await jobQueue.getJob(jobId2);
+    expect(job2?.output).toBe(42);
+
+    const job3 = await jobQueue.getJob(jobId3);
+    expect(job3?.output).toEqual([1, 2, 3]);
+  });
+
   it('once fires only once then auto-unsubscribes', async () => {
     const listener = vi.fn();
     jobQueue.once('job:added', listener);

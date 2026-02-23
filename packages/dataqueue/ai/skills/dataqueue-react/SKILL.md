@@ -102,13 +102,14 @@ export async function GET(
 
 ### useJob Return Value
 
-| Field       | Type                | Description                     |
-| ----------- | ------------------- | ------------------------------- |
-| `data`      | `JobData \| null`   | Latest job data from fetcher    |
-| `status`    | `JobStatus \| null` | Current job status              |
-| `progress`  | `number \| null`    | Progress percentage (0–100)     |
-| `isLoading` | `boolean`           | True until first fetch resolves |
-| `error`     | `Error \| null`     | Last fetch error                |
+| Field       | Type                | Description                                           |
+| ----------- | ------------------- | ----------------------------------------------------- |
+| `data`      | `JobData \| null`   | Latest job data from fetcher                          |
+| `status`    | `JobStatus \| null` | Current job status                                    |
+| `progress`  | `number \| null`    | Progress percentage (0–100)                           |
+| `output`    | `unknown \| null`   | Handler output from `ctx.setOutput()` or return value |
+| `isLoading` | `boolean`           | True until first fetch resolves                       |
+| `error`     | `Error \| null`     | Last fetch error                                      |
 
 ## Dashboard — @nicnocquee/dataqueue-dashboard
 
@@ -185,5 +186,16 @@ const handler = async (payload, signal, ctx) => {
     await processChunk(chunks[i]);
     await ctx.setProgress(Math.round(((i + 1) / chunks.length) * 100));
   }
+};
+```
+
+### Job Output from Handlers
+
+Store results via `ctx.setOutput(data)` or by returning a value from the handler. Exposed via `getJob()` (`output` field) and the `useJob` hook's `output` property. If both are used, `ctx.setOutput()` takes precedence.
+
+```typescript
+const handler = async (payload, signal, ctx) => {
+  const result = await doWork(payload);
+  return { url: result.downloadUrl }; // stored as output
 };
 ```

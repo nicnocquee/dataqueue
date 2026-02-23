@@ -26,6 +26,7 @@ export interface JobData {
   id: number;
   status: JobStatus;
   progress?: number | null;
+  output?: unknown;
   [key: string]: unknown;
 }
 
@@ -73,6 +74,8 @@ export interface UseJobReturn {
   status: JobStatus | null;
   /** The current progress percentage (0-100), or null if not reported. */
   progress: number | null;
+  /** The handler output stored via `ctx.setOutput()` or by returning a value, or null. */
+  output: unknown | null;
   /** True during the initial fetch (before any data is available). */
   isLoading: boolean;
   /** The error from the last failed fetch, or null. */

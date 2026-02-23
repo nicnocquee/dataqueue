@@ -1,0 +1,116 @@
+---
+title: Job Output
+description: Store and retrieve results from job handlers
+---
+
+Jobs can store an output value when they complete. This is useful when you need to retrieve the result of a background task — for example, a generated report URL, a processed image path, or computation results.
+
+## Storing Output
+
+There are two ways to store output from a handler:
+
+### 1. Return a value from the handler
+
+The simplest approach — return any JSON-serializable value from your handler function:
+
+```typescript title="@lib/job-handlers.ts"
+import { JobHandlers } from '@nicnocquee/dataqueue';
+
+export const jobHandlers: JobHandlers<JobPayloadMap> = {
+  generate_report: async (payload, signal, ctx) => {
+    const url = await generateReport(payload.reportId); // [!code highlight]
+    return { url, generatedAt: new Date().toISOString() }; // [!code highlight]
+  },
+};
+```
+
+### 2. Use `ctx.setOutput(data)`
+
+For more control, call `ctx.setOutput()` explicitly. This is useful when you want to store intermediate results during execution:
+
+```typescript title="@lib/job-handlers.ts"
+export const jobHandlers: JobHandlers<JobPayloadMap> = {
+  process_images: async (payload, signal, ctx) => {
+    const results: string[] = [];
+
+    for (const image of payload.images) {
+      const url = await processImage(image);
+      results.push(url);
+
+      await ctx.setProgress(Math.round((results.length / payload.images.length) * 100));
+      await ctx.setOutput({ processedUrls: results }); // [!code highlight]
+    }
+  },
+};
+```
+
+### Precedence
+
+If both `ctx.setOutput()` is called **and** the handler returns a value, the `ctx.setOutput()` value takes precedence. The handler's return value is ignored in that case.
+
+### Rules
+
+- **JSON-serializable**: The output value must be JSON-serializable (objects, arrays, strings, numbers, booleans, null).
+- **Last write wins**: Calling `ctx.setOutput()` multiple times overwrites the previous value.
+- **Best-effort persistence**: Like `setProgress`, output writes to the database are best-effort — errors do not kill the handler.
+
+## Reading Output
+
+Output is stored in the `output` field of the [JobRecord](/api/job-record):
+
+```typescript
+const job = await jobQueue.getJob(jobId);
+console.log(job?.output); // null | any JSON value
+```
+
+- Before the handler stores output, the value is `null`.
+- After the job completes, the output is preserved and can be read at any time.
+- Handlers that return `undefined` (or `void`) do not store output — the field remains `null`.
+
+## Tracking Output in React
+
+If you're using the [React SDK](/usage/react-sdk), the `useJob` hook exposes `output` directly:
+
+```tsx
+import { useJob } from '@nicnocquee/dataqueue-react';
+
+function JobResult({ jobId }: { jobId: number }) {
+  const { status, output, progress } = useJob(jobId, {
+    fetcher: (id) =>
+      fetch(`/api/jobs/${id}`)
+        .then((r) => r.json())
+        .then((d) => d.job),
+  });
+
+  if (status === 'completed' && output) {
+    return <a href={(output as any).url}>Download Report</a>;
+  }
+
+  return (
+    <div>
+      <p>Status: {status}</p>
+      <progress value={progress ?? 0} max={100} />
+    </div>
+  );
+}
+```
+
+## Listening for Output Events
+
+You can subscribe to the `job:output` event to be notified whenever a handler calls `ctx.setOutput()`:
+
+```typescript
+jobQueue.on('job:output', ({ jobId, output }) => {
+  console.log(`Job ${jobId} stored output:`, output);
+});
+```
+
+## Database Migration
+
+<Callout>
+  If you're using the **PostgreSQL** backend, make sure to run the latest
+  migrations to add the `output` column. See [Database
+  Migration](/usage/database-migration).
+</Callout>
+
+The Redis backend requires no migration — the `output` field is stored automatically as part of the job hash.

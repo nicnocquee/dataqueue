@@ -91,7 +91,7 @@ async function runHandlerInWorker<
   payload: PayloadMap[T],
   timeoutMs: number,
   jobType: string,
-): Promise<void> {
+): Promise<unknown> {
   // Validate handler can be serialized before attempting to run in worker
   validateHandlerSerializable(handler, jobType);
 
@@ -156,9 +156,9 @@ async function runHandlerInWorker<
           }
           
           handlerFn(payload, signal)
-            .then(() => {
+            .then((result) => {
               clearTimeout(timeoutId);
-              parentPort.postMessage({ type: 'success' });
+              parentPort.postMessage({ type: 'success', output: result });
             })
             .catch((error) => {
               clearTimeout(timeoutId);
@@ -196,26 +196,29 @@ async function runHandlerInWorker<
 
     let resolved = false;
 
-    worker.on('message', (message: { type: string; error?: any }) => {
-      if (resolved) return;
-      resolved = true;
+    worker.on(
+      'message',
+      (message: { type: string; error?: any; output?: unknown }) => {
+        if (resolved) return;
+        resolved = true;
 
-      if (message.type === 'success') {
-        resolve();
-      } else if (message.type === 'timeout') {
-        const timeoutError = new Error(
-          `Job timed out after ${timeoutMs} ms and was forcefully terminated`,
-        );
-        // @ts-ignore
-        timeoutError.failureReason = FailureReason.Timeout;
-        reject(timeoutError);
-      } else if (message.type === 'error') {
-        const error = new Error(message.error.message);
-        error.stack = message.error.stack;
-        error.name = message.error.name;
-        reject(error);
-      }
-    });
+        if (message.type === 'success') {
+          resolve(message.output);
+        } else if (message.type === 'timeout') {
+          const timeoutError = new Error(
+            `Job timed out after ${timeoutMs} ms and was forcefully terminated`,
+          );
+          // @ts-ignore
+          timeoutError.failureReason = FailureReason.Timeout;
+          reject(timeoutError);
+        } else if (message.type === 'error') {
+          const error = new Error(message.error.message);
+          error.stack = message.error.stack;
+          error.name = message.error.name;
+          reject(error);
+        }
+      },
+    );
 
     worker.on('error', (error) => {
       if (resolved) return;
@@ -318,6 +321,9 @@ function createNoOpContext(
       if (percent < 0 || percent > 100)
         throw new Error('Progress must be between 0 and 100');
       await backend.updateProgress(jobId, Math.round(percent));
+    },
+    setOutput: async (data: unknown) => {
+      await backend.updateOutput(jobId, data);
     },
   };
 }
@@ -496,6 +502,9 @@ function buildWaitContext(
         throw new Error('Progress must be between 0 and 100');
       await backend.updateProgress(jobId, Math.round(percent));
     },
+    setOutput: async (data: unknown) => {
+      await backend.updateOutput(jobId, data);
+    },
   };
 
   return ctx;
@@ -556,11 +565,18 @@ export async function processJobWithHandlers<
   const forceKillOnTimeout = job.forceKillOnTimeout ?? false;
   let timeoutId: NodeJS.Timeout | undefined;
   const controller = new AbortController();
+  let setOutputCalled = false;
+  let handlerReturnValue: unknown;
   try {
     // If forceKillOnTimeout is true, run handler in a worker thread
-    // Note: wait features are not available in forceKillOnTimeout mode
+    // Note: wait features and setOutput are not available in forceKillOnTimeout mode
     if (forceKillOnTimeout && timeoutMs && timeoutMs > 0) {
-      await runHandlerInWorker(handler, job.payload, timeoutMs, job.jobType);
+      handlerReturnValue = await runHandlerInWorker(
+        handler,
+        job.payload,
+        timeoutMs,
+        job.jobType,
+      );
     } else {
       // Build the JobContext for prolong/onTimeout support
       let onTimeoutCallback: OnTimeoutCallback | undefined;
@@ -647,6 +663,14 @@ export async function processJobWithHandlers<
         };
       }
 
+      // Wrap setOutput to track calls and emit the event
+      const originalSetOutput = ctx.setOutput;
+      ctx.setOutput = async (data: unknown) => {
+        setOutputCalled = true;
+        await originalSetOutput(data);
+        emit?.('job:output', { jobId: job.id, output: data });
+      };
+
       // If forceKillOnTimeout was set but timeoutMs was missing, warn
       if (forceKillOnTimeout && !hasTimeout) {
         log(
@@ -657,7 +681,7 @@ export async function processJobWithHandlers<
       const jobPromise = handler(job.payload, controller.signal, ctx);
 
       if (hasTimeout) {
-        await Promise.race([
+        handlerReturnValue = await Promise.race([
           jobPromise,
           new Promise<never>((_, reject) => {
             timeoutReject = reject;
@@ -665,13 +689,21 @@ export async function processJobWithHandlers<
           }),
         ]);
       } else {
-        await jobPromise;
+        handlerReturnValue = await jobPromise;
       }
     }
     if (timeoutId) clearTimeout(timeoutId);
 
+    // Determine the output to persist on completion.
+    // If setOutput() was called, the value is already in the DB -- pass undefined
+    // so completeJob preserves it. Otherwise, use the handler's return value.
+    const completionOutput =
+      setOutputCalled || handlerReturnValue === undefined
+        ? undefined
+        : handlerReturnValue;
+
     // Job completed successfully -- complete via backend
-    await backend.completeJob(job.id);
+    await backend.completeJob(job.id, completionOutput);
     emit?.('job:completed', { jobId: job.id, jobType: job.jobType });
   } catch (error) {
     if (timeoutId) clearTimeout(timeoutId);

@@ -1266,6 +1266,111 @@ describe('Redis parity features', () => {
     expect(job?.waitTokenId).toBeNull();
   });
 
+  // ── Job output ─────────────────────────────────────────────────────
+
+  it('stores output from ctx.setOutput() and retrieves via getJob', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'output@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async (_payload, _signal, ctx) => {
+        await ctx.setOutput({ reportUrl: 'https://example.com/report.pdf' });
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({ reportUrl: 'https://example.com/report.pdf' });
+  });
+
+  it('stores handler return value as output when setOutput is not called', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'return@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {
+        return { processed: true, count: 42 };
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({ processed: true, count: 42 });
+  });
+
+  it('setOutput takes precedence over handler return value', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'precedence@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async (_payload, _signal, ctx) => {
+        await ctx.setOutput({ fromSetOutput: true });
+        return { fromReturn: true };
+      }),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toEqual({ fromSetOutput: true });
+  });
+
+  it('output is null for jobs that do not set output (backward compat)', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'no-output@test.com' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => {}),
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.output).toBeNull();
+  });
+
+  it('stores scalar output values (string, number, array)', async () => {
+    const jobId1 = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'string-output@test.com' },
+    });
+    const jobId2 = await jobQueue.addJob({
+      jobType: 'sms',
+      payload: { to: '+123' },
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: vi.fn(async () => 'simple string'),
+      sms: vi.fn(async () => 42),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job1 = await jobQueue.getJob(jobId1);
+    expect(job1?.output).toBe('simple string');
+
+    const job2 = await jobQueue.getJob(jobId2);
+    expect(job2?.output).toBe(42);
+  });
+
   // ── cleanupOldJobEvents ─────────────────────────────────────────────
 
   it('cleanupOldJobEvents removes old events', async () => {
