@@ -138,6 +138,11 @@ export const initJobQueue = <PayloadMap = any>(
         backend.addJob<PayloadMap, any>(job, options),
       config.verbose ?? false,
     ),
+    addJobs: withLogContext(
+      (jobs: JobOptions<PayloadMap, any>[], options?: AddJobOptions) =>
+        backend.addJobs<PayloadMap, any>(jobs, options),
+      config.verbose ?? false,
+    ),
     getJob: withLogContext(
       (id: number) => backend.getJob<PayloadMap, any>(id),
       config.verbose ?? false,
