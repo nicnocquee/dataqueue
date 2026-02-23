@@ -2,6 +2,12 @@
 title: Reclaim Jobs
 ---
 
+<Callout>
+  Running a long-lived server? Use
+  [`createSupervisor()`](/usage/long-running-server#background-supervisor) to
+  automate stuck-job reclaiming instead of calling `reclaimStuckJobs` manually.
+</Callout>
+
 Sometimes, a job can get stuck in the `processing` state. This usually happens if the process is killed or an unhandled error occurs after the job status is updated, but before it is marked as `completed` or `failed`.
 
 To recover stuck jobs, use the `reclaimStuckJobs` method. The example below shows how to create an API route (`/api/cron/reclaim`) that can be triggered by a cron job:

@@ -203,6 +203,20 @@ If a job with the same key exists, returns the existing job ID. Key is unique ac
 
 ## Maintenance
 
+Use `createSupervisor()` to automate all maintenance tasks in a long-running server:
+
+```typescript
+const supervisor = queue.createSupervisor({
+  intervalMs: 60_000,
+  stuckJobsTimeoutMinutes: 10,
+  cleanupJobsDaysToKeep: 30,
+  cleanupEventsDaysToKeep: 30,
+});
+supervisor.startInBackground();
+```
+
+For serverless or one-off scripts, call `supervisor.start()` (runs once) or use the manual methods:
+
 ```typescript
 await queue.reclaimStuckJobs(10); // reclaim jobs stuck > 10 min
 await queue.cleanupOldJobs(30); // delete completed jobs > 30 days

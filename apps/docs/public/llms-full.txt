@@ -72,6 +72,9 @@ This section documents the main classes, types, and functions available for mana
 - [JobEvent](/api/job-event)
 - [Processor](/api/processor)
 - [ProcessorOptions](/api/processor-options)
+- [Supervisor](/api/job-queue#background-supervisor)
+- [SupervisorOptions](/api/job-queue#supervisoroptions)
+- [SupervisorRunResult](/api/job-queue#supervisorrunresult)
 - [JobHandlers](/api/job-handlers)
 - [Database Utility](/api/db-util)
 - [Tags](/api/tags)
@@ -619,6 +622,63 @@ interface ProcessorOptions {
 
 ---
 
+## Background Supervisor
+
+### createSupervisor
+
+```ts
+createSupervisor(options?: SupervisorOptions): Supervisor
+```
+
+Creates a background supervisor that automatically runs maintenance tasks on a configurable interval: reclaiming stuck jobs, cleaning up old completed jobs/events, and expiring timed-out waitpoint tokens.
+
+#### SupervisorOptions
+
+```ts
+interface SupervisorOptions {
+  intervalMs?: number; // default: 60000
+  stuckJobsTimeoutMinutes?: number; // default: 10
+  cleanupJobsDaysToKeep?: number; // default: 30 (0 to disable)
+  cleanupEventsDaysToKeep?: number; // default: 30 (0 to disable)
+  cleanupBatchSize?: number; // default: 1000
+  reclaimStuckJobs?: boolean; // default: true
+  expireTimedOutTokens?: boolean; // default: true
+  onError?: (error: Error) => void; // default: console.error
+  verbose?: boolean;
+}
+```
+
+#### Supervisor
+
+```ts
+interface Supervisor {
+  start(): Promise<SupervisorRunResult>;
+  startInBackground(): void;
+  stop(): void;
+  stopAndDrain(timeoutMs?: number): Promise<void>;
+  isRunning(): boolean;
+}
+```
+
+- `start()` runs all tasks once and returns the results (serverless-friendly).
+- `startInBackground()` starts a background loop that runs every `intervalMs`.
+- `stopAndDrain()` stops the loop and waits for the current run to finish.
+
+#### SupervisorRunResult
+
+```ts
+interface SupervisorRunResult {
+  reclaimedJobs: number;
+  cleanedUpJobs: number;
+  cleanedUpEvents: number;
+  expiredTokens: number;
+}
+```
+
+See [Long-Running Server](/usage/long-running-server#background-supervisor) for usage examples.
+
+---
+
 ## Accessing the Underlying Client
 
 ### getPool
@@ -851,6 +911,414 @@ The `mode` parameter controls how tags are matched:
 - `'none'`: Jobs that have none of the given tags
 
 The default mode is `'all'`.
+
+---
+
+# CLI
+
+> Command-line tools for managing DataQueue migrations, project scaffolding, and AI integrations.
+
+Slug: cli
+
+DataQueue ships a CLI tool called `dataqueue-cli` that you can run directly with `npx`:
+
+```bash
+npx dataqueue-cli <command> [options]
+```
+
+## Commands
+
+| Command                                 | Description                                       |
+| --------------------------------------- | ------------------------------------------------- |
+| [`migrate`](/cli/migrate)               | Run PostgreSQL database migrations                |
+| [`init`](/cli/init)                     | Scaffold a Next.js project for DataQueue          |
+| [`install-skills`](/cli/install-skills) | Install AI skill files for coding assistants      |
+| [`install-rules`](/cli/install-rules)   | Install agent rule sets for AI clients            |
+| [`install-mcp`](/cli/install-mcp)       | Configure the DataQueue MCP server for AI clients |
+| [`mcp`](/cli/mcp)                       | Start the DataQueue MCP server over stdio         |
+
+## Usage
+
+Running `dataqueue-cli` without a command (or with an unrecognized command) prints the help output:
+
+```
+Usage:
+  dataqueue-cli migrate [--envPath <path>] [-s <schema> | --schema <schema>]
+  dataqueue-cli init
+  dataqueue-cli install-skills
+  dataqueue-cli install-rules
+  dataqueue-cli install-mcp
+  dataqueue-cli mcp
+
+Options for migrate:
+  --envPath <path>         Path to a .env file to load environment variables
+  -s, --schema <schema>   Set the schema to use
+
+AI tooling commands:
+  install-skills     Install DataQueue skill files for AI assistants
+  install-rules      Install DataQueue agent rules for AI clients
+  install-mcp        Configure the DataQueue MCP server for AI clients
+  mcp                Start the DataQueue MCP server (stdio)
+```
+
+---
+
+# init
+
+> Scaffold a Next.js project for DataQueue with a single command.
+
+Slug: cli/init
+
+Scaffolds your Next.js project with everything needed to start using DataQueue — API routes, a job queue singleton, a cron script, and all required dependencies.
+
+```bash
+npx dataqueue-cli init
+```
+
+## What It Does
+
+The `init` command auto-detects your project structure (App Router vs Pages Router, `src/` directory vs root) and creates the following:
+
+### Files Created
+
+| File                                            | Purpose                                                |
+| ----------------------------------------------- | ------------------------------------------------------ |
+| `app/api/dataqueue/manage/[[...task]]/route.ts` | API route for queue management (App Router)            |
+| `pages/api/dataqueue/manage/[[...task]].ts`     | API route for queue management (Pages Router)          |
+| `lib/dataqueue/queue.ts`                        | Job queue singleton with a sample `send_email` handler |
+| `cron.sh`                                       | Shell script for local development cron jobs           |
+
+> **Note:** Only the API route matching your detected router is created. Existing files
+  are never overwritten.
+
+### Dependencies Added
+
+**Production:**
+
+- `@nicnocquee/dataqueue`
+- `@nicnocquee/dataqueue-dashboard`
+- `@nicnocquee/dataqueue-react`
+
+**Development:**
+
+- `dotenv-cli`
+- `ts-node`
+- `node-pg-migrate`
+
+### Scripts Added
+
+| Script              | Command                                         |
+| ------------------- | ----------------------------------------------- |
+| `cron`              | `bash cron.sh`                                  |
+| `migrate-dataqueue` | `dotenv -e .env.local -- dataqueue-cli migrate` |
+
+## After Running
+
+1. Install the newly added dependencies:
+
+```bash
+npm install
+```
+
+2. Set up your environment variables in `.env.local`:
+
+```bash
+PG_DATAQUEUE_DATABASE=postgresql://user:password@localhost:5432/mydb
+CRON_SECRET=your-secret-here
+```
+
+3. Run database migrations:
+
+```bash
+npm run migrate-dataqueue
+```
+
+4. Start your Next.js dev server and the cron script:
+
+```bash
+npm run dev
+npm run cron
+```
+
+## Requirements
+
+- Must be run in a Next.js project directory (looks for `next` in `package.json` dependencies)
+- Must have either an `app/` or `pages/` directory
+
+---
+
+# install-mcp
+
+> Configure the DataQueue MCP server for AI coding clients.
+
+Slug: cli/install-mcp
+
+Configures the DataQueue [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server in your AI client's configuration. This gives your AI assistant direct access to DataQueue documentation.
+
+```bash
+npx dataqueue-cli install-mcp
+```
+
+## Interactive Prompt
+
+The command prompts you to select your AI client:
+
+```
+DataQueue MCP Server Installer
+
+Select your AI client:
+
+  1) Cursor
+  2) Claude Code
+  3) VS Code (Copilot)
+  4) Windsurf
+
+Enter choice (1-4):
+```
+
+## What It Configures
+
+The installer adds a `"dataqueue"` server entry to your client's MCP config file:
+
+```json
+{
+  "mcpServers": {
+    "dataqueue": {
+      "command": "npx",
+      "args": ["dataqueue-cli", "mcp"]
+    }
+  }
+}
+```
+
+If the config file already exists, the `dataqueue` entry is merged in without affecting other servers.
+
+## Install Locations
+
+| Client            | Config File                           |
+| ----------------- | ------------------------------------- |
+| Cursor            | `.cursor/mcp.json`                    |
+| Claude Code       | `.mcp.json`                           |
+| VS Code (Copilot) | `.vscode/mcp.json`                    |
+| Windsurf          | `~/.codeium/windsurf/mcp_config.json` |
+
+> **Note:** After installing, your AI client will automatically start the MCP server when
+  needed. See the [`mcp`](/cli/mcp) command for details on what the server
+  exposes.
+
+---
+
+# install-rules
+
+> Install DataQueue agent rules for AI coding clients.
+
+Slug: cli/install-rules
+
+Installs comprehensive DataQueue rule sets into your AI client's configuration. Rules give AI assistants detailed guidance for generating correct DataQueue code.
+
+```bash
+npx dataqueue-cli install-rules
+```
+
+## Interactive Prompt
+
+The command prompts you to select your AI client:
+
+```
+DataQueue Agent Rules Installer
+
+Select your AI client:
+
+  1) Cursor
+  2) Claude Code
+  3) AGENTS.md (Codex, Jules, OpenCode)
+  4) GitHub Copilot
+  5) Windsurf
+
+Enter choice (1-5):
+```
+
+## Rules Installed
+
+Three rule files are installed, covering the full surface area of DataQueue:
+
+| Rule File            | What It Covers                                                |
+| -------------------- | ------------------------------------------------------------- |
+| `basic.md`           | Core API — initialization, adding jobs, processing, handlers  |
+| `advanced.md`        | Advanced features — waits, cron, tokens, cancellation, events |
+| `react-dashboard.md` | React SDK and Dashboard components                            |
+
+## Install Locations
+
+| Client         | Installs To                                                                                                                |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Cursor         | `.cursor/rules/dataqueue-basic.mdc`, `.cursor/rules/dataqueue-advanced.mdc`, `.cursor/rules/dataqueue-react-dashboard.mdc` |
+| Claude Code    | `CLAUDE.md` (appended between markers)                                                                                     |
+| AGENTS.md      | `AGENTS.md` (appended between markers)                                                                                     |
+| GitHub Copilot | `.github/copilot-instructions.md` (appended between markers)                                                               |
+| Windsurf       | `CONVENTIONS.md` (appended between markers)                                                                                |
+
+> **Note:** For Cursor, each rule file is written separately. For all other clients, the
+  rules are combined and appended to a single file between `&lt;!-- DATAQUEUE
+  RULES START --&gt;` and `&lt;!-- DATAQUEUE RULES END --&gt;` markers.
+  Re-running the command updates the content between the markers without
+  duplicating it.
+
+---
+
+# install-skills
+
+> Install DataQueue skill files for AI coding assistants.
+
+Slug: cli/install-skills
+
+Copies DataQueue skill files (`SKILL.md`) into your AI coding assistant's skills directory. Skills teach AI assistants DataQueue patterns and best practices.
+
+```bash
+npx dataqueue-cli install-skills
+```
+
+## Skills Installed
+
+| Skill                | What It Covers                                                     |
+| -------------------- | ------------------------------------------------------------------ |
+| `dataqueue-core`     | Core patterns — initialization, adding jobs, processing, handlers  |
+| `dataqueue-advanced` | Advanced features — waits, cron jobs, tokens, cancellation, events |
+| `dataqueue-react`    | React SDK and Dashboard integration                                |
+
+## Auto-Detection
+
+The command automatically detects which AI tools are present by checking for their config directories:
+
+| AI Tool        | Detected By | Skills Installed To |
+| -------------- | ----------- | ------------------- |
+| Cursor         | `.cursor/`  | `.cursor/skills/`   |
+| Claude Code    | `.claude/`  | `.claude/skills/`   |
+| GitHub Copilot | `.github/`  | `.github/skills/`   |
+
+If no AI tool directories are detected, it defaults to `.cursor/skills/`.
+
+## Example Output
+
+```
+Installing skills for Cursor...
+  ✓ dataqueue-core
+  ✓ dataqueue-advanced
+  ✓ dataqueue-react
+
+Done! Installed 3 skill(s) for Cursor.
+```
+
+---
+
+# mcp
+
+> Start the DataQueue MCP server for AI-powered documentation access.
+
+Slug: cli/mcp
+
+Starts the DataQueue MCP (Model Context Protocol) server over stdio. This server gives AI coding assistants live access to the full DataQueue documentation.
+
+```bash
+npx dataqueue-cli mcp
+```
+
+> **Note:** You typically don't run this command directly. Use
+  [`install-mcp`](/cli/install-mcp) to configure your AI client, which will
+  start the server automatically.
+
+## Tools Exposed
+
+The MCP server exposes three tools that AI assistants can call:
+
+| Tool             | Description                                                                    |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `list-doc-pages` | Lists all available documentation pages with titles and descriptions           |
+| `get-doc-page`   | Fetches a specific page by slug (e.g., `"usage/add-job"` or `"api/job-queue"`) |
+| `search-docs`    | Full-text search across all documentation pages with term matching             |
+
+## Resources
+
+The server also exposes a resource:
+
+| URI                    | Description                                             |
+| ---------------------- | ------------------------------------------------------- |
+| `dataqueue://llms.txt` | Machine-readable DataQueue overview for LLM consumption |
+
+## How It Works
+
+The server loads a bundled `docs-content.json` file containing all DataQueue documentation pages. Search uses simple term matching across page titles, descriptions, and content, returning the top 5 results with relevant excerpts.
+
+Communication happens over stdio using the [Model Context Protocol](https://modelcontextprotocol.io/), so it works with any MCP-compatible client.
+
+---
+
+# migrate
+
+> Run PostgreSQL database migrations for DataQueue.
+
+Slug: cli/migrate
+
+Runs the DataQueue database migrations against your PostgreSQL database using [node-pg-migrate](https://github.com/salsita/node-pg-migrate).
+
+```bash
+npx dataqueue-cli migrate [options]
+```
+
+## Options
+
+| Option                  | Description                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `--envPath <path>`      | Path to a `.env` file to load environment variables from                       |
+| `-s, --schema <schema>` | PostgreSQL schema to use. Automatically creates the schema if it doesn't exist |
+
+## Environment Variables
+
+The migration reads the connection string from the `PG_DATAQUEUE_DATABASE` environment variable. You can set it directly or load it from a `.env` file using `--envPath`.
+
+## Examples
+
+Run migrations using environment variables already set in your shell:
+
+```bash
+npx dataqueue-cli migrate
+```
+
+Load environment variables from a specific `.env` file:
+
+```bash
+npx dataqueue-cli migrate --envPath .env.local
+```
+
+Run migrations in a custom PostgreSQL schema:
+
+```bash
+npx dataqueue-cli migrate --schema my_schema
+```
+
+Combine both options:
+
+```bash
+npx dataqueue-cli migrate --envPath .env.local --schema my_schema
+```
+
+## How It Works
+
+Under the hood, `dataqueue-cli migrate` runs:
+
+```bash
+npx node-pg-migrate up \
+  -t dataqueuedev_migrations \
+  -d PG_DATAQUEUE_DATABASE \
+  -m <bundled-migrations-dir> \
+  [--envPath <path>] \
+  [-s <schema> --create-schema]
+```
+
+The migrations directory is bundled with the `@nicnocquee/dataqueue` package, so you don't need to manage migration files yourself.
+
+> **Note:** This command is only needed for the PostgreSQL backend. The Redis backend
+  requires no migrations.
 
 ---
 
@@ -1192,6 +1660,15 @@ Give your AI assistant direct access to DataQueue documentation — search docs,
 npx dataqueue-cli install-mcp
 ```
 
+The installer prompts you to choose your AI client and writes the MCP config to the appropriate location. Currently supported clients:
+
+| Client            | Installs to                           |
+| ----------------- | ------------------------------------- |
+| Cursor            | `.cursor/mcp.json`                    |
+| Claude Code       | `.mcp.json`                           |
+| VS Code (Copilot) | `.vscode/mcp.json`                    |
+| Windsurf          | `~/.codeium/windsurf/mcp_config.json` |
+
 The MCP server runs via `npx dataqueue-cli mcp` and communicates over stdio. It exposes three tools:
 
 | Tool             | Description                              |
@@ -1432,6 +1909,10 @@ This will set the status of all jobs that are still pending (not yet started or 
 # Cleanup Jobs
 
 Slug: usage/cleanup-jobs
+
+> **Note:** Running a long-lived server? Use
+  [`createSupervisor()`](/usage/long-running-server#background-supervisor) to
+  automate job cleanup instead of calling `cleanupOldJobs` manually.
 
 If you have a lot of jobs, you may want to clean up old ones—for example, keeping only jobs from the last 30 days. You can do this by calling the `cleanupOldJobs` method. The example below shows an API route (`/api/cron/cleanup`) that can be triggered by a cron job:
 
@@ -2980,7 +3461,76 @@ process.on('SIGINT', shutdown);
   the polling loop immediately without waiting for in-flight jobs, which can
   leave jobs stuck in the `processing` state until they are reclaimed.
 
-## Scheduling Maintenance Tasks
+## Background Supervisor
+
+In production, you need periodic maintenance: reclaiming stuck jobs, cleaning up old completed jobs/events, and expiring timed-out waitpoint tokens. The **supervisor** automates all of this.
+
+```typescript
+const supervisor = jobQueue.createSupervisor({
+  intervalMs: 60_000, // run maintenance every 60 seconds
+  stuckJobsTimeoutMinutes: 10, // reclaim jobs stuck > 10 minutes
+  cleanupJobsDaysToKeep: 30, // delete completed jobs older than 30 days
+  cleanupEventsDaysToKeep: 30, // delete job events older than 30 days
+  onError: (error) => {
+    console.error('Supervisor error:', error);
+  },
+});
+
+supervisor.startInBackground();
+```
+
+The supervisor runs independently from the processor. Each maintenance task is isolated -- if one fails, the others still run. All operations are idempotent, so it's safe to run multiple supervisor instances across a cluster.
+
+### Supervisor Options
+
+| Option                    | Default         | Description                                                  |
+| ------------------------- | --------------- | ------------------------------------------------------------ |
+| `intervalMs`              | `60000`         | How often the maintenance loop runs (ms)                     |
+| `stuckJobsTimeoutMinutes` | `10`            | Reclaim jobs stuck in `processing` longer than this          |
+| `cleanupJobsDaysToKeep`   | `30`            | Delete completed jobs older than this (days). `0` to disable |
+| `cleanupEventsDaysToKeep` | `30`            | Delete job events older than this (days). `0` to disable     |
+| `cleanupBatchSize`        | `1000`          | Batch size for cleanup deletions                             |
+| `reclaimStuckJobs`        | `true`          | Enable/disable stuck job reclaiming                          |
+| `expireTimedOutTokens`    | `true`          | Enable/disable waitpoint token expiry                        |
+| `onError`                 | `console.error` | Called when a maintenance task throws                        |
+| `verbose`                 | `false`         | Enable verbose logging                                       |
+
+### Graceful Shutdown with the Supervisor
+
+When shutting down, drain both the processor and the supervisor:
+
+```typescript
+async function shutdown() {
+  console.log('Shutting down...');
+
+  await Promise.all([
+    processor.stopAndDrain(30000),
+    supervisor.stopAndDrain(30000),
+  ]);
+
+  jobQueue.getPool().end();
+  console.log('Shutdown complete');
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+```
+
+### One-Shot Mode (Serverless)
+
+If you prefer to run maintenance from a cron-triggered API route or a serverless function, use `start()` instead of `startInBackground()`. It runs all tasks once and returns the results:
+
+```typescript
+const supervisor = jobQueue.createSupervisor();
+const result = await supervisor.start();
+// { reclaimedJobs: 3, cleanedUpJobs: 120, cleanedUpEvents: 45, expiredTokens: 0 }
+```
+
+## Manual Maintenance
+
+> **Note:** The supervisor above is the recommended approach. Manual maintenance is still
+  supported if you need fine-grained control over individual tasks.
 
 In a serverless setup, you use cron-triggered API routes for [cleanup](/usage/cleanup-jobs) and [reclaim](/usage/reclaim-jobs). In a long-running server, you can use `setInterval` instead.
 
@@ -3030,10 +3580,6 @@ async function shutdown() {
 }
 ```
 
-> **Note:** If you use the [wait/token](/usage/wait) feature (PostgreSQL only), also call
-  `expireTimedOutTokens()` on an interval to expire tokens that have passed
-  their timeout.
-
 ## Full Example
 
 Here is a complete Express server that ties everything together:
@@ -3063,29 +3609,18 @@ const processor = jobQueue.createProcessor(jobHandlers, {
 
 processor.startInBackground();
 
-// --- Schedule maintenance ---
-const reclaimInterval = setInterval(
-  async () => {
-    try {
-      await jobQueue.reclaimStuckJobs(10);
-    } catch (e) {
-      console.error('Reclaim error:', e);
-    }
+// --- Start the background supervisor ---
+const supervisor = jobQueue.createSupervisor({
+  intervalMs: 60_000,
+  stuckJobsTimeoutMinutes: 10,
+  cleanupJobsDaysToKeep: 30,
+  cleanupEventsDaysToKeep: 30,
+  onError: (error) => {
+    console.error('Supervisor error:', error);
   },
-  10 * 60 * 1000,
-);
+});
 
-const cleanupInterval = setInterval(
-  async () => {
-    try {
-      await jobQueue.cleanupOldJobs(30);
-      await jobQueue.cleanupOldJobEvents(30);
-    } catch (e) {
-      console.error('Cleanup error:', e);
-    }
-  },
-  24 * 60 * 60 * 1000,
-);
+supervisor.startInBackground();
 
 // --- Express app ---
 const app = express();
@@ -3114,12 +3649,11 @@ async function shutdown() {
   // Stop accepting new HTTP connections
   server.close();
 
-  // Clear maintenance intervals
-  clearInterval(reclaimInterval);
-  clearInterval(cleanupInterval);
-
-  // Wait for in-flight jobs to finish
-  await processor.stopAndDrain(30000);
+  // Wait for in-flight work to finish
+  await Promise.all([
+    processor.stopAndDrain(30000),
+    supervisor.stopAndDrain(30000),
+  ]);
 
   // Close the database pool
   jobQueue.getPool().end();
@@ -3331,6 +3865,18 @@ Slug: usage/quick-start
 
 In this docs, we'll use a Next.js with App Router project which is deployed to Vercel as an example.
 
+## Next.js Shortcut
+
+If you're using Next.js, you can scaffold everything — API routes, a job queue singleton, a cron script, and all dependencies — with a single command:
+
+```bash
+npx dataqueue-cli init
+```
+
+The command auto-detects your project structure (App Router vs Pages Router, `src/` directory vs root) and creates all the files you need. See the [`init` CLI reference](/cli/init) for full details.
+
+If you prefer to set things up manually, follow the steps below.
+
 ## PostgreSQL Backend
 
 1. [Run migrations before deploying your app](/usage/database-migration)
@@ -3360,7 +3906,7 @@ If you're running a persistent server (Express, Fastify, plain Node.js, etc.) in
 2. [Define job handlers](/usage/job-handlers)
 3. [Initialize the job queue](/usage/init-queue)
 4. Start the processor in the background with `startInBackground()`
-5. Schedule maintenance tasks (`reclaimStuckJobs`, `cleanupOldJobs`) on intervals
+5. Start the [background supervisor](/usage/long-running-server#background-supervisor) with `createSupervisor()` to automate maintenance (reclaim stuck jobs, cleanup old data)
 6. Handle `SIGTERM`/`SIGINT` for graceful shutdown with `stopAndDrain()`
 
 See [Long-Running Server](/usage/long-running-server) for a complete walkthrough and full example.
@@ -3545,6 +4091,10 @@ The `id`, `status`, and optionally `progress` fields are required. Any additiona
 # Reclaim Jobs
 
 Slug: usage/reclaim-jobs
+
+> **Note:** Running a long-lived server? Use
+  [`createSupervisor()`](/usage/long-running-server#background-supervisor) to
+  automate stuck-job reclaiming instead of calling `reclaimStuckJobs` manually.
 
 Sometimes, a job can get stuck in the `processing` state. This usually happens if the process is killed or an unhandled error occurs after the job status is updated, but before it is marked as `completed` or `failed`.
 

@@ -402,6 +402,63 @@ interface ProcessorOptions {
 
 ---
 
+## Background Supervisor
+
+### createSupervisor
+
+```ts
+createSupervisor(options?: SupervisorOptions): Supervisor
+```
+
+Creates a background supervisor that automatically runs maintenance tasks on a configurable interval: reclaiming stuck jobs, cleaning up old completed jobs/events, and expiring timed-out waitpoint tokens.
+
+#### SupervisorOptions
+
+```ts
+interface SupervisorOptions {
+  intervalMs?: number; // default: 60000
+  stuckJobsTimeoutMinutes?: number; // default: 10
+  cleanupJobsDaysToKeep?: number; // default: 30 (0 to disable)
+  cleanupEventsDaysToKeep?: number; // default: 30 (0 to disable)
+  cleanupBatchSize?: number; // default: 1000
+  reclaimStuckJobs?: boolean; // default: true
+  expireTimedOutTokens?: boolean; // default: true
+  onError?: (error: Error) => void; // default: console.error
+  verbose?: boolean;
+}
+```
+
+#### Supervisor
+
+```ts
+interface Supervisor {
+  start(): Promise<SupervisorRunResult>;
+  startInBackground(): void;
+  stop(): void;
+  stopAndDrain(timeoutMs?: number): Promise<void>;
+  isRunning(): boolean;
+}
+```
+
+- `start()` runs all tasks once and returns the results (serverless-friendly).
+- `startInBackground()` starts a background loop that runs every `intervalMs`.
+- `stopAndDrain()` stops the loop and waits for the current run to finish.
+
+#### SupervisorRunResult
+
+```ts
+interface SupervisorRunResult {
+  reclaimedJobs: number;
+  cleanedUpJobs: number;
+  cleanedUpEvents: number;
+  expiredTokens: number;
+}
+```
+
+See [Long-Running Server](/usage/long-running-server#background-supervisor) for usage examples.
+
+---
+
 ## Accessing the Underlying Client
 
 ### getPool

@@ -48,7 +48,7 @@ If you're running a persistent server (Express, Fastify, plain Node.js, etc.) in
 2. [Define job handlers](/usage/job-handlers)
 3. [Initialize the job queue](/usage/init-queue)
 4. Start the processor in the background with `startInBackground()`
-5. Schedule maintenance tasks (`reclaimStuckJobs`, `cleanupOldJobs`) on intervals
+5. Start the [background supervisor](/usage/long-running-server#background-supervisor) with `createSupervisor()` to automate maintenance (reclaim stuck jobs, cleanup old data)
 6. Handle `SIGTERM`/`SIGINT` for graceful shutdown with `stopAndDrain()`
 
 See [Long-Running Server](/usage/long-running-server) for a complete walkthrough and full example.

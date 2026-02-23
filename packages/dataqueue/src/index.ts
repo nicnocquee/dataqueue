@@ -1,9 +1,11 @@
 import { createProcessor } from './processor.js';
+import { createSupervisor } from './supervisor.js';
 import {
   JobQueueConfig,
   JobQueue,
   JobOptions,
   ProcessorOptions,
+  SupervisorOptions,
   JobHandlers,
   JobType,
   PostgresJobQueueConfig,
@@ -209,6 +211,10 @@ export const initJobQueue = <PayloadMap = any>(
       createProcessor<PayloadMap>(backend, handlers, options, async () => {
         await enqueueDueCronJobsImpl();
       }),
+
+    // Background supervisor — automated maintenance
+    createSupervisor: (options?: SupervisorOptions) =>
+      createSupervisor(backend, options),
 
     // Job events
     getJobEvents: withLogContext(
