@@ -86,6 +86,50 @@ jobQueue = initJobQueue<JobPayloadMap>({
 
 ---
 
+## Bring Your Own Pool / Client
+
+Instead of providing connection configuration, you can pass an existing connection instance. This is useful when your application already manages its own connection pool and you want to share it with dataqueue.
+
+### PostgreSQL — External Pool
+
+```typescript title="@lib/queue.ts"
+import { Pool } from 'pg';
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const jobQueue = initJobQueue<JobPayloadMap>({
+  pool, // [!code highlight]
+  verbose: process.env.NODE_ENV === 'development',
+});
+```
+
+### Redis — External Client
+
+```typescript title="@lib/queue.ts"
+import IORedis from 'ioredis';
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+const redis = new IORedis(process.env.REDIS_URL);
+
+const jobQueue = initJobQueue<JobPayloadMap>({
+  backend: 'redis',
+  client: redis, // [!code highlight]
+  keyPrefix: 'myapp:',
+  verbose: process.env.NODE_ENV === 'development',
+});
+```
+
+<Callout>
+  **Connection ownership:** When you provide your own `pool` or `client`, the
+  library will **not** close it on shutdown. You are responsible for calling
+  `pool.end()` or `client.quit()` when your application exits.
+</Callout>
+
+---
+
 ## Using the Queue
 
 Once initialized, you use the queue instance identically regardless of backend. The API is the same for both PostgreSQL and Redis.

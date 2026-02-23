@@ -234,10 +234,12 @@ Initializes the job queue system with the provided configuration. The `JobQueueC
 
 #### PostgresJobQueueConfig
 
+Provide either `databaseConfig` (the library creates a pool) or `pool` (bring your own `pg.Pool`). At least one must be set.
+
 ```ts
 interface PostgresJobQueueConfig {
   backend?: 'postgres'; // Optional, defaults to 'postgres'
-  databaseConfig: {
+  databaseConfig?: {
     connectionString?: string;
     host?: string;
     port?: number;
@@ -246,16 +248,19 @@ interface PostgresJobQueueConfig {
     password?: string;
     ssl?: DatabaseSSLConfig;
   };
+  pool?: import('pg').Pool; // Bring your own pool
   verbose?: boolean;
 }
 ```
 
 #### RedisJobQueueConfig
 
+Provide either `redisConfig` (the library creates an ioredis client) or `client` (bring your own). At least one must be set.
+
 ```ts
 interface RedisJobQueueConfig {
   backend: 'redis'; // Required
-  redisConfig: {
+  redisConfig?: {
     url?: string;
     host?: string;
     port?: number;
@@ -264,6 +269,8 @@ interface RedisJobQueueConfig {
     tls?: RedisTLSConfig;
     keyPrefix?: string; // Default: 'dq:'
   };
+  client?: unknown; // Bring your own ioredis client
+  keyPrefix?: string; // Key prefix when using external client (default: 'dq:')
   verbose?: boolean;
 }
 ```
@@ -308,7 +315,7 @@ interface RedisTLSConfig {
 ### addJob
 
 ```ts
-addJob(job: JobOptions): Promise<number>
+addJob(job: JobOptions, options?: AddJobOptions): Promise<number>
 ```
 
 Adds a job to the queue. Returns the job ID.
@@ -324,8 +331,32 @@ interface JobOptions {
   runAt?: Date | null;
   timeoutMs?: number;
   tags?: string[];
+  idempotencyKey?: string;
 }
 ```
+
+#### AddJobOptions
+
+```ts
+interface AddJobOptions {
+  db?: DatabaseClient;
+}
+```
+
+- `db` — An external database client (e.g., a `pg.PoolClient` inside a transaction). When provided, the INSERT runs on this client instead of the internal pool. **PostgreSQL only.** Throws if used with the Redis backend.
+
+#### DatabaseClient
+
+```ts
+interface DatabaseClient {
+  query(
+    text: string,
+    values?: any[],
+  ): Promise<{ rows: any[]; rowCount: number | null }>;
+}
+```
+
+Any object matching this interface works — `pg.Pool`, `pg.PoolClient`, `pg.Client`, or ORM query runners that expose a raw `query()` method.
 
 ---
 
@@ -1611,6 +1642,59 @@ In the example above, calling `sendWelcomeEmail` multiple times for the same `us
 - **Key provided, no conflict**: The job is inserted and its new ID is returned.
 - **Key provided, conflict**: The existing job's ID is returned. The existing job is **not** updated.
 - **Scope**: The key is unique across the entire `job_queue` table regardless of job status. Once a key exists, it cannot be reused until the job is cleaned up via [`cleanupOldJobs`](/usage/cleanup-jobs).
+
+## Transactional Job Creation
+
+> **Note:** Transactional job creation is only available with the **PostgreSQL** backend.
+
+You can insert a job within an existing database transaction by passing an external database client via the `db` option. This guarantees that the job is enqueued **atomically** with your other database writes — if the transaction rolls back, the job is never enqueued.
+
+This is useful when you need to ensure that a job is only created when a related database operation succeeds (e.g., creating a user and enqueuing a welcome email in the same transaction).
+
+```typescript title="@/app/actions/register.ts"
+'use server';
+
+import { Pool } from 'pg';
+import { getJobQueue } from '@/lib/queue';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export const registerUser = async (email: string, name: string) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Insert the user
+    await client.query('INSERT INTO users (email, name) VALUES ($1, $2)', [
+      email,
+      name,
+    ]);
+
+    // Enqueue the welcome email in the same transactionconst jobQueue = getJobQueue();
+    await jobQueue.addJob(
+      {
+        jobType: 'send_email',
+        payload: { to: email, subject: 'Welcome!', body: `Hi ${name}!` },
+      },
+      { db: client }, // Use the transaction client
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+```
+
+### How it works
+
+- When `db` is provided, the `INSERT` into the `job_queue` table and the associated job event are both executed on the supplied client.
+- The library does **not** call `client.release()` — you are responsible for managing the client lifecycle.
+- If the transaction is rolled back, both the job and its event are discarded.
+- When `db` is **not** provided, `addJob` behaves exactly as before (gets a connection from the internal pool).
 
 ---
 
@@ -2993,6 +3077,46 @@ jobQueue = initJobQueue<JobPayloadMap>({
 > **Note:** The `keyPrefix` option lets you namespace all Redis keys. This is useful when
   sharing a Redis instance between multiple applications or multiple queues. The
   default prefix is `dq:`.
+
+---
+
+## Bring Your Own Pool / Client
+
+Instead of providing connection configuration, you can pass an existing connection instance. This is useful when your application already manages its own connection pool and you want to share it with dataqueue.
+
+### PostgreSQL — External Pool
+
+```typescript title="@lib/queue.ts"
+import { Pool } from 'pg';
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const jobQueue = initJobQueue<JobPayloadMap>({
+  pool,verbose: process.env.NODE_ENV === 'development',
+});
+```
+
+### Redis — External Client
+
+```typescript title="@lib/queue.ts"
+import IORedis from 'ioredis';
+import { initJobQueue } from '@nicnocquee/dataqueue';
+import { type JobPayloadMap } from './types/job-payload-map';
+
+const redis = new IORedis(process.env.REDIS_URL);
+
+const jobQueue = initJobQueue<JobPayloadMap>({
+  backend: 'redis',
+  client: redis,keyPrefix: 'myapp:',
+  verbose: process.env.NODE_ENV === 'development',
+});
+```
+
+> **Note:** **Connection ownership:** When you provide your own `pool` or `client`, the
+  library will **not** close it on shutdown. You are responsible for calling
+  `pool.end()` or `client.quit()` when your application exits.
 
 ---
 

@@ -14,10 +14,12 @@ Initializes the job queue system with the provided configuration. The `JobQueueC
 
 #### PostgresJobQueueConfig
 
+Provide either `databaseConfig` (the library creates a pool) or `pool` (bring your own `pg.Pool`). At least one must be set.
+
 ```ts
 interface PostgresJobQueueConfig {
   backend?: 'postgres'; // Optional, defaults to 'postgres'
-  databaseConfig: {
+  databaseConfig?: {
     connectionString?: string;
     host?: string;
     port?: number;
@@ -26,16 +28,19 @@ interface PostgresJobQueueConfig {
     password?: string;
     ssl?: DatabaseSSLConfig;
   };
+  pool?: import('pg').Pool; // Bring your own pool
   verbose?: boolean;
 }
 ```
 
 #### RedisJobQueueConfig
 
+Provide either `redisConfig` (the library creates an ioredis client) or `client` (bring your own). At least one must be set.
+
 ```ts
 interface RedisJobQueueConfig {
   backend: 'redis'; // Required
-  redisConfig: {
+  redisConfig?: {
     url?: string;
     host?: string;
     port?: number;
@@ -44,6 +49,8 @@ interface RedisJobQueueConfig {
     tls?: RedisTLSConfig;
     keyPrefix?: string; // Default: 'dq:'
   };
+  client?: unknown; // Bring your own ioredis client
+  keyPrefix?: string; // Key prefix when using external client (default: 'dq:')
   verbose?: boolean;
 }
 ```
@@ -88,7 +95,7 @@ interface RedisTLSConfig {
 ### addJob
 
 ```ts
-addJob(job: JobOptions): Promise<number>
+addJob(job: JobOptions, options?: AddJobOptions): Promise<number>
 ```
 
 Adds a job to the queue. Returns the job ID.
@@ -104,8 +111,32 @@ interface JobOptions {
   runAt?: Date | null;
   timeoutMs?: number;
   tags?: string[];
+  idempotencyKey?: string;
 }
 ```
+
+#### AddJobOptions
+
+```ts
+interface AddJobOptions {
+  db?: DatabaseClient;
+}
+```
+
+- `db` — An external database client (e.g., a `pg.PoolClient` inside a transaction). When provided, the INSERT runs on this client instead of the internal pool. **PostgreSQL only.** Throws if used with the Redis backend.
+
+#### DatabaseClient
+
+```ts
+interface DatabaseClient {
+  query(
+    text: string,
+    values?: any[],
+  ): Promise<{ rows: any[]; rowCount: number | null }>;
+}
+```
+
+Any object matching this interface works — `pg.Pool`, `pg.PoolClient`, `pg.Client`, or ORM query runners that expose a raw `query()` method.
 
 ---
 

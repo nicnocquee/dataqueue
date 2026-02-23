@@ -79,6 +79,30 @@ jobQueue = initJobQueue<JobPayloadMap>({
 });
 ```
 
+### Bring Your Own Pool / Client
+
+You can pass an existing `pg.Pool` or `ioredis` client instead of connection config:
+
+```typescript
+import { Pool } from 'pg';
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+jobQueue = initJobQueue<JobPayloadMap>({ pool });
+```
+
+```typescript
+import IORedis from 'ioredis';
+const redis = new IORedis(process.env.REDIS_URL);
+
+jobQueue = initJobQueue<JobPayloadMap>({
+  backend: 'redis',
+  client: redis,
+  keyPrefix: 'myapp:',
+});
+```
+
+When you provide your own pool/client, the library will **not** close it on shutdown — you manage its lifecycle.
+
 ## Step 4: Add Jobs
 
 ```typescript
@@ -91,6 +115,27 @@ const jobId = await queue.addJob({
   idempotencyKey: 'welcome-user-123',
 });
 ```
+
+### Transactional Job Creation (PostgreSQL only)
+
+Pass an external `pg.PoolClient` inside a transaction via `{ db: client }`:
+
+```typescript
+const client = await pool.connect();
+await client.query('BEGIN');
+await client.query('INSERT INTO users (email) VALUES ($1)', [email]);
+await queue.addJob(
+  {
+    jobType: 'send_email',
+    payload: { to: email, subject: 'Welcome!', body: '...' },
+  },
+  { db: client },
+);
+await client.query('COMMIT');
+client.release();
+```
+
+If the transaction rolls back, the job is never enqueued.
 
 ## Step 5: Process Jobs
 
@@ -141,3 +186,5 @@ process.on('SIGTERM', async () => {
 4. **Skipping maintenance** — use `createSupervisor()` to automate reclaiming stuck jobs, cleaning up old data, and expiring tokens. Without it, crashed workers leave jobs stuck in `processing` and tables grow unbounded.
 5. **Forgetting to run migrations** — PostgreSQL requires `dataqueue-cli migrate` before use. Redis needs no migrations.
 6. **Not calling `stopAndDrain` on shutdown** — use `stopAndDrain()` (not `stop()`) for graceful shutdown to avoid stuck jobs.
+7. **Forgetting to commit/rollback when using `db` option** — the `addJob` INSERT sits in an open transaction. If you never `COMMIT` or `ROLLBACK`, the connection leaks and the job is invisible to other sessions.
+8. **Using `db` option with Redis** — transactional job creation is PostgreSQL only. The Redis backend throws if `db` is provided.

@@ -4,6 +4,7 @@ import {
   JobQueueConfig,
   JobQueue,
   JobOptions,
+  AddJobOptions,
   ProcessorOptions,
   SupervisorOptions,
   JobHandlers,
@@ -25,6 +26,8 @@ import { getNextCronOccurrence, validateCronExpression } from './cron.js';
  * Initialize the job queue system.
  *
  * Defaults to PostgreSQL when `backend` is omitted.
+ * For PostgreSQL, provide either `databaseConfig` or `pool` (bring your own).
+ * For Redis, provide either `redisConfig` or `client` (bring your own).
  */
 export const initJobQueue = <PayloadMap = any>(
   config: JobQueueConfig,
@@ -36,11 +39,30 @@ export const initJobQueue = <PayloadMap = any>(
 
   if (backendType === 'postgres') {
     const pgConfig = config as PostgresJobQueueConfig;
-    const pool = createPool(pgConfig.databaseConfig);
-    backend = new PostgresBackend(pool);
+    if (pgConfig.pool) {
+      backend = new PostgresBackend(pgConfig.pool);
+    } else if (pgConfig.databaseConfig) {
+      const pool = createPool(pgConfig.databaseConfig);
+      backend = new PostgresBackend(pool);
+    } else {
+      throw new Error(
+        'PostgreSQL backend requires either "databaseConfig" or "pool" to be provided.',
+      );
+    }
   } else if (backendType === 'redis') {
-    const redisConfig = (config as RedisJobQueueConfig).redisConfig;
-    backend = new RedisBackend(redisConfig);
+    const redisConfig = config as RedisJobQueueConfig;
+    if (redisConfig.client) {
+      backend = new RedisBackend(
+        redisConfig.client as any,
+        redisConfig.keyPrefix,
+      );
+    } else if (redisConfig.redisConfig) {
+      backend = new RedisBackend(redisConfig.redisConfig);
+    } else {
+      throw new Error(
+        'Redis backend requires either "redisConfig" or "client" to be provided.',
+      );
+    }
   } else {
     throw new Error(`Unknown backend: ${backendType}`);
   }
@@ -109,8 +131,8 @@ export const initJobQueue = <PayloadMap = any>(
   return {
     // Job queue operations
     addJob: withLogContext(
-      (job: JobOptions<PayloadMap, any>) =>
-        backend.addJob<PayloadMap, any>(job),
+      (job: JobOptions<PayloadMap, any>, options?: AddJobOptions) =>
+        backend.addJob<PayloadMap, any>(job, options),
       config.verbose ?? false,
     ),
     getJob: withLogContext(

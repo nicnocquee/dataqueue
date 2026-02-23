@@ -85,3 +85,59 @@ In the example above, calling `sendWelcomeEmail` multiple times for the same `us
 - **Key provided, no conflict**: The job is inserted and its new ID is returned.
 - **Key provided, conflict**: The existing job's ID is returned. The existing job is **not** updated.
 - **Scope**: The key is unique across the entire `job_queue` table regardless of job status. Once a key exists, it cannot be reused until the job is cleaned up via [`cleanupOldJobs`](/usage/cleanup-jobs).
+
+## Transactional Job Creation
+
+<Callout>
+  Transactional job creation is only available with the **PostgreSQL** backend.
+</Callout>
+
+You can insert a job within an existing database transaction by passing an external database client via the `db` option. This guarantees that the job is enqueued **atomically** with your other database writes — if the transaction rolls back, the job is never enqueued.
+
+This is useful when you need to ensure that a job is only created when a related database operation succeeds (e.g., creating a user and enqueuing a welcome email in the same transaction).
+
+```typescript title="@/app/actions/register.ts"
+'use server';
+
+import { Pool } from 'pg';
+import { getJobQueue } from '@/lib/queue';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export const registerUser = async (email: string, name: string) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Insert the user
+    await client.query('INSERT INTO users (email, name) VALUES ($1, $2)', [
+      email,
+      name,
+    ]);
+
+    // Enqueue the welcome email in the same transaction // [!code highlight:6]
+    const jobQueue = getJobQueue();
+    await jobQueue.addJob(
+      {
+        jobType: 'send_email',
+        payload: { to: email, subject: 'Welcome!', body: `Hi ${name}!` },
+      },
+      { db: client }, // Use the transaction client
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+```
+
+### How it works
+
+- When `db` is provided, the `INSERT` into the `job_queue` table and the associated job event are both executed on the supplied client.
+- The library does **not** call `client.release()` — you are responsible for managing the client lifecycle.
+- If the transaction is rolled back, both the job and its event are discarded.
+- When `db` is **not** provided, `addJob` behaves exactly as before (gets a connection from the internal pool).

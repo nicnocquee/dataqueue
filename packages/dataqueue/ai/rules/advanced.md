@@ -78,6 +78,27 @@ await queue.addJob({
 
 Returns existing job ID if key already exists. Key persists until `cleanupOldJobs` removes the job.
 
+## Transactional Job Creation (PostgreSQL Only)
+
+Pass a `pg.PoolClient` inside a transaction via the `{ db }` option to enqueue a job atomically with other writes:
+
+```typescript
+const client = await pool.connect();
+await client.query('BEGIN');
+await client.query('INSERT INTO users (email) VALUES ($1)', [email]);
+await queue.addJob(
+  {
+    jobType: 'send_email',
+    payload: { to: email, subject: 'Welcome!', body: '...' },
+  },
+  { db: client },
+);
+await client.query('COMMIT');
+client.release();
+```
+
+If the transaction rolls back, the job and its event are never persisted. The `db` option accepts any object with a `.query(text, values)` method matching `pg`'s signature. Using `{ db }` with the Redis backend throws an error.
+
 ## Scaling
 
 - Increase `batchSize` and `concurrency` for higher throughput.

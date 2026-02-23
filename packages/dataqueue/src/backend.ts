@@ -11,6 +11,7 @@ import {
   EditCronScheduleOptions,
   WaitpointRecord,
   CreateTokenOptions,
+  AddJobOptions,
 } from './types.js';
 
 /**
@@ -68,9 +69,16 @@ export interface CronScheduleInput {
 export interface QueueBackend {
   // ── Job CRUD ──────────────────────────────────────────────────────────
 
-  /** Add a job and return its numeric ID. */
+  /**
+   * Add a job and return its numeric ID.
+   *
+   * @param job - Job configuration.
+   * @param options - Optional. Pass `{ db }` to run the INSERT on an external
+   *   client (e.g., inside a transaction). PostgreSQL only.
+   */
   addJob<PayloadMap, T extends JobType<PayloadMap>>(
     job: JobOptions<PayloadMap, T>,
+    options?: AddJobOptions,
   ): Promise<number>;
 
   /** Get a single job by ID, or null if not found. */

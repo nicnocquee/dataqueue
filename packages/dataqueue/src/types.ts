@@ -1,6 +1,33 @@
 // Utility type for job type keys
 export type JobType<PayloadMap> = keyof PayloadMap & string;
 
+/**
+ * Abstract database client interface for transactional job creation.
+ * Compatible with `pg.Pool`, `pg.PoolClient`, `pg.Client`, or any object
+ * that exposes a `.query()` method matching the `pg` signature.
+ */
+export interface DatabaseClient {
+  query(
+    text: string,
+    values?: any[],
+  ): Promise<{ rows: any[]; rowCount: number | null }>;
+}
+
+/**
+ * Options for `addJob()` beyond the job itself.
+ * Use `db` to insert the job within an existing database transaction.
+ */
+export interface AddJobOptions {
+  /**
+   * An external database client (e.g., a `pg.PoolClient` inside a transaction).
+   * When provided, the INSERT runs on this client instead of the internal pool,
+   * so the job is part of the caller's transaction.
+   *
+   * **PostgreSQL only.** Throws if used with the Redis backend.
+   */
+  db?: DatabaseClient;
+}
+
 export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
   jobType: T;
   payload: PayloadMap[T];
@@ -559,10 +586,13 @@ export interface DatabaseSSLConfig {
 /**
  * Configuration for PostgreSQL backend (default).
  * Backward-compatible: omitting `backend` defaults to 'postgres'.
+ *
+ * Provide either `databaseConfig` (the library creates a pool) or `pool`
+ * (bring your own `pg.Pool`). At least one must be set.
  */
 export interface PostgresJobQueueConfig {
   backend?: 'postgres';
-  databaseConfig: {
+  databaseConfig?: {
     connectionString?: string;
     host?: string;
     port?: number;
@@ -588,6 +618,11 @@ export interface PostgresJobQueueConfig {
      */
     connectionTimeoutMillis?: number;
   };
+  /**
+   * Bring your own `pg.Pool` instance. When provided, `databaseConfig` is
+   * ignored and the library will not close the pool on shutdown.
+   */
+  pool?: import('pg').Pool;
   verbose?: boolean;
 }
 
@@ -603,10 +638,13 @@ export interface RedisTLSConfig {
 
 /**
  * Configuration for Redis backend.
+ *
+ * Provide either `redisConfig` (the library creates an ioredis client) or
+ * `client` (bring your own ioredis instance). At least one must be set.
  */
 export interface RedisJobQueueConfig {
   backend: 'redis';
-  redisConfig: {
+  redisConfig?: {
     /** Redis URL (e.g. redis://localhost:6379) */
     url?: string;
     host?: string;
@@ -621,6 +659,17 @@ export interface RedisJobQueueConfig {
      */
     keyPrefix?: string;
   };
+  /**
+   * Bring your own ioredis client instance. When provided, `redisConfig` is
+   * ignored and the library will not close the client on shutdown.
+   * Use `keyPrefix` to set the key namespace (default: 'dq:').
+   */
+  client?: unknown;
+  /**
+   * Key prefix when using an external `client`. Ignored when `redisConfig` is used
+   * (set `redisConfig.keyPrefix` instead). Default: 'dq:'.
+   */
+  keyPrefix?: string;
   verbose?: boolean;
 }
 
@@ -722,9 +771,14 @@ export interface EditCronScheduleOptions {
 export interface JobQueue<PayloadMap> {
   /**
    * Add a job to the job queue.
+   *
+   * @param job - The job to enqueue.
+   * @param options - Optional. Pass `{ db }` with an external database client
+   *   to insert the job within an existing transaction (PostgreSQL only).
    */
   addJob: <T extends JobType<PayloadMap>>(
     job: JobOptions<PayloadMap, T>,
+    options?: AddJobOptions,
   ) => Promise<number>;
   /**
    * Get a job by its ID.
