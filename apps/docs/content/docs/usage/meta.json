@@ -7,6 +7,7 @@
     "job-handlers",
     "init-queue",
     "add-job",
+    "job-output",
     "process-jobs",
     "long-running-server",
     "failed-jobs",
