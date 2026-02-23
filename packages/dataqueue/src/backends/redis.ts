@@ -14,6 +14,7 @@ import {
   EditCronScheduleOptions,
   WaitpointRecord,
   CreateTokenOptions,
+  AddJobOptions,
 } from '../types.js';
 import {
   QueueBackend,
@@ -189,8 +190,30 @@ export class RedisBackend implements QueueBackend {
   private client: RedisType;
   private prefix: string;
 
-  constructor(redisConfig: RedisJobQueueConfig['redisConfig']) {
-    // Dynamically require ioredis to avoid hard dep
+  /**
+   * Create a RedisBackend.
+   *
+   * @param configOrClient - Either `redisConfig` from the config file (the
+   *   library creates a new ioredis client) or an existing ioredis client
+   *   instance (bring your own).
+   * @param keyPrefix - Key prefix, only used when `configOrClient` is an
+   *   external client. Ignored when `redisConfig` is passed (uses
+   *   `redisConfig.keyPrefix` instead). Default: `'dq:'`.
+   */
+  constructor(
+    configOrClient: RedisJobQueueConfig['redisConfig'] | RedisType,
+    keyPrefix?: string,
+  ) {
+    if (configOrClient && typeof (configOrClient as any).eval === 'function') {
+      this.client = configOrClient as RedisType;
+      this.prefix = keyPrefix ?? 'dq:';
+      return;
+    }
+
+    const redisConfig = configOrClient as NonNullable<
+      RedisJobQueueConfig['redisConfig']
+    >;
+
     let IORedis: any;
     try {
       const _require = createRequire(import.meta.url);
@@ -268,20 +291,29 @@ export class RedisBackend implements QueueBackend {
 
   // ── Job CRUD ──────────────────────────────────────────────────────────
 
-  async addJob<PayloadMap, T extends JobType<PayloadMap>>({
-    jobType,
-    payload,
-    maxAttempts = 3,
-    priority = 0,
-    runAt = null,
-    timeoutMs = undefined,
-    forceKillOnTimeout = false,
-    tags = undefined,
-    idempotencyKey = undefined,
-    retryDelay = undefined,
-    retryBackoff = undefined,
-    retryDelayMax = undefined,
-  }: JobOptions<PayloadMap, T>): Promise<number> {
+  async addJob<PayloadMap, T extends JobType<PayloadMap>>(
+    {
+      jobType,
+      payload,
+      maxAttempts = 3,
+      priority = 0,
+      runAt = null,
+      timeoutMs = undefined,
+      forceKillOnTimeout = false,
+      tags = undefined,
+      idempotencyKey = undefined,
+      retryDelay = undefined,
+      retryBackoff = undefined,
+      retryDelayMax = undefined,
+    }: JobOptions<PayloadMap, T>,
+    options?: AddJobOptions,
+  ): Promise<number> {
+    if (options?.db) {
+      throw new Error(
+        'The db option is not supported with the Redis backend. ' +
+          'Transactional job creation is only available with PostgreSQL.',
+      );
+    }
     const now = this.nowMs();
     const runAtMs = runAt ? runAt.getTime() : 0;
 

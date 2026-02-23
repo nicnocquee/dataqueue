@@ -12,6 +12,8 @@ import {
   EditCronScheduleOptions,
   WaitpointRecord,
   CreateTokenOptions,
+  AddJobOptions,
+  DatabaseClient,
 } from '../types.js';
 import { randomUUID } from 'crypto';
 import {
@@ -103,21 +105,34 @@ export class PostgresBackend implements QueueBackend {
 
   // ── Job CRUD ──────────────────────────────────────────────────────────
 
-  async addJob<PayloadMap, T extends JobType<PayloadMap>>({
-    jobType,
-    payload,
-    maxAttempts = 3,
-    priority = 0,
-    runAt = null,
-    timeoutMs = undefined,
-    forceKillOnTimeout = false,
-    tags = undefined,
-    idempotencyKey = undefined,
-    retryDelay = undefined,
-    retryBackoff = undefined,
-    retryDelayMax = undefined,
-  }: JobOptions<PayloadMap, T>): Promise<number> {
-    const client = await this.pool.connect();
+  /**
+   * Add a job and return its numeric ID.
+   *
+   * @param job - Job configuration.
+   * @param options - Optional. Pass `{ db }` to run the INSERT on an external
+   *   client (e.g., inside a transaction) so the job is part of the caller's
+   *   transaction. The event INSERT also uses the same client.
+   */
+  async addJob<PayloadMap, T extends JobType<PayloadMap>>(
+    {
+      jobType,
+      payload,
+      maxAttempts = 3,
+      priority = 0,
+      runAt = null,
+      timeoutMs = undefined,
+      forceKillOnTimeout = false,
+      tags = undefined,
+      idempotencyKey = undefined,
+      retryDelay = undefined,
+      retryBackoff = undefined,
+      retryDelayMax = undefined,
+    }: JobOptions<PayloadMap, T>,
+    options?: AddJobOptions,
+  ): Promise<number> {
+    const externalClient = options?.db;
+    const client: DatabaseClient =
+      externalClient ?? (await this.pool.connect());
     try {
       let result;
       const onConflict = idempotencyKey
@@ -169,7 +184,6 @@ export class PostgresBackend implements QueueBackend {
         );
       }
 
-      // If ON CONFLICT DO NOTHING was triggered, no rows are returned.
       if (result.rows.length === 0 && idempotencyKey) {
         const existing = await client.query(
           `SELECT id FROM job_queue WHERE idempotency_key = $1`,
@@ -190,18 +204,34 @@ export class PostgresBackend implements QueueBackend {
       log(
         `Added job ${jobId}: payload ${JSON.stringify(payload)}, ${runAt ? `runAt ${runAt.toISOString()}, ` : ''}priority ${priority}, maxAttempts ${maxAttempts}, jobType ${jobType}, tags ${JSON.stringify(tags)}${idempotencyKey ? `, idempotencyKey "${idempotencyKey}"` : ''}`,
       );
-      await this.recordJobEvent(jobId, JobEventType.Added, {
-        jobType,
-        payload,
-        tags,
-        idempotencyKey,
-      });
+
+      if (externalClient) {
+        try {
+          await client.query(
+            `INSERT INTO job_events (job_id, event_type, metadata) VALUES ($1, $2, $3)`,
+            [
+              jobId,
+              JobEventType.Added,
+              JSON.stringify({ jobType, payload, tags, idempotencyKey }),
+            ],
+          );
+        } catch (error) {
+          log(`Error recording job event for job ${jobId}: ${error}`);
+        }
+      } else {
+        await this.recordJobEvent(jobId, JobEventType.Added, {
+          jobType,
+          payload,
+          tags,
+          idempotencyKey,
+        });
+      }
       return jobId;
     } catch (error) {
       log(`Error adding job: ${error}`);
       throw error;
     } finally {
-      client.release();
+      if (!externalClient) (client as any).release();
     }
   }
 

@@ -40,6 +40,28 @@ export const getJobQueue = () => {
 
 For Redis, set `backend: 'redis'` and use `redisConfig` with `url` or `host`/`port`/`password`. Install `ioredis` as a peer dependency.
 
+### Bring Your Own Pool / Client
+
+Pass an existing `pg.Pool` or `ioredis` client instead of connection config:
+
+```typescript
+import { Pool } from 'pg';
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+jobQueue = initJobQueue<JobPayloadMap>({ pool });
+```
+
+```typescript
+import IORedis from 'ioredis';
+const redis = new IORedis(process.env.REDIS_URL);
+jobQueue = initJobQueue<JobPayloadMap>({
+  backend: 'redis',
+  client: redis,
+  keyPrefix: 'myapp:',
+});
+```
+
+The library will **not** close externally provided connections on shutdown.
+
 ## Handlers
 
 Type handlers as `JobHandlers<PayloadMap>` so TypeScript enforces a handler for every job type.

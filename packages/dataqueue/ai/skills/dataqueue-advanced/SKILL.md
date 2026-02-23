@@ -201,6 +201,48 @@ const jobId = await queue.addJob({
 
 If a job with the same key exists, returns the existing job ID. Key is unique across all statuses until `cleanupOldJobs` removes it.
 
+## Transactional Job Creation (PostgreSQL Only)
+
+Insert a job within an existing database transaction so the job is enqueued **atomically** with other writes:
+
+```typescript
+import { Pool } from 'pg';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+async function registerUser(email: string, name: string) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await client.query('INSERT INTO users (email, name) VALUES ($1, $2)', [
+      email,
+      name,
+    ]);
+
+    const queue = getJobQueue();
+    await queue.addJob(
+      {
+        jobType: 'send_email',
+        payload: { to: email, subject: 'Welcome!', body: `Hi ${name}!` },
+      },
+      { db: client },
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+```
+
+The `db` option accepts any object matching `DatabaseClient { query(text, values): Promise<{ rows, rowCount }> }` — works with `pg.PoolClient`, `pg.Client`, or compatible ORM query runners.
+
+The job event (`'added'`) is also inserted within the same transaction.
+
 ## Retry Strategy
 
 Configure how failed jobs are retried with `retryDelay`, `retryBackoff`, and `retryDelayMax`.

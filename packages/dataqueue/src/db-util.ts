@@ -27,7 +27,7 @@ function loadPemOrFile(value?: string): string | undefined {
  *   }
  */
 export const createPool = (
-  config: PostgresJobQueueConfig['databaseConfig'],
+  config: NonNullable<PostgresJobQueueConfig['databaseConfig']>,
 ): Pool => {
   let searchPath: string | undefined;
   let ssl: any = undefined;

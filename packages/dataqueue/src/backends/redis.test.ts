@@ -1673,3 +1673,82 @@ describe('Redis parity features', () => {
     expect(invocationCount).toBe(2);
   });
 });
+
+// ── BYOC (Bring Your Own Connection) tests for Redis ────────────────────
+
+describe('Redis BYOC: init with external client', () => {
+  let prefix: string;
+  let externalClient: any;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+
+  beforeEach(async () => {
+    prefix = createRedisTestPrefix();
+    const { default: IORedis } = await import('ioredis');
+    externalClient = new (IORedis as any)(REDIS_URL);
+    jobQueue = initJobQueue<TestPayloadMap>({
+      backend: 'redis',
+      client: externalClient,
+      keyPrefix: prefix,
+    });
+  });
+
+  afterEach(async () => {
+    await cleanupRedisPrefix(externalClient, prefix);
+    await externalClient.quit();
+  });
+
+  it('uses the provided client for addJob and getJob', async () => {
+    // Act
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'byoc-redis@example.com' },
+    });
+
+    // Assert
+    const job = await jobQueue.getJob(jobId);
+    expect(job).not.toBeNull();
+    expect(job?.jobType).toBe('email');
+    expect(job?.payload).toEqual({ to: 'byoc-redis@example.com' });
+  });
+
+  it('returns the same client instance from getRedisClient()', () => {
+    // Act
+    const returned = jobQueue.getRedisClient();
+
+    // Assert
+    expect(returned).toBe(externalClient);
+  });
+});
+
+describe('Redis BYOC: addJob with db option throws', () => {
+  let prefix: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+  let redisClient: any;
+
+  beforeEach(async () => {
+    prefix = createRedisTestPrefix();
+    jobQueue = initJobQueue<TestPayloadMap>({
+      backend: 'redis',
+      redisConfig: { url: REDIS_URL, keyPrefix: prefix },
+    });
+    redisClient = jobQueue.getRedisClient();
+  });
+
+  afterEach(async () => {
+    await cleanupRedisPrefix(redisClient, prefix);
+    await redisClient.quit();
+  });
+
+  it('throws a clear error when db option is provided', async () => {
+    // Setup — fake db client
+    const fakeDb = { query: async () => ({ rows: [], rowCount: 0 }) };
+
+    // Act & Assert
+    await expect(
+      jobQueue.addJob(
+        { jobType: 'email', payload: { to: 'fail@example.com' } },
+        { db: fakeDb },
+      ),
+    ).rejects.toThrow('The db option is not supported with the Redis backend.');
+  });
+});

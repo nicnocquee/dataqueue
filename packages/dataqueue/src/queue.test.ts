@@ -2111,3 +2111,58 @@ describe('getJobs', () => {
     expect(job?.retryDelayMax).toBe(60);
   });
 });
+
+describe('queue.addJob with db option (BYOC)', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('rolls back the job when the transaction is rolled back', async () => {
+    // Setup
+    const client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Act
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      { jobType: 'email', payload: { to: 'rollback@example.com' } },
+      { db: client },
+    );
+    await client.query('ROLLBACK');
+    client.release();
+
+    // Assert
+    const job = await queue.getJob(pool, jobId);
+    expect(job).toBeNull();
+  });
+
+  it('persists the job when the transaction is committed', async () => {
+    // Setup
+    const client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Act
+    const jobId = await queue.addJob<{ email: { to: string } }, 'email'>(
+      pool,
+      { jobType: 'email', payload: { to: 'commit@example.com' } },
+      { db: client },
+    );
+    await client.query('COMMIT');
+    client.release();
+
+    // Assert
+    const job = await queue.getJob(pool, jobId);
+    expect(job).not.toBeNull();
+    expect(job?.payload).toEqual({ to: 'commit@example.com' });
+  });
+});

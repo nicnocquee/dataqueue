@@ -16,6 +16,7 @@ import {
   JobEventType,
   TagQueryMode,
   WaitpointRecord,
+  AddJobOptions,
 } from './types.js';
 import { PostgresBackend } from './backends/postgres.js';
 
@@ -34,7 +35,8 @@ export const recordJobEvent = async (
 export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   pool: Pool,
   job: JobOptions<PayloadMap, T>,
-): Promise<number> => new PostgresBackend(pool).addJob(job);
+  options?: AddJobOptions,
+): Promise<number> => new PostgresBackend(pool).addJob(job, options);
 
 export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   pool: Pool,

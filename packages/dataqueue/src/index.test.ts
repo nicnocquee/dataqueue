@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { initJobQueue, JobQueueConfig } from './index.js';
 import { createTestDbAndPool, destroyTestDb } from './test-util.js';
 import { Pool } from 'pg';
-import type { CronScheduleRecord } from './types.js';
+import type { CronScheduleRecord, AddJobOptions } from './types.js';
 
 // Integration tests for index.ts
 
@@ -983,5 +983,153 @@ describe('cron schedules integration', () => {
     expect(schedule?.retryDelay).toBe(30);
     expect(schedule?.retryBackoff).toBe(true);
     expect(schedule?.retryDelayMax).toBe(600);
+  });
+});
+
+// ── BYOC (Bring Your Own Connection) tests ──────────────────────────────
+
+describe('BYOC: init with external pool', () => {
+  let pool: Pool;
+  let dbName: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+    jobQueue = initJobQueue<TestPayloadMap>({ pool });
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('uses the provided pool for addJob and getJob', async () => {
+    // Act
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'byoc@example.com' },
+    });
+
+    // Assert
+    const job = await jobQueue.getJob(jobId);
+    expect(job).not.toBeNull();
+    expect(job?.jobType).toBe('email');
+    expect(job?.payload).toEqual({ to: 'byoc@example.com' });
+  });
+
+  it('returns the same pool instance from getPool()', () => {
+    // Act
+    const returnedPool = jobQueue.getPool();
+
+    // Assert
+    expect(returnedPool).toBe(pool);
+  });
+});
+
+describe('BYOC: transactional addJob with db option', () => {
+  let pool: Pool;
+  let dbName: string;
+  let testDbUrl: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+    testDbUrl = setup.testDbUrl;
+    jobQueue = initJobQueue<TestPayloadMap>({
+      databaseConfig: { connectionString: testDbUrl },
+    });
+  });
+
+  afterEach(async () => {
+    jobQueue.getPool().end();
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('rolls back the job when the transaction is rolled back', async () => {
+    // Setup
+    const client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Act
+    const jobId = await jobQueue.addJob(
+      { jobType: 'email', payload: { to: 'rollback@example.com' } },
+      { db: client },
+    );
+    await client.query('ROLLBACK');
+    client.release();
+
+    // Assert — job should not exist after rollback
+    const job = await jobQueue.getJob(jobId);
+    expect(job).toBeNull();
+  });
+
+  it('persists the job and event when the transaction is committed', async () => {
+    // Setup
+    const client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Act
+    const jobId = await jobQueue.addJob(
+      { jobType: 'email', payload: { to: 'commit@example.com' } },
+      { db: client },
+    );
+    await client.query('COMMIT');
+    client.release();
+
+    // Assert — job exists
+    const job = await jobQueue.getJob(jobId);
+    expect(job).not.toBeNull();
+    expect(job?.payload).toEqual({ to: 'commit@example.com' });
+
+    // Assert — event was recorded in the same transaction
+    const events = await jobQueue.getJobEvents(jobId);
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0].eventType).toBe('added');
+  });
+
+  it('job is visible within the transaction before commit', async () => {
+    // Setup
+    const client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Act
+    const jobId = await jobQueue.addJob(
+      { jobType: 'sms', payload: { to: 'in-tx@example.com' } },
+      { db: client },
+    );
+
+    // Assert — visible within the transaction
+    const res = await client.query('SELECT id FROM job_queue WHERE id = $1', [
+      jobId,
+    ]);
+    expect(res.rows).toHaveLength(1);
+
+    await client.query('ROLLBACK');
+    client.release();
+  });
+});
+
+describe('BYOC: validation errors', () => {
+  it('throws when neither databaseConfig nor pool is provided for postgres', () => {
+    // Act & Assert
+    expect(() =>
+      initJobQueue<TestPayloadMap>({ backend: 'postgres' } as any),
+    ).toThrow(
+      'PostgreSQL backend requires either "databaseConfig" or "pool" to be provided.',
+    );
+  });
+
+  it('throws when neither redisConfig nor client is provided for redis', () => {
+    // Act & Assert
+    expect(() =>
+      initJobQueue<TestPayloadMap>({ backend: 'redis' } as any),
+    ).toThrow(
+      'Redis backend requires either "redisConfig" or "client" to be provided.',
+    );
   });
 });
