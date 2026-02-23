@@ -112,8 +112,15 @@ interface JobOptions {
   timeoutMs?: number;
   tags?: string[];
   idempotencyKey?: string;
+  retryDelay?: number; // Base delay between retries in seconds (default: 60)
+  retryBackoff?: boolean; // Use exponential backoff (default: true)
+  retryDelayMax?: number; // Max delay cap in seconds (default: none)
 }
 ```
+
+- `retryDelay` - Base delay between retries in seconds. When `retryBackoff` is true, this is the base for exponential backoff (`retryDelay * 2^attempts`). When false, retries use this fixed delay. Default: `60`.
+- `retryBackoff` - Whether to use exponential backoff. When true, delay doubles with each attempt and includes jitter. Default: `true`.
+- `retryDelayMax` - Maximum delay cap in seconds. Only meaningful when `retryBackoff` is true. No limit when omitted.
 
 #### AddJobOptions
 
@@ -229,10 +236,13 @@ interface EditJobOptions {
   runAt?: Date | null;
   timeoutMs?: number;
   tags?: string[];
+  retryDelay?: number | null;
+  retryBackoff?: boolean | null;
+  retryDelayMax?: number | null;
 }
 ```
 
-All fields are optional - only provided fields will be updated. Note that `jobType` cannot be changed.
+All fields are optional - only provided fields will be updated. Note that `jobType` cannot be changed. Set retry fields to `null` to revert to legacy default behavior.
 
 #### Example
 

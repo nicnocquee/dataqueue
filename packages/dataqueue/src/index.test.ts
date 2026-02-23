@@ -532,6 +532,51 @@ describe('index integration', () => {
       priority: 10,
     });
   });
+
+  // ── Configurable retry strategy integration tests ────────────────────
+
+  it('should store and return retry config through public API', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'retry-api@example.com' },
+      retryDelay: 20,
+      retryBackoff: true,
+      retryDelayMax: 300,
+    });
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.retryDelay).toBe(20);
+    expect(job?.retryBackoff).toBe(true);
+    expect(job?.retryDelayMax).toBe(300);
+  });
+
+  it('should use fixed delay on failure through public API', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'fixed-api@example.com' },
+      maxAttempts: 3,
+      retryDelay: 10,
+      retryBackoff: false,
+    });
+
+    const handler = vi.fn(async () => {
+      throw new Error('fail');
+    });
+    const processor = jobQueue.createProcessor({
+      email: handler,
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.nextAttemptAt).not.toBeNull();
+    const delaySec =
+      (job!.nextAttemptAt!.getTime() - job!.lastFailedAt!.getTime()) / 1000;
+    expect(delaySec).toBeGreaterThanOrEqual(9);
+    expect(delaySec).toBeLessThanOrEqual(11);
+  });
 });
 
 describe('cron schedules integration', () => {
@@ -891,6 +936,53 @@ describe('cron schedules integration', () => {
         (j.payload as any).to === 'overlap@example.com',
     );
     expect(cronJobs).toHaveLength(2);
+  });
+
+  it('should propagate retry config from cron schedule to enqueued jobs', async () => {
+    const cronId = await jobQueue.addCronJob({
+      scheduleName: 'retry-cron',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'cron-retry@example.com' },
+      retryDelay: 15,
+      retryBackoff: false,
+      retryDelayMax: 90,
+    });
+
+    // Force next_run_at to the past
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [cronId],
+    );
+
+    const count = await jobQueue.enqueueDueCronJobs();
+    expect(count).toBe(1);
+
+    const jobs = await jobQueue.getJobsByStatus('pending');
+    const cronJob = jobs.find(
+      (j) => (j.payload as any).to === 'cron-retry@example.com',
+    );
+    expect(cronJob).toBeDefined();
+    expect(cronJob?.retryDelay).toBe(15);
+    expect(cronJob?.retryBackoff).toBe(false);
+    expect(cronJob?.retryDelayMax).toBe(90);
+  });
+
+  it('should store retry config on cron schedule record', async () => {
+    const cronId = await jobQueue.addCronJob({
+      scheduleName: 'retry-cron-record',
+      cronExpression: '0 */2 * * *',
+      jobType: 'email',
+      payload: { to: 'cron-record@example.com' },
+      retryDelay: 30,
+      retryBackoff: true,
+      retryDelayMax: 600,
+    });
+
+    const schedule = await jobQueue.getCronJob(cronId);
+    expect(schedule?.retryDelay).toBe(30);
+    expect(schedule?.retryBackoff).toBe(true);
+    expect(schedule?.retryDelayMax).toBe(600);
   });
 });
 

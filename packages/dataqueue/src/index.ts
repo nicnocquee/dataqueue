@@ -108,6 +108,9 @@ export const initJobQueue = <PayloadMap = any>(
         timeoutMs: schedule.timeoutMs ?? undefined,
         forceKillOnTimeout: schedule.forceKillOnTimeout,
         tags: schedule.tags,
+        retryDelay: schedule.retryDelay ?? undefined,
+        retryBackoff: schedule.retryBackoff ?? undefined,
+        retryDelayMax: schedule.retryDelayMax ?? undefined,
       });
 
       // Advance to next occurrence
@@ -290,6 +293,9 @@ export const initJobQueue = <PayloadMap = any>(
           timezone: options.timezone ?? 'UTC',
           allowOverlap: options.allowOverlap ?? false,
           nextRunAt,
+          retryDelay: options.retryDelay ?? null,
+          retryBackoff: options.retryBackoff ?? null,
+          retryDelayMax: options.retryDelayMax ?? null,
         };
         return backend.addCronSchedule(input);
       },

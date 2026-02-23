@@ -332,8 +332,15 @@ interface JobOptions {
   timeoutMs?: number;
   tags?: string[];
   idempotencyKey?: string;
+  retryDelay?: number; // Base delay between retries in seconds (default: 60)
+  retryBackoff?: boolean; // Use exponential backoff (default: true)
+  retryDelayMax?: number; // Max delay cap in seconds (default: none)
 }
 ```
+
+- `retryDelay` - Base delay between retries in seconds. When `retryBackoff` is true, this is the base for exponential backoff (`retryDelay * 2^attempts`). When false, retries use this fixed delay. Default: `60`.
+- `retryBackoff` - Whether to use exponential backoff. When true, delay doubles with each attempt and includes jitter. Default: `true`.
+- `retryDelayMax` - Maximum delay cap in seconds. Only meaningful when `retryBackoff` is true. No limit when omitted.
 
 #### AddJobOptions
 
@@ -449,10 +456,13 @@ interface EditJobOptions {
   runAt?: Date | null;
   timeoutMs?: number;
   tags?: string[];
+  retryDelay?: number | null;
+  retryBackoff?: boolean | null;
+  retryDelayMax?: number | null;
 }
 ```
 
-All fields are optional - only provided fields will be updated. Note that `jobType` cannot be changed.
+All fields are optional - only provided fields will be updated. Note that `jobType` cannot be changed. Set retry fields to `null` to revert to legacy default behavior.
 
 #### Example
 
@@ -2785,9 +2795,107 @@ Slug: usage/failed-jobs
 
 A job handler can fail for many reasons, such as a bug in the code or running out of resources.
 
-When a job fails, it will be marked as `failed` and retried up to `maxAttempts` times. You can set the `maxAttempts` value when adding the job to the queue.
+When a job fails, it is marked as `failed` and retried up to `maxAttempts` times (default: 3). You can view the error history for a job in its `errorHistory` field.
 
-Each retry is scheduled after `2^attempts * 1 minute` from the previous attempt. You can view the error history for a job in its `errorHistory` field.
+## Retry configuration
+
+You can control the retry behavior per-job using three options:
+
+| Option          | Type      | Default | Description                                    |
+| --------------- | --------- | ------- | ---------------------------------------------- |
+| `retryDelay`    | `number`  | `60`    | Base delay between retries in **seconds**      |
+| `retryBackoff`  | `boolean` | `true`  | Use exponential backoff (doubles each attempt) |
+| `retryDelayMax` | `number`  | _none_  | Maximum cap for the delay in **seconds**       |
+
+### Fixed delay
+
+Set `retryBackoff: false` to use a constant delay between retries:
+
+```ts
+await jobQueue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com' },
+  maxAttempts: 5,
+  retryDelay: 30, // 30 seconds between each retry
+  retryBackoff: false,
+});
+```
+
+Every retry will wait exactly 30 seconds.
+
+### Exponential backoff (default)
+
+When `retryBackoff` is `true` (the default), the delay doubles with each attempt. A small amount of random jitter is added to prevent thundering herd problems:
+
+```ts
+await jobQueue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com' },
+  maxAttempts: 5,
+  retryDelay: 10, // base: 10 seconds
+  retryBackoff: true, // enabled by default
+});
+```
+
+This produces approximate delays of 10s, 20s, 40s, 80s, ... (with jitter).
+
+### Capping the delay
+
+Use `retryDelayMax` to prevent the delay from growing unbounded:
+
+```ts
+await jobQueue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com' },
+  maxAttempts: 10,
+  retryDelay: 5,
+  retryBackoff: true,
+  retryDelayMax: 300, // never wait more than 5 minutes
+});
+```
+
+Delays: ~5s, ~10s, ~20s, ~40s, ~80s, ~160s, ~300s, ~300s, ...
+
+### Default behavior
+
+If none of the retry options are set, the legacy formula `2^attempts * 1 minute` is used. This means the first retry is after ~2 minutes, then ~4 minutes, then ~8 minutes, and so on.
+
+## Jitter
+
+When exponential backoff is enabled, each computed delay is multiplied by a random factor between 0.5 and 1.0. This prevents multiple failed jobs from retrying at exactly the same time, which could overload downstream services.
+
+## Cron schedules
+
+Retry configuration can also be set on cron schedules. Every job enqueued by the schedule inherits the retry settings:
+
+```ts
+await jobQueue.addCronJob({
+  scheduleName: 'daily-report',
+  cronExpression: '0 9 * * *',
+  jobType: 'report',
+  payload: { type: 'daily' },
+  retryDelay: 60,
+  retryBackoff: true,
+  retryDelayMax: 600,
+});
+```
+
+## Editing retry config
+
+You can update the retry configuration of a pending job:
+
+```ts
+await jobQueue.editJob(jobId, {
+  retryDelay: 15,
+  retryBackoff: false,
+});
+```
+
+## Backward compatibility
+
+Jobs created before the retry configuration feature was added will continue to use the legacy `2^attempts * 1 minute` formula. The new retry options only apply when explicitly set.
+
+The migration adds nullable columns, so no data migration is needed.
 
 ---
 

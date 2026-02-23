@@ -243,6 +243,59 @@ The `db` option accepts any object matching `DatabaseClient { query(text, values
 
 The job event (`'added'`) is also inserted within the same transaction.
 
+## Retry Strategy
+
+Configure how failed jobs are retried with `retryDelay`, `retryBackoff`, and `retryDelayMax`.
+
+### Fixed delay
+
+```typescript
+await queue.addJob({
+  jobType: 'email',
+  payload: {
+    /* ... */
+  },
+  maxAttempts: 5,
+  retryDelay: 30, // 30 seconds between each retry
+  retryBackoff: false,
+});
+```
+
+### Exponential backoff with cap
+
+```typescript
+await queue.addJob({
+  jobType: 'email',
+  payload: {
+    /* ... */
+  },
+  maxAttempts: 10,
+  retryDelay: 5, // base: 5 seconds
+  retryBackoff: true, // default — delay doubles each attempt with jitter
+  retryDelayMax: 300, // never wait more than 5 minutes
+});
+```
+
+### Cron schedules with retry config
+
+```typescript
+await queue.addCronJob({
+  scheduleName: 'daily-sync',
+  cronExpression: '0 * * * *',
+  jobType: 'sync',
+  payload: { source: 'api' },
+  retryDelay: 60,
+  retryBackoff: true,
+  retryDelayMax: 600,
+});
+```
+
+Every job enqueued by the schedule inherits the retry settings.
+
+### Default behavior
+
+When no retry options are set, the legacy formula `2^attempts * 60 seconds` is used. This is fully backward compatible.
+
 ## Maintenance
 
 Use `createSupervisor()` to automate all maintenance tasks in a long-running server:

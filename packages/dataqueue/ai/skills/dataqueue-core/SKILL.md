@@ -137,6 +137,25 @@ client.release();
 
 If the transaction rolls back, the job is never enqueued.
 
+### Retry configuration
+
+Control retry behavior per-job with `retryDelay`, `retryBackoff`, and `retryDelayMax`:
+
+```typescript
+await queue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com', subject: 'Hi', body: 'Hello' },
+  maxAttempts: 5,
+  retryDelay: 10, // base delay: 10 seconds
+  retryBackoff: true, // exponential backoff (default)
+  retryDelayMax: 300, // cap at 5 minutes
+});
+```
+
+- **Fixed delay**: set `retryBackoff: false` for constant delay between retries.
+- **Exponential backoff** (default): delay doubles each attempt with jitter.
+- **Default**: when no retry options are set, legacy `2^attempts * 60s` is used.
+
 ## Step 5: Process Jobs
 
 ### Serverless (one-shot)
