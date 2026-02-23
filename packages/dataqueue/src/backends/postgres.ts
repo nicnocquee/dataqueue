@@ -113,6 +113,9 @@ export class PostgresBackend implements QueueBackend {
     forceKillOnTimeout = false,
     tags = undefined,
     idempotencyKey = undefined,
+    retryDelay = undefined,
+    retryBackoff = undefined,
+    retryDelayMax = undefined,
   }: JobOptions<PayloadMap, T>): Promise<number> {
     const client = await this.pool.connect();
     try {
@@ -124,8 +127,8 @@ export class PostgresBackend implements QueueBackend {
       if (runAt) {
         result = await client.query(
           `INSERT INTO job_queue 
-            (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+            (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
            ${onConflict}
            RETURNING id`,
           [
@@ -138,13 +141,16 @@ export class PostgresBackend implements QueueBackend {
             forceKillOnTimeout ?? false,
             tags ?? null,
             idempotencyKey ?? null,
+            retryDelay ?? null,
+            retryBackoff ?? null,
+            retryDelayMax ?? null,
           ],
         );
       } else {
         result = await client.query(
           `INSERT INTO job_queue 
-            (job_type, payload, max_attempts, priority, timeout_ms, force_kill_on_timeout, tags, idempotency_key) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+            (job_type, payload, max_attempts, priority, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
            ${onConflict}
            RETURNING id`,
           [
@@ -156,6 +162,9 @@ export class PostgresBackend implements QueueBackend {
             forceKillOnTimeout ?? false,
             tags ?? null,
             idempotencyKey ?? null,
+            retryDelay ?? null,
+            retryBackoff ?? null,
+            retryDelayMax ?? null,
           ],
         );
       }
@@ -202,7 +211,7 @@ export class PostgresBackend implements QueueBackend {
     const client = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress FROM job_queue WHERE id = $1`,
+        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax" FROM job_queue WHERE id = $1`,
         [id],
       );
 
@@ -236,7 +245,7 @@ export class PostgresBackend implements QueueBackend {
     const client = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax" FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
         [status, limit, offset],
       );
       log(`Found ${result.rows.length} jobs by status ${status}`);
@@ -262,7 +271,7 @@ export class PostgresBackend implements QueueBackend {
     const client = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax" FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
         [limit, offset],
       );
       log(`Found ${result.rows.length} jobs (all)`);
@@ -287,7 +296,7 @@ export class PostgresBackend implements QueueBackend {
   ): Promise<JobRecord<PayloadMap, T>[]> {
     const client = await this.pool.connect();
     try {
-      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress FROM job_queue`;
+      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax" FROM job_queue`;
       const params: any[] = [];
       const where: string[] = [];
       let paramIdx = 1;
@@ -414,7 +423,7 @@ export class PostgresBackend implements QueueBackend {
   ): Promise<JobRecord<PayloadMap, T>[]> {
     const client = await this.pool.connect();
     try {
-      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress
+      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax"
          FROM job_queue`;
       let params: any[] = [];
       switch (mode) {
@@ -516,7 +525,7 @@ export class PostgresBackend implements QueueBackend {
           LIMIT $2
           FOR UPDATE SKIP LOCKED
         )
-        RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress
+        RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax"
       `,
         params,
       );
@@ -588,9 +597,17 @@ export class PostgresBackend implements QueueBackend {
         UPDATE job_queue
         SET status = 'failed', 
             updated_at = NOW(),
-            next_attempt_at = CASE 
-              WHEN attempts < max_attempts THEN NOW() + (POWER(2, attempts) * INTERVAL '1 minute')
-              ELSE NULL
+            next_attempt_at = CASE
+              WHEN attempts >= max_attempts THEN NULL
+              WHEN retry_delay IS NULL AND retry_backoff IS NULL AND retry_delay_max IS NULL
+                THEN NOW() + (POWER(2, attempts) * INTERVAL '1 minute')
+              WHEN COALESCE(retry_backoff, true) = true
+                THEN NOW() + (LEAST(
+                  COALESCE(retry_delay_max, 2147483647),
+                  COALESCE(retry_delay, 60) * POWER(2, attempts)
+                ) * (0.5 + 0.5 * random()) * INTERVAL '1 second')
+              ELSE
+                NOW() + (COALESCE(retry_delay, 60) * INTERVAL '1 second')
             END,
             error_history = COALESCE(error_history, '[]'::jsonb) || $2::jsonb,
             failure_reason = $3,
@@ -843,6 +860,18 @@ export class PostgresBackend implements QueueBackend {
         updateFields.push(`tags = $${paramIdx++}`);
         params.push(updates.tags ?? null);
       }
+      if (updates.retryDelay !== undefined) {
+        updateFields.push(`retry_delay = $${paramIdx++}`);
+        params.push(updates.retryDelay ?? null);
+      }
+      if (updates.retryBackoff !== undefined) {
+        updateFields.push(`retry_backoff = $${paramIdx++}`);
+        params.push(updates.retryBackoff ?? null);
+      }
+      if (updates.retryDelayMax !== undefined) {
+        updateFields.push(`retry_delay_max = $${paramIdx++}`);
+        params.push(updates.retryDelayMax ?? null);
+      }
 
       if (updateFields.length === 0) {
         log(`No fields to update for job ${jobId}`);
@@ -869,6 +898,12 @@ export class PostgresBackend implements QueueBackend {
       if (updates.timeoutMs !== undefined)
         metadata.timeoutMs = updates.timeoutMs;
       if (updates.tags !== undefined) metadata.tags = updates.tags;
+      if (updates.retryDelay !== undefined)
+        metadata.retryDelay = updates.retryDelay;
+      if (updates.retryBackoff !== undefined)
+        metadata.retryBackoff = updates.retryBackoff;
+      if (updates.retryDelayMax !== undefined)
+        metadata.retryDelayMax = updates.retryDelayMax;
 
       await this.recordJobEvent(jobId, JobEventType.Edited, metadata);
       log(`Edited job ${jobId}: ${JSON.stringify(metadata)}`);
@@ -917,6 +952,18 @@ export class PostgresBackend implements QueueBackend {
       if (updates.tags !== undefined) {
         updateFields.push(`tags = $${paramIdx++}`);
         params.push(updates.tags ?? null);
+      }
+      if (updates.retryDelay !== undefined) {
+        updateFields.push(`retry_delay = $${paramIdx++}`);
+        params.push(updates.retryDelay ?? null);
+      }
+      if (updates.retryBackoff !== undefined) {
+        updateFields.push(`retry_backoff = $${paramIdx++}`);
+        params.push(updates.retryBackoff ?? null);
+      }
+      if (updates.retryDelayMax !== undefined) {
+        updateFields.push(`retry_delay_max = $${paramIdx++}`);
+        params.push(updates.retryDelayMax ?? null);
       }
 
       if (updateFields.length === 0) {
@@ -1188,8 +1235,8 @@ export class PostgresBackend implements QueueBackend {
         `INSERT INTO cron_schedules
           (schedule_name, cron_expression, job_type, payload, max_attempts,
            priority, timeout_ms, force_kill_on_timeout, tags, timezone,
-           allow_overlap, next_run_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           allow_overlap, next_run_at, retry_delay, retry_backoff, retry_delay_max)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING id`,
         [
           input.scheduleName,
@@ -1204,6 +1251,9 @@ export class PostgresBackend implements QueueBackend {
           input.timezone,
           input.allowOverlap,
           input.nextRunAt,
+          input.retryDelay,
+          input.retryBackoff,
+          input.retryDelayMax,
         ],
       );
       const id = result.rows[0].id;
@@ -1235,7 +1285,9 @@ export class PostgresBackend implements QueueBackend {
                 timezone, allow_overlap AS "allowOverlap", status,
                 last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
                 next_run_at AS "nextRunAt",
-                created_at AS "createdAt", updated_at AS "updatedAt"
+                created_at AS "createdAt", updated_at AS "updatedAt",
+                retry_delay AS "retryDelay", retry_backoff AS "retryBackoff",
+                retry_delay_max AS "retryDelayMax"
          FROM cron_schedules WHERE id = $1`,
         [id],
       );
@@ -1263,7 +1315,9 @@ export class PostgresBackend implements QueueBackend {
                 timezone, allow_overlap AS "allowOverlap", status,
                 last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
                 next_run_at AS "nextRunAt",
-                created_at AS "createdAt", updated_at AS "updatedAt"
+                created_at AS "createdAt", updated_at AS "updatedAt",
+                retry_delay AS "retryDelay", retry_backoff AS "retryBackoff",
+                retry_delay_max AS "retryDelayMax"
          FROM cron_schedules WHERE schedule_name = $1`,
         [name],
       );
@@ -1290,7 +1344,9 @@ export class PostgresBackend implements QueueBackend {
                 timezone, allow_overlap AS "allowOverlap", status,
                 last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
                 next_run_at AS "nextRunAt",
-                created_at AS "createdAt", updated_at AS "updatedAt"
+                created_at AS "createdAt", updated_at AS "updatedAt",
+                retry_delay AS "retryDelay", retry_backoff AS "retryBackoff",
+                retry_delay_max AS "retryDelayMax"
          FROM cron_schedules`;
       const params: any[] = [];
       if (status) {
@@ -1404,6 +1460,18 @@ export class PostgresBackend implements QueueBackend {
         updateFields.push(`allow_overlap = $${paramIdx++}`);
         params.push(updates.allowOverlap);
       }
+      if (updates.retryDelay !== undefined) {
+        updateFields.push(`retry_delay = $${paramIdx++}`);
+        params.push(updates.retryDelay);
+      }
+      if (updates.retryBackoff !== undefined) {
+        updateFields.push(`retry_backoff = $${paramIdx++}`);
+        params.push(updates.retryBackoff);
+      }
+      if (updates.retryDelayMax !== undefined) {
+        updateFields.push(`retry_delay_max = $${paramIdx++}`);
+        params.push(updates.retryDelayMax);
+      }
       if (nextRunAt !== undefined) {
         updateFields.push(`next_run_at = $${paramIdx++}`);
         params.push(nextRunAt);
@@ -1443,7 +1511,9 @@ export class PostgresBackend implements QueueBackend {
                 timezone, allow_overlap AS "allowOverlap", status,
                 last_enqueued_at AS "lastEnqueuedAt", last_job_id AS "lastJobId",
                 next_run_at AS "nextRunAt",
-                created_at AS "createdAt", updated_at AS "updatedAt"
+                created_at AS "createdAt", updated_at AS "updatedAt",
+                retry_delay AS "retryDelay", retry_backoff AS "retryBackoff",
+                retry_delay_max AS "retryDelayMax"
          FROM cron_schedules
          WHERE status = 'active'
            AND next_run_at IS NOT NULL

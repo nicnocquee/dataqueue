@@ -162,6 +162,14 @@ function deserializeJob<PayloadMap, T extends JobType<PayloadMap>>(
     waitUntil: dateOrNull(h.waitUntil),
     waitTokenId: nullish(h.waitTokenId) as string | null | undefined,
     stepData: parseStepData(h.stepData),
+    retryDelay: numOrNull(h.retryDelay),
+    retryBackoff:
+      h.retryBackoff === 'true'
+        ? true
+        : h.retryBackoff === 'false'
+          ? false
+          : null,
+    retryDelayMax: numOrNull(h.retryDelayMax),
   };
 }
 
@@ -270,6 +278,9 @@ export class RedisBackend implements QueueBackend {
     forceKillOnTimeout = false,
     tags = undefined,
     idempotencyKey = undefined,
+    retryDelay = undefined,
+    retryBackoff = undefined,
+    retryDelayMax = undefined,
   }: JobOptions<PayloadMap, T>): Promise<number> {
     const now = this.nowMs();
     const runAtMs = runAt ? runAt.getTime() : 0;
@@ -288,6 +299,9 @@ export class RedisBackend implements QueueBackend {
       tags ? JSON.stringify(tags) : 'null',
       idempotencyKey ?? 'null',
       now,
+      retryDelay !== undefined ? retryDelay.toString() : 'null',
+      retryBackoff !== undefined ? retryBackoff.toString() : 'null',
+      retryDelayMax !== undefined ? retryDelayMax.toString() : 'null',
     )) as number;
 
     const jobId = Number(result);
@@ -656,6 +670,31 @@ export class RedisBackend implements QueueBackend {
         fields.push('tags', 'null');
       }
       metadata.tags = updates.tags;
+    }
+    if (updates.retryDelay !== undefined) {
+      fields.push(
+        'retryDelay',
+        updates.retryDelay !== null ? updates.retryDelay.toString() : 'null',
+      );
+      metadata.retryDelay = updates.retryDelay;
+    }
+    if (updates.retryBackoff !== undefined) {
+      fields.push(
+        'retryBackoff',
+        updates.retryBackoff !== null
+          ? updates.retryBackoff.toString()
+          : 'null',
+      );
+      metadata.retryBackoff = updates.retryBackoff;
+    }
+    if (updates.retryDelayMax !== undefined) {
+      fields.push(
+        'retryDelayMax',
+        updates.retryDelayMax !== null
+          ? updates.retryDelayMax.toString()
+          : 'null',
+      );
+      metadata.retryDelayMax = updates.retryDelayMax;
     }
 
     if (fields.length === 0) {
@@ -1236,6 +1275,18 @@ export class RedisBackend implements QueueBackend {
       now.toString(),
       'updatedAt',
       now.toString(),
+      'retryDelay',
+      input.retryDelay !== null && input.retryDelay !== undefined
+        ? input.retryDelay.toString()
+        : 'null',
+      'retryBackoff',
+      input.retryBackoff !== null && input.retryBackoff !== undefined
+        ? input.retryBackoff.toString()
+        : 'null',
+      'retryDelayMax',
+      input.retryDelayMax !== null && input.retryDelayMax !== undefined
+        ? input.retryDelayMax.toString()
+        : 'null',
     ];
 
     await (this.client as any).hmset(key, ...fields);
@@ -1417,6 +1468,28 @@ export class RedisBackend implements QueueBackend {
     if (updates.allowOverlap !== undefined) {
       fields.push('allowOverlap', updates.allowOverlap ? 'true' : 'false');
     }
+    if (updates.retryDelay !== undefined) {
+      fields.push(
+        'retryDelay',
+        updates.retryDelay !== null ? updates.retryDelay.toString() : 'null',
+      );
+    }
+    if (updates.retryBackoff !== undefined) {
+      fields.push(
+        'retryBackoff',
+        updates.retryBackoff !== null
+          ? updates.retryBackoff.toString()
+          : 'null',
+      );
+    }
+    if (updates.retryDelayMax !== undefined) {
+      fields.push(
+        'retryDelayMax',
+        updates.retryDelayMax !== null
+          ? updates.retryDelayMax.toString()
+          : 'null',
+      );
+    }
     if (nextRunAt !== undefined) {
       const val = nextRunAt !== null ? nextRunAt.getTime().toString() : 'null';
       fields.push('nextRunAt', val);
@@ -1557,6 +1630,14 @@ export class RedisBackend implements QueueBackend {
       nextRunAt: dateOrNull(h.nextRunAt),
       createdAt: new Date(Number(h.createdAt)),
       updatedAt: new Date(Number(h.updatedAt)),
+      retryDelay: numOrNull(h.retryDelay),
+      retryBackoff:
+        h.retryBackoff === 'true'
+          ? true
+          : h.retryBackoff === 'false'
+            ? false
+            : null,
+      retryDelayMax: numOrNull(h.retryDelayMax),
     };
   }
 

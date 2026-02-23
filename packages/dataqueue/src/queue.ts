@@ -109,6 +109,9 @@ export const editJob = async <PayloadMap, T extends keyof PayloadMap & string>(
     runAt?: Date | null;
     timeoutMs?: number | null;
     tags?: string[] | null;
+    retryDelay?: number | null;
+    retryBackoff?: boolean | null;
+    retryDelayMax?: number | null;
   },
 ): Promise<void> => new PostgresBackend(pool).editJob(jobId, updates);
 
@@ -134,6 +137,9 @@ export const editAllPendingJobs = async <
     runAt?: Date | null;
     timeoutMs?: number;
     tags?: string[];
+    retryDelay?: number | null;
+    retryBackoff?: boolean | null;
+    retryDelayMax?: number | null;
   },
 ): Promise<number> =>
   new PostgresBackend(pool).editAllPendingJobs(filters, updates);

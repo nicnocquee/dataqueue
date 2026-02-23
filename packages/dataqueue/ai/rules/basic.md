@@ -91,6 +91,16 @@ process.on('SIGTERM', async () => {
 });
 ```
 
+## Retry Configuration
+
+Control retry behavior per-job with optional fields on `addJob`:
+
+- `retryDelay` (seconds, default 60) — base delay between retries.
+- `retryBackoff` (boolean, default true) — enable exponential backoff with jitter.
+- `retryDelayMax` (seconds, optional) — cap the maximum delay.
+
+When none are set, the legacy `2^attempts * 60s` formula is used.
+
 ## Common Mistakes
 
 1. Creating `initJobQueue` per request — use a singleton.
