@@ -116,6 +116,24 @@ await queue.addJob({
 - No config — legacy `2^attempts * 60s` formula (backward compatible).
 - Cron schedules propagate retry config to enqueued jobs.
 
+## Event Hooks
+
+Subscribe to real-time lifecycle events via `on`, `once`, `off`, `removeAllListeners`. Works with both Postgres and Redis.
+
+```typescript
+queue.on('job:completed', ({ jobId, jobType }) => {
+  metrics.increment('job.completed', { jobType });
+});
+queue.on('job:failed', ({ jobId, jobType, error, willRetry }) => {
+  if (!willRetry) alertOps(`Permanent failure: ${jobId}`);
+});
+queue.on('error', (error) => Sentry.captureException(error));
+```
+
+Events: `job:added`, `job:processing`, `job:completed`, `job:failed` (with `willRetry`), `job:cancelled`, `job:retried`, `job:waiting`, `job:progress`, `error`.
+
+`error` events fire alongside `onError` callbacks in `ProcessorOptions` / `SupervisorOptions` — both mechanisms work independently.
+
 ## Scaling
 
 - Increase `batchSize` and `concurrency` for higher throughput.

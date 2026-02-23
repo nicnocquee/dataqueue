@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { createProcessor } from './processor.js';
 import { createSupervisor } from './supervisor.js';
 import {
@@ -14,6 +15,9 @@ import {
   CronScheduleOptions,
   CronScheduleStatus,
   EditCronScheduleOptions,
+  QueueEventMap,
+  QueueEventName,
+  QueueEmitFn,
 } from './types.js';
 import { QueueBackend, CronScheduleInput } from './backend.js';
 import { setLogContext } from './log-context.js';
@@ -66,6 +70,11 @@ export const initJobQueue = <PayloadMap = any>(
   } else {
     throw new Error(`Unknown backend: ${backendType}`);
   }
+
+  const emitter = new EventEmitter();
+  const emit: QueueEmitFn = (event, data) => {
+    emitter.emit(event, data);
+  };
 
   /**
    * Enqueue due cron jobs. Shared by the public API and the processor hook.
@@ -134,13 +143,21 @@ export const initJobQueue = <PayloadMap = any>(
   return {
     // Job queue operations
     addJob: withLogContext(
-      (job: JobOptions<PayloadMap, any>, options?: AddJobOptions) =>
-        backend.addJob<PayloadMap, any>(job, options),
+      async (job: JobOptions<PayloadMap, any>, options?: AddJobOptions) => {
+        const jobId = await backend.addJob<PayloadMap, any>(job, options);
+        emit('job:added', { jobId, jobType: job.jobType });
+        return jobId;
+      },
       config.verbose ?? false,
     ),
     addJobs: withLogContext(
-      (jobs: JobOptions<PayloadMap, any>[], options?: AddJobOptions) =>
-        backend.addJobs<PayloadMap, any>(jobs, options),
+      async (jobs: JobOptions<PayloadMap, any>[], options?: AddJobOptions) => {
+        const jobIds = await backend.addJobs<PayloadMap, any>(jobs, options);
+        for (let i = 0; i < jobIds.length; i++) {
+          emit('job:added', { jobId: jobIds[i], jobType: jobs[i].jobType });
+        }
+        return jobIds;
+      },
       config.verbose ?? false,
     ),
     getJob: withLogContext(
@@ -172,15 +189,18 @@ export const initJobQueue = <PayloadMap = any>(
       ) => backend.getJobs<PayloadMap, any>(filters, limit, offset),
       config.verbose ?? false,
     ),
-    retryJob: (jobId: number) => backend.retryJob(jobId),
+    retryJob: async (jobId: number) => {
+      await backend.retryJob(jobId);
+      emit('job:retried', { jobId });
+    },
     cleanupOldJobs: (daysToKeep?: number, batchSize?: number) =>
       backend.cleanupOldJobs(daysToKeep, batchSize),
     cleanupOldJobEvents: (daysToKeep?: number, batchSize?: number) =>
       backend.cleanupOldJobEvents(daysToKeep, batchSize),
-    cancelJob: withLogContext(
-      (jobId: number) => backend.cancelJob(jobId),
-      config.verbose ?? false,
-    ),
+    cancelJob: withLogContext(async (jobId: number) => {
+      await backend.cancelJob(jobId);
+      emit('job:cancelled', { jobId });
+    }, config.verbose ?? false),
     editJob: withLogContext(
       <T extends JobType<PayloadMap>>(
         jobId: number,
@@ -238,13 +258,19 @@ export const initJobQueue = <PayloadMap = any>(
       handlers: JobHandlers<PayloadMap>,
       options?: ProcessorOptions,
     ) =>
-      createProcessor<PayloadMap>(backend, handlers, options, async () => {
-        await enqueueDueCronJobsImpl();
-      }),
+      createProcessor<PayloadMap>(
+        backend,
+        handlers,
+        options,
+        async () => {
+          await enqueueDueCronJobsImpl();
+        },
+        emit,
+      ),
 
     // Background supervisor — automated maintenance
     createSupervisor: (options?: SupervisorOptions) =>
-      createSupervisor(backend, options),
+      createSupervisor(backend, options, emit),
 
     // Job events
     getJobEvents: withLogContext(
@@ -358,6 +384,33 @@ export const initJobQueue = <PayloadMap = any>(
       () => enqueueDueCronJobsImpl(),
       config.verbose ?? false,
     ),
+
+    // Event hooks
+    on: <K extends QueueEventName>(
+      event: K,
+      listener: (data: QueueEventMap[K]) => void,
+    ) => {
+      emitter.on(event, listener as (...args: any[]) => void);
+    },
+    once: <K extends QueueEventName>(
+      event: K,
+      listener: (data: QueueEventMap[K]) => void,
+    ) => {
+      emitter.once(event, listener as (...args: any[]) => void);
+    },
+    off: <K extends QueueEventName>(
+      event: K,
+      listener: (data: QueueEventMap[K]) => void,
+    ) => {
+      emitter.off(event, listener as (...args: any[]) => void);
+    },
+    removeAllListeners: (event?: QueueEventName) => {
+      if (event) {
+        emitter.removeAllListeners(event);
+      } else {
+        emitter.removeAllListeners();
+      }
+    },
 
     // Advanced access
     getPool: () => {

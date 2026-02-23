@@ -12,6 +12,7 @@ import {
   WaitSignal,
   WaitDuration,
   WaitTokenResult,
+  QueueEmitFn,
 } from './types.js';
 import { QueueBackend } from './backend.js';
 import { log, setLogContext } from './log-context.js';
@@ -501,7 +502,12 @@ function buildWaitContext(
 }
 
 /**
- * Process a single job using the provided handler map
+ * Process a single job using the provided handler map.
+ *
+ * @param backend - The queue backend.
+ * @param job - The job record to process.
+ * @param jobHandlers - Map of job type to handler function.
+ * @param emit - Optional callback to emit lifecycle events to the queue's EventEmitter.
  */
 export async function processJobWithHandlers<
   PayloadMap,
@@ -510,6 +516,7 @@ export async function processJobWithHandlers<
   backend: QueueBackend,
   job: JobRecord<PayloadMap, T>,
   jobHandlers: JobHandlers<PayloadMap>,
+  emit?: QueueEmitFn,
 ): Promise<void> {
   const handler = jobHandlers[job.jobType];
 
@@ -518,11 +525,16 @@ export async function processJobWithHandlers<
       `No handler registered for job type: ${job.jobType}`,
       job.jobType,
     );
-    await backend.failJob(
-      job.id,
-      new Error(`No handler registered for job type: ${job.jobType}`),
-      FailureReason.NoHandler,
+    const noHandlerError = new Error(
+      `No handler registered for job type: ${job.jobType}`,
     );
+    await backend.failJob(job.id, noHandlerError, FailureReason.NoHandler);
+    emit?.('job:failed', {
+      jobId: job.id,
+      jobType: job.jobType,
+      error: noHandlerError,
+      willRetry: false,
+    });
     return;
   }
 
@@ -623,6 +635,18 @@ export async function processJobWithHandlers<
       // Build context: full wait support for all backends
       const ctx = buildWaitContext(backend, job.id, stepData, baseCtx);
 
+      // Wrap setProgress to also emit the event
+      if (emit) {
+        const originalSetProgress = ctx.setProgress;
+        ctx.setProgress = async (percent: number) => {
+          await originalSetProgress(percent);
+          emit('job:progress', {
+            jobId: job.id,
+            progress: Math.round(percent),
+          });
+        };
+      }
+
       // If forceKillOnTimeout was set but timeoutMs was missing, warn
       if (forceKillOnTimeout && !hasTimeout) {
         log(
@@ -648,6 +672,7 @@ export async function processJobWithHandlers<
 
     // Job completed successfully -- complete via backend
     await backend.completeJob(job.id);
+    emit?.('job:completed', { jobId: job.id, jobType: job.jobType });
   } catch (error) {
     if (timeoutId) clearTimeout(timeoutId);
 
@@ -661,6 +686,7 @@ export async function processJobWithHandlers<
         waitTokenId: error.tokenId,
         stepData: error.stepData,
       });
+      emit?.('job:waiting', { jobId: job.id, jobType: job.jobType });
       return;
     }
 
@@ -676,16 +702,28 @@ export async function processJobWithHandlers<
     ) {
       failureReason = FailureReason.Timeout;
     }
-    await backend.failJob(
-      job.id,
-      error instanceof Error ? error : new Error(String(error)),
-      failureReason,
-    );
+    const failError = error instanceof Error ? error : new Error(String(error));
+    await backend.failJob(job.id, failError, failureReason);
+    emit?.('job:failed', {
+      jobId: job.id,
+      jobType: job.jobType,
+      error: failError,
+      willRetry: job.attempts + 1 < job.maxAttempts,
+    });
   }
 }
 
 /**
- * Process a batch of jobs using the provided handler map and concurrency limit
+ * Process a batch of jobs using the provided handler map and concurrency limit.
+ *
+ * @param backend - The queue backend.
+ * @param workerId - Identifier for the worker claiming jobs.
+ * @param batchSize - Maximum jobs to claim per batch.
+ * @param jobType - Optional job type filter.
+ * @param jobHandlers - Map of job type to handler function.
+ * @param concurrency - Max parallel jobs within the batch.
+ * @param onError - Legacy error callback.
+ * @param emit - Optional callback to emit lifecycle events.
  */
 export async function processBatchWithHandlers<PayloadMap>(
   backend: QueueBackend,
@@ -695,16 +733,26 @@ export async function processBatchWithHandlers<PayloadMap>(
   jobHandlers: JobHandlers<PayloadMap>,
   concurrency?: number,
   onError?: (error: Error) => void,
+  emit?: QueueEmitFn,
 ): Promise<number> {
   const jobs = await backend.getNextBatch<PayloadMap, JobType<PayloadMap>>(
     workerId,
     batchSize,
     jobType,
   );
+
+  // Emit job:processing for each claimed job
+  if (emit) {
+    for (const job of jobs) {
+      emit('job:processing', { jobId: job.id, jobType: job.jobType });
+    }
+  }
+
   if (!concurrency || concurrency >= jobs.length) {
-    // Default: all in parallel
     await Promise.all(
-      jobs.map((job) => processJobWithHandlers(backend, job, jobHandlers)),
+      jobs.map((job) =>
+        processJobWithHandlers(backend, job, jobHandlers, emit),
+      ),
     );
     return jobs.length;
   }
@@ -718,7 +766,7 @@ export async function processBatchWithHandlers<PayloadMap>(
       while (running < concurrency && idx < jobs.length) {
         const job = jobs[idx++];
         running++;
-        processJobWithHandlers(backend, job, jobHandlers)
+        processJobWithHandlers(backend, job, jobHandlers, emit)
           .then(() => {
             running--;
             finished++;
@@ -740,17 +788,20 @@ export async function processBatchWithHandlers<PayloadMap>(
 
 /**
  * Start a job processor that continuously processes jobs.
+ *
  * @param backend - The queue backend.
  * @param handlers - The job handlers for this processor instance.
  * @param options - The processor options. Leave pollInterval empty to run only once. Use jobType to filter jobs by type.
  * @param onBeforeBatch - Optional callback invoked before each batch. Used internally to enqueue due cron jobs.
- * @returns {Processor} The processor instance.
+ * @param emit - Optional callback to emit lifecycle events to the queue's EventEmitter.
+ * @returns The processor instance.
  */
 export const createProcessor = <PayloadMap = any>(
   backend: QueueBackend,
   handlers: JobHandlers<PayloadMap>,
   options: ProcessorOptions = {},
   onBeforeBatch?: () => Promise<void>,
+  emit?: QueueEmitFn,
 ): Processor => {
   const {
     workerId = `worker-${Math.random().toString(36).substring(2, 9)}`,
@@ -776,13 +827,12 @@ export const createProcessor = <PayloadMap = any>(
         await onBeforeBatch();
       } catch (hookError) {
         log(`onBeforeBatch hook error: ${hookError}`);
+        const err =
+          hookError instanceof Error ? hookError : new Error(String(hookError));
         if (onError) {
-          onError(
-            hookError instanceof Error
-              ? hookError
-              : new Error(String(hookError)),
-          );
+          onError(err);
         }
+        emit?.('error', err);
       }
     }
 
@@ -799,11 +849,13 @@ export const createProcessor = <PayloadMap = any>(
         handlers,
         concurrency,
         onError,
+        emit,
       );
-      // Only process one batch in start; do not schedule next batch here
       return processed;
     } catch (error) {
-      onError(error instanceof Error ? error : new Error(String(error)));
+      const err = error instanceof Error ? error : new Error(String(error));
+      onError(err);
+      emit?.('error', err);
     }
     return 0;
   };

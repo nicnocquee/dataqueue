@@ -19,6 +19,7 @@
     "cancel-jobs",
     "edit-jobs",
     "job-events",
+    "event-hooks",
     "get-jobs",
     "progress-tracking",
     "cron-jobs",

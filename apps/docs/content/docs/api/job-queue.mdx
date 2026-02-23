@@ -450,6 +450,67 @@ enum JobEventType {
 
 ---
 
+## Event Hooks
+
+DataQueue emits real-time events for job lifecycle transitions. Register listeners using `on`, `once`, `off`, and `removeAllListeners`. Works identically with both PostgreSQL and Redis backends.
+
+### QueueEventMap
+
+```ts
+interface QueueEventMap {
+  'job:added': { jobId: number; jobType: string };
+  'job:processing': { jobId: number; jobType: string };
+  'job:completed': { jobId: number; jobType: string };
+  'job:failed': {
+    jobId: number;
+    jobType: string;
+    error: Error;
+    willRetry: boolean;
+  };
+  'job:cancelled': { jobId: number };
+  'job:retried': { jobId: number };
+  'job:waiting': { jobId: number; jobType: string };
+  'job:progress': { jobId: number; progress: number };
+  error: Error;
+}
+```
+
+### on
+
+```ts
+on(event: QueueEventName, listener: (data) => void): void
+```
+
+Register a listener that fires every time the event is emitted.
+
+### once
+
+```ts
+once(event: QueueEventName, listener: (data) => void): void
+```
+
+Register a one-time listener that auto-removes after the first invocation.
+
+### off
+
+```ts
+off(event: QueueEventName, listener: (data) => void): void
+```
+
+Remove a previously registered listener. Pass the exact function reference used with `on` or `once`.
+
+### removeAllListeners
+
+```ts
+removeAllListeners(event?: QueueEventName): void
+```
+
+Remove all listeners for a specific event, or all listeners for all events when called without arguments.
+
+See [Event Hooks](/usage/event-hooks) for detailed usage examples.
+
+---
+
 ## Processing Jobs
 
 ### createProcessor
