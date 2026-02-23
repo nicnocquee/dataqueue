@@ -5,6 +5,18 @@ description: Get started with DataQueue
 
 In this docs, we'll use a Next.js with App Router project which is deployed to Vercel as an example.
 
+## Next.js Shortcut
+
+If you're using Next.js, you can scaffold everything — API routes, a job queue singleton, a cron script, and all dependencies — with a single command:
+
+```bash
+npx dataqueue-cli init
+```
+
+The command auto-detects your project structure (App Router vs Pages Router, `src/` directory vs root) and creates all the files you need. See the [`init` CLI reference](/cli/init) for full details.
+
+If you prefer to set things up manually, follow the steps below.
+
 ## PostgreSQL Backend
 
 1. [Run migrations before deploying your app](/usage/database-migration)
