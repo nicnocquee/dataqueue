@@ -23,7 +23,8 @@
     "progress-tracking",
     "cron-jobs",
     "react-sdk",
-    "dashboard"
+    "dashboard",
+    "building-with-ai"
   ],
   "defaultOpen": true
 }

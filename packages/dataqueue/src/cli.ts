@@ -3,6 +3,13 @@ import { spawnSync, SpawnSyncReturns } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { InitDeps, runInit } from './init-command.js';
+import {
+  runInstallSkills,
+  InstallSkillsDeps,
+} from './install-skills-command.js';
+import { runInstallRules, InstallRulesDeps } from './install-rules-command.js';
+import { runInstallMcp, InstallMcpDeps } from './install-mcp-command.js';
+import { startMcpServer } from './mcp-server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +22,13 @@ export interface CliDeps {
   migrationsDir?: string;
   initDeps?: InitDeps;
   runInitImpl?: (deps?: InitDeps) => void;
+  installSkillsDeps?: InstallSkillsDeps;
+  runInstallSkillsImpl?: (deps?: InstallSkillsDeps) => void;
+  installRulesDeps?: InstallRulesDeps;
+  runInstallRulesImpl?: (deps?: InstallRulesDeps) => Promise<void>;
+  installMcpDeps?: InstallMcpDeps;
+  runInstallMcpImpl?: (deps?: InstallMcpDeps) => Promise<void>;
+  startMcpServerImpl?: typeof startMcpServer;
 }
 
 export function runCli(
@@ -27,19 +41,27 @@ export function runCli(
     migrationsDir = path.join(__dirname, '../migrations'),
     initDeps,
     runInitImpl = runInit,
+    installSkillsDeps,
+    runInstallSkillsImpl = runInstallSkills,
+    installRulesDeps,
+    runInstallRulesImpl = runInstallRules,
+    installMcpDeps,
+    runInstallMcpImpl = runInstallMcp,
+    startMcpServerImpl = startMcpServer,
   }: CliDeps = {},
 ): void {
   const [, , command, ...restArgs] = argv;
 
-  /**
-   * Prints CLI usage and exits with non-zero code.
-   */
   function printUsage() {
     log('Usage:');
     log(
       '  dataqueue-cli migrate [--envPath <path>] [-s <schema> | --schema <schema>]',
     );
     log('  dataqueue-cli init');
+    log('  dataqueue-cli install-skills');
+    log('  dataqueue-cli install-rules');
+    log('  dataqueue-cli install-mcp');
+    log('  dataqueue-cli mcp');
     log('');
     log('Options for migrate:');
     log(
@@ -49,24 +71,13 @@ export function runCli(
       '  -s, --schema <schema>  Set the schema to use (passed to node-pg-migrate)',
     );
     log('');
-    log('Notes:');
+    log('AI tooling commands:');
+    log('  install-skills     Install DataQueue skill files for AI assistants');
+    log('  install-rules      Install DataQueue agent rules for AI clients');
     log(
-      '  - The PG_DATAQUEUE_DATABASE environment variable must be set to your Postgres connection string.',
+      '  install-mcp        Configure the DataQueue MCP server for AI clients',
     );
-    log(
-      '  - For managed Postgres (e.g., DigitalOcean) with SSL, set PGSSLMODE=require and PGSSLROOTCERT to your CA .crt file.',
-    );
-    log(
-      '    Example: PGSSLMODE=require NODE_EXTRA_CA_CERTS=/absolute/path/to/ca.crt PG_DATAQUEUE_DATABASE=... npx dataqueue-cli migrate',
-    );
-    log('');
-    log('Notes for init:');
-    log(
-      '  - Supports both Next.js App Router and Pages Router (prefers App Router if both exist).',
-    );
-    log(
-      '  - Scaffolds endpoint, cron.sh, queue placeholder, and package.json entries.',
-    );
+    log('  mcp                Start the DataQueue MCP server (stdio)');
     exit(1);
   }
 
@@ -114,6 +125,32 @@ export function runCli(
       error,
       exit,
       ...initDeps,
+    });
+  } else if (command === 'install-skills') {
+    runInstallSkillsImpl({
+      log,
+      error,
+      exit,
+      ...installSkillsDeps,
+    });
+  } else if (command === 'install-rules') {
+    runInstallRulesImpl({
+      log,
+      error,
+      exit,
+      ...installRulesDeps,
+    });
+  } else if (command === 'install-mcp') {
+    runInstallMcpImpl({
+      log,
+      error,
+      exit,
+      ...installMcpDeps,
+    });
+  } else if (command === 'mcp') {
+    startMcpServerImpl().catch((err) => {
+      error('Failed to start MCP server:', err);
+      exit(1);
     });
   } else {
     printUsage();

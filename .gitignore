@@ -3,3 +3,6 @@ dist
 data
 .turbo
 redis-data
+
+# Generated from MDX docs by prebuild
+packages/dataqueue/ai/docs-content.json

@@ -1,0 +1,145 @@
+---
+title: Building with AI
+description: Tools and resources for building DataQueue projects with AI coding assistants.
+---
+
+We provide multiple tools to help AI coding assistants write correct DataQueue code. Use one or all of them for the best developer experience.
+
+## Quick Setup
+
+### 1. Install Skills
+
+Portable instruction sets that teach any AI coding assistant DataQueue best practices.
+
+```bash
+npx dataqueue-cli install-skills
+```
+
+Skills are installed as `SKILL.md` files into your AI tool's skills directory (`.cursor/skills/`, `.claude/skills/`, etc.). They cover core patterns, advanced features (waits, cron, tokens), and React/Dashboard integration.
+
+### 2. Install Agent Rules
+
+Comprehensive rule sets installed directly into your AI client's config files.
+
+```bash
+npx dataqueue-cli install-rules
+```
+
+The installer prompts you to choose your AI client and writes rules to the appropriate location:
+
+| Client         | Installs to                       |
+| -------------- | --------------------------------- |
+| Cursor         | `.cursor/rules/dataqueue-*.mdc`   |
+| Claude Code    | `CLAUDE.md`                       |
+| AGENTS.md      | `AGENTS.md`                       |
+| GitHub Copilot | `.github/copilot-instructions.md` |
+| Windsurf       | `CONVENTIONS.md`                  |
+
+### 3. Install MCP Server
+
+Give your AI assistant direct access to DataQueue documentation — search docs, fetch specific pages, and list all available topics.
+
+```bash
+npx dataqueue-cli install-mcp
+```
+
+The installer prompts you to choose your AI client and writes the MCP config to the appropriate location. Currently supported clients:
+
+| Client            | Installs to                           |
+| ----------------- | ------------------------------------- |
+| Cursor            | `.cursor/mcp.json`                    |
+| Claude Code       | `.mcp.json`                           |
+| VS Code (Copilot) | `.vscode/mcp.json`                    |
+| Windsurf          | `~/.codeium/windsurf/mcp_config.json` |
+
+The MCP server runs via `npx dataqueue-cli mcp` and communicates over stdio. It exposes three tools:
+
+| Tool             | Description                              |
+| ---------------- | ---------------------------------------- |
+| `search-docs`    | Full-text search across all doc pages    |
+| `get-doc-page`   | Fetch a specific doc page by slug        |
+| `list-doc-pages` | List all available doc pages with titles |
+
+## Skills vs Agent Rules vs MCP
+
+|                   | **Skills**                           | **Agent Rules**                        | **MCP Server**                         |
+| :---------------- | :----------------------------------- | :------------------------------------- | :------------------------------------- |
+| **What it does**  | Drops skill files into your project  | Installs rule sets into client config  | Runs a live server your AI connects to |
+| **Installs to**   | `.cursor/skills/`, `.claude/skills/` | `.cursor/rules/`, `CLAUDE.md`, etc.    | `.cursor/mcp.json`, `.mcp.json`, etc.  |
+| **Best for**      | Teaching patterns and best practices | Comprehensive code generation guidance | Live documentation search              |
+| **Works offline** | Yes                                  | Yes                                    | Yes (runs locally)                     |
+
+**Recommendation:** Install all three. Skills and Agent Rules teach your AI _how_ to write code. The MCP Server lets it _look up_ the docs when it needs specifics.
+
+## llms.txt
+
+We publish machine-readable documentation for LLM consumption:
+
+- [docs.dataqueue.dev/llms.txt](https://docs.dataqueue.dev/llms.txt) — concise overview
+- [docs.dataqueue.dev/llms-full.txt](https://docs.dataqueue.dev/llms-full.txt) — full documentation
+
+These follow the [llms.txt standard](https://llmstxt.org) and can be fed directly into any LLM context window.
+
+## Project-Level Context Snippet
+
+If you prefer a lightweight approach, paste this snippet into a context file at the root of your project:
+
+| File                              | Read by                       |
+| :-------------------------------- | :---------------------------- |
+| `CLAUDE.md`                       | Claude Code                   |
+| `AGENTS.md`                       | OpenAI Codex, Jules, OpenCode |
+| `.cursor/rules/*.md`              | Cursor                        |
+| `.github/copilot-instructions.md` | GitHub Copilot                |
+| `CONVENTIONS.md`                  | Windsurf, Cline, and others   |
+
+```markdown
+# DataQueue rules
+
+## Imports
+
+Always import from `@nicnocquee/dataqueue`.
+
+## PayloadMap pattern
+
+Define a type map of job types to payload shapes for full type safety:
+
+\`\`\`ts
+type JobPayloadMap = {
+send_email: { to: string; subject: string; body: string };
+};
+\`\`\`
+
+## Initialization (singleton)
+
+Never call initJobQueue per request — use a module-level singleton:
+
+\`\`\`ts
+import { initJobQueue } from '@nicnocquee/dataqueue';
+let queue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
+export const getJobQueue = () => {
+if (!queue) {
+queue = initJobQueue<JobPayloadMap>({
+databaseConfig: { connectionString: process.env.PG_DATAQUEUE_DATABASE },
+});
+}
+return queue;
+};
+\`\`\`
+
+## Handler pattern
+
+Type handlers as `JobHandlers<PayloadMap>` — TypeScript enforces a handler for every job type.
+
+## Processing
+
+- Serverless: `processor.start()` (one-shot)
+- Long-running: `processor.startInBackground()` + `stopAndDrain()` on SIGTERM
+
+## Common mistakes
+
+1. Creating initJobQueue per request (creates a DB pool each time)
+2. Missing handler for a job type (fails with NoHandler)
+3. Not checking signal.aborted in long handlers
+4. Forgetting reclaimStuckJobs() — crashed workers leave jobs stuck
+5. Skipping migrations (PostgreSQL requires `dataqueue-cli migrate`)
+```

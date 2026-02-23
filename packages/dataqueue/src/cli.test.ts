@@ -23,6 +23,10 @@ function makeDeps() {
     spawnSyncImpl: vi.fn(() => makeSpawnSyncReturns(0)),
     migrationsDir: '/migrations',
     runInitImpl: vi.fn(),
+    runInstallSkillsImpl: vi.fn(),
+    runInstallRulesImpl: vi.fn(async () => {}),
+    runInstallMcpImpl: vi.fn(async () => {}),
+    startMcpServerImpl: vi.fn(async () => ({}) as any),
   } satisfies CliDeps;
 }
 
@@ -137,5 +141,66 @@ describe('runCli', () => {
     });
     runCli(['node', 'cli.js', 'migrate'], deps);
     expect(deps.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('routes install-skills command to runInstallSkillsImpl', () => {
+    // Act
+    runCli(['node', 'cli.js', 'install-skills'], deps);
+
+    // Assert
+    expect(deps.runInstallSkillsImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        log: deps.log,
+        error: deps.error,
+        exit: deps.exit,
+      }),
+    );
+  });
+
+  it('routes install-rules command to runInstallRulesImpl', () => {
+    // Act
+    runCli(['node', 'cli.js', 'install-rules'], deps);
+
+    // Assert
+    expect(deps.runInstallRulesImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        log: deps.log,
+        error: deps.error,
+        exit: deps.exit,
+      }),
+    );
+  });
+
+  it('routes install-mcp command to runInstallMcpImpl', () => {
+    // Act
+    runCli(['node', 'cli.js', 'install-mcp'], deps);
+
+    // Assert
+    expect(deps.runInstallMcpImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        log: deps.log,
+        error: deps.error,
+        exit: deps.exit,
+      }),
+    );
+  });
+
+  it('routes mcp command to startMcpServerImpl', () => {
+    // Act
+    runCli(['node', 'cli.js', 'mcp'], deps);
+
+    // Assert
+    expect(deps.startMcpServerImpl).toHaveBeenCalled();
+  });
+
+  it('shows new commands in usage output', () => {
+    // Act
+    runCli(['node', 'cli.js'], deps);
+
+    // Assert
+    expect(deps.log).toHaveBeenCalledWith('  dataqueue-cli install-skills');
+    expect(deps.log).toHaveBeenCalledWith('  dataqueue-cli install-rules');
+    expect(deps.log).toHaveBeenCalledWith('  dataqueue-cli install-mcp');
+    expect(deps.log).toHaveBeenCalledWith('  dataqueue-cli mcp');
   });
 });

@@ -1,0 +1,66 @@
+# DataQueue
+
+> Lightweight PostgreSQL or Redis-backed job queue for Node.js/TypeScript projects. Designed for serverless environments.
+
+## Packages
+
+- `@nicnocquee/dataqueue` — Core job queue library
+- `@nicnocquee/dataqueue-react` — React hooks for job status/progress
+- `@nicnocquee/dataqueue-dashboard` — Admin dashboard for Next.js
+
+## Documentation
+
+- [Overview](https://docs.dataqueue.dev/intro/overview): Architecture — processor, queue, jobs
+- [Installation](https://docs.dataqueue.dev/intro/install): Install for PostgreSQL or Redis
+- [Comparison](https://docs.dataqueue.dev/intro/comparison): DataQueue vs BullMQ vs Trigger.dev
+- [Quick Start](https://docs.dataqueue.dev/usage/quick-start): Step-by-step setup for serverless and long-running
+- [Database Migration](https://docs.dataqueue.dev/usage/database-migration): PostgreSQL schema migrations
+- [Job Handlers](https://docs.dataqueue.dev/usage/job-handlers): Define typed handlers with PayloadMap
+- [Initialize Queue](https://docs.dataqueue.dev/usage/init-queue): PostgreSQL and Redis configuration
+- [Add Job](https://docs.dataqueue.dev/usage/add-job): Enqueue jobs with priority, scheduling, tags, idempotency
+- [Process Jobs](https://docs.dataqueue.dev/usage/process-jobs): Serverless batch processing with cron
+- [Long-Running Server](https://docs.dataqueue.dev/usage/long-running-server): Background processor with graceful shutdown
+- [Failed Jobs](https://docs.dataqueue.dev/usage/failed-jobs): Retry behavior and error history
+- [Job Timeout](https://docs.dataqueue.dev/usage/job-timeout): AbortSignal, prolong, onTimeout
+- [Force Kill on Timeout](https://docs.dataqueue.dev/usage/force-kill-timeout): Worker thread termination
+- [Wait](https://docs.dataqueue.dev/usage/wait): Durable execution — waitFor, waitUntil, waitForToken, ctx.run
+- [Reclaim Jobs](https://docs.dataqueue.dev/usage/reclaim-jobs): Recover stuck processing jobs
+- [Cleanup Jobs](https://docs.dataqueue.dev/usage/cleanup-jobs): Delete old completed jobs
+- [Scaling](https://docs.dataqueue.dev/usage/scaling): Tuning throughput, horizontal scaling
+- [Cancel Jobs](https://docs.dataqueue.dev/usage/cancel-jobs): Cancel by ID, filter, or bulk
+- [Edit Jobs](https://docs.dataqueue.dev/usage/edit-jobs): Modify pending jobs
+- [Job Events](https://docs.dataqueue.dev/usage/job-events): Audit trail of state transitions
+- [Get Jobs](https://docs.dataqueue.dev/usage/get-jobs): Query by status, tags, filters
+- [Progress Tracking](https://docs.dataqueue.dev/usage/progress-tracking): Report and read 0–100% progress
+- [Cron Jobs](https://docs.dataqueue.dev/usage/cron-jobs): Recurring schedules with overlap protection
+- [React SDK](https://docs.dataqueue.dev/usage/react-sdk): useJob hook and DataqueueProvider
+- [Dashboard](https://docs.dataqueue.dev/usage/dashboard): Admin UI setup and configuration
+- [API Reference](https://docs.dataqueue.dev/api): JobQueue, JobOptions, JobRecord, Processor, etc.
+
+## Quick Example
+
+```typescript
+import { initJobQueue, JobHandlers } from '@nicnocquee/dataqueue';
+
+type PayloadMap = {
+  send_email: { to: string; subject: string; body: string };
+};
+
+const handlers: JobHandlers<PayloadMap> = {
+  send_email: async (payload) => {
+    await sendEmail(payload.to, payload.subject, payload.body);
+  },
+};
+
+const queue = initJobQueue<PayloadMap>({
+  databaseConfig: { connectionString: process.env.PG_DATAQUEUE_DATABASE },
+});
+
+await queue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com', subject: 'Hello', body: 'World' },
+});
+
+const processor = queue.createProcessor(handlers, { batchSize: 10 });
+await processor.start();
+```

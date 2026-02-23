@@ -14,9 +14,11 @@
   "files": [
     "dist/",
     "src/",
-    "migrations/"
+    "migrations/",
+    "ai/"
   ],
   "scripts": {
+    "prebuild": "npx tsx ai/build-docs-content.ts && npx tsx ai/build-llms-full.ts",
     "build": "tsup",
     "ci": "npm run build && npm run check-format && npm run check-exports && npm run lint && npm run test",
     "lint": "tsc",
@@ -24,6 +26,7 @@
     "format": "prettier --write .",
     "check-format": "prettier --check .",
     "check-exports": "attw --pack .",
+    "build:docs-content": "npx tsx ai/build-docs-content.ts && npx tsx ai/build-llms-full.ts",
     "dev": "tsup --watch",
     "migrate": "node-pg-migrate -d $PG_DATAQUEUE_DATABASE -m ./migrations"
   },
@@ -43,9 +46,11 @@
     "directory": "packages/dataqueue"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "croner": "^10.0.1",
     "pg": "^8.0.0",
-    "pg-connection-string": "^2.9.1"
+    "pg-connection-string": "^2.9.1",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
@@ -76,6 +81,7 @@
     }
   },
   "bin": {
-    "dataqueue-cli": "./cli.cjs"
+    "dataqueue-cli": "./cli.cjs",
+    "dataqueue-mcp": "./dist/mcp-server.js"
   }
 }
