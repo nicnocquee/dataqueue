@@ -116,6 +116,31 @@ const jobId = await queue.addJob({
 });
 ```
 
+### Batch Insert
+
+Use `addJobs` to insert many jobs in a single database round-trip. Returns IDs in the same order as the input array.
+
+```typescript
+const jobIds = await queue.addJobs([
+  {
+    jobType: 'send_email',
+    payload: { to: 'a@example.com', subject: 'Hi', body: '...' },
+  },
+  {
+    jobType: 'send_email',
+    payload: { to: 'b@example.com', subject: 'Hi', body: '...' },
+    priority: 10,
+  },
+  {
+    jobType: 'generate_report',
+    payload: { reportId: '1', userId: '2' },
+    tags: ['monthly'],
+  },
+]);
+```
+
+Each job can independently have its own `idempotencyKey`, `priority`, `runAt`, `tags`, etc. The `{ db }` transactional option is also supported (PostgreSQL only).
+
 ### Transactional Job Creation (PostgreSQL only)
 
 Pass an external `pg.PoolClient` inside a transaction via `{ db: client }`:

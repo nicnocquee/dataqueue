@@ -87,6 +87,22 @@ export interface QueueBackend {
     options?: AddJobOptions,
   ): Promise<number>;
 
+  /**
+   * Add multiple jobs in a single operation and return their IDs.
+   *
+   * IDs are returned in the same order as the input array.
+   * Each job may independently have an `idempotencyKey`; duplicates
+   * resolve to the existing job's ID without creating a new row.
+   *
+   * @param jobs - Array of job configurations.
+   * @param options - Optional. Pass `{ db }` to run the INSERTs on an external
+   *   client (e.g., inside a transaction). PostgreSQL only.
+   */
+  addJobs<PayloadMap, T extends JobType<PayloadMap>>(
+    jobs: JobOptions<PayloadMap, T>[],
+    options?: AddJobOptions,
+  ): Promise<number[]>;
+
   /** Get a single job by ID, or null if not found. */
   getJob<PayloadMap, T extends JobType<PayloadMap>>(
     id: number,

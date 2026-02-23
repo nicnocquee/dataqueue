@@ -139,6 +139,129 @@ return id
 `;
 
 /**
+ * ADD JOBS (batch)
+ * KEYS: [prefix]
+ * ARGV: [jobsJson, nowMs]
+ *   jobsJson is a JSON array of objects, each with:
+ *     jobType, payload (already JSON string), maxAttempts, priority,
+ *     runAtMs, timeoutMs, forceKillOnTimeout, tags (JSON or "null"),
+ *     idempotencyKey
+ * Returns: array of job IDs (one per input job, in order)
+ */
+export const ADD_JOBS_SCRIPT = `
+local prefix = KEYS[1]
+local jobsJson = ARGV[1]
+local nowMs = tonumber(ARGV[2])
+
+local jobs = cjson.decode(jobsJson)
+local results = {}
+
+for i, job in ipairs(jobs) do
+  local jobType = job.jobType
+  local payloadJson = job.payload
+  local maxAttempts = tonumber(job.maxAttempts)
+  local priority = tonumber(job.priority)
+  local runAtMs = tostring(job.runAtMs)
+  local timeoutMs = tostring(job.timeoutMs)
+  local forceKillOnTimeout = tostring(job.forceKillOnTimeout)
+  local tagsJson = tostring(job.tags)
+  local idempotencyKey = tostring(job.idempotencyKey)
+  local retryDelay = tostring(job.retryDelay)
+  local retryBackoff = tostring(job.retryBackoff)
+  local retryDelayMax = tostring(job.retryDelayMax)
+
+  -- Idempotency check
+  local skip = false
+  if idempotencyKey ~= "null" then
+    local existing = redis.call('GET', prefix .. 'idempotency:' .. idempotencyKey)
+    if existing then
+      results[i] = tonumber(existing)
+      skip = true
+    end
+  end
+
+  if not skip then
+    -- Generate ID
+    local id = redis.call('INCR', prefix .. 'id_seq')
+    local jobKey = prefix .. 'job:' .. id
+    local runAt = runAtMs ~= "0" and tonumber(runAtMs) or nowMs
+
+    -- Store the job hash
+    redis.call('HMSET', jobKey,
+      'id', id,
+      'jobType', jobType,
+      'payload', payloadJson,
+      'status', 'pending',
+      'maxAttempts', maxAttempts,
+      'attempts', 0,
+      'priority', priority,
+      'runAt', runAt,
+      'timeoutMs', timeoutMs,
+      'forceKillOnTimeout', forceKillOnTimeout,
+      'createdAt', nowMs,
+      'updatedAt', nowMs,
+      'lockedAt', 'null',
+      'lockedBy', 'null',
+      'nextAttemptAt', 'null',
+      'pendingReason', 'null',
+      'errorHistory', '[]',
+      'failureReason', 'null',
+      'completedAt', 'null',
+      'startedAt', 'null',
+      'lastRetriedAt', 'null',
+      'lastFailedAt', 'null',
+      'lastCancelledAt', 'null',
+      'tags', tagsJson,
+      'idempotencyKey', idempotencyKey,
+      'waitUntil', 'null',
+      'waitTokenId', 'null',
+      'stepData', 'null',
+      'retryDelay', retryDelay,
+      'retryBackoff', retryBackoff,
+      'retryDelayMax', retryDelayMax
+    )
+
+    -- Status index
+    redis.call('SADD', prefix .. 'status:pending', id)
+
+    -- Type index
+    redis.call('SADD', prefix .. 'type:' .. jobType, id)
+
+    -- Tag indexes
+    if tagsJson ~= "null" then
+      local tags = cjson.decode(tagsJson)
+      for _, tag in ipairs(tags) do
+        redis.call('SADD', prefix .. 'tag:' .. tag, id)
+      end
+      for _, tag in ipairs(tags) do
+        redis.call('SADD', prefix .. 'job:' .. id .. ':tags', tag)
+      end
+    end
+
+    -- Idempotency mapping
+    if idempotencyKey ~= "null" then
+      redis.call('SET', prefix .. 'idempotency:' .. idempotencyKey, id)
+    end
+
+    -- All-jobs sorted set
+    redis.call('ZADD', prefix .. 'all', nowMs, id)
+
+    -- Queue or delayed
+    if runAt <= nowMs then
+      local score = priority * ${SCORE_RANGE} + (${SCORE_RANGE} - nowMs)
+      redis.call('ZADD', prefix .. 'queue', score, id)
+    else
+      redis.call('ZADD', prefix .. 'delayed', runAt, id)
+    end
+
+    results[i] = id
+  end
+end
+
+return results
+`;
+
+/**
  * GET NEXT BATCH
  * Atomically: move ready delayed/retry jobs into queue, then pop N jobs.
  * KEYS: [prefix]

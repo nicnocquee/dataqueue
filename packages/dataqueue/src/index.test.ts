@@ -1114,6 +1114,87 @@ describe('BYOC: transactional addJob with db option', () => {
   });
 });
 
+describe('addJobs batch insert', () => {
+  let pool: Pool;
+  let dbName: string;
+  let testDbUrl: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+    testDbUrl = setup.testDbUrl;
+    const config: JobQueueConfig = {
+      databaseConfig: {
+        connectionString: testDbUrl,
+      },
+    };
+    jobQueue = initJobQueue<TestPayloadMap>(config);
+  });
+
+  afterEach(async () => {
+    jobQueue.getPool().end();
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('inserts multiple jobs and returns IDs in order', async () => {
+    // Act
+    const ids = await jobQueue.addJobs([
+      { jobType: 'email', payload: { to: 'a@test.com' } },
+      { jobType: 'sms', payload: { to: '+1234' } },
+      { jobType: 'email', payload: { to: 'b@test.com' } },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(3);
+
+    const job0 = await jobQueue.getJob(ids[0]);
+    expect(job0?.jobType).toBe('email');
+    expect(job0?.payload).toEqual({ to: 'a@test.com' });
+
+    const job1 = await jobQueue.getJob(ids[1]);
+    expect(job1?.jobType).toBe('sms');
+
+    const job2 = await jobQueue.getJob(ids[2]);
+    expect(job2?.jobType).toBe('email');
+    expect(job2?.payload).toEqual({ to: 'b@test.com' });
+  });
+
+  it('returns empty array for empty input', async () => {
+    // Act
+    const ids = await jobQueue.addJobs([]);
+
+    // Assert
+    expect(ids).toEqual([]);
+  });
+
+  it('handles idempotency keys correctly', async () => {
+    // Setup
+    const existingId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'existing@test.com' },
+      idempotencyKey: 'batch-dup',
+    });
+
+    // Act
+    const ids = await jobQueue.addJobs([
+      { jobType: 'email', payload: { to: 'new@test.com' } },
+      {
+        jobType: 'email',
+        payload: { to: 'dup@test.com' },
+        idempotencyKey: 'batch-dup',
+      },
+    ]);
+
+    // Assert
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).toBe(existingId);
+    expect(ids[0]).not.toBe(existingId);
+  });
+});
+
 describe('BYOC: validation errors', () => {
   it('throws when neither databaseConfig nor pool is provided for postgres', () => {
     // Act & Assert

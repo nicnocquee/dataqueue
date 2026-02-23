@@ -49,6 +49,42 @@ When adding a job, you can set its `priority`, schedule when it should run using
 
 You can also add `tags` (an array of strings) to group, search, or batch jobs by category. See [Tags](/api/tags) for more details.
 
+## Batch Insert
+
+When you need to enqueue many jobs at once, use `addJobs` instead of calling `addJob` in a loop. It batches the inserts into a single database round-trip (PostgreSQL) or a single atomic Lua script (Redis), which is significantly faster.
+
+```typescript title="@/app/actions/send-bulk.ts"
+'use server';
+
+import { getJobQueue } from '@/lib/queue';
+
+export const sendBulkEmails = async (
+  recipients: { email: string; name: string }[],
+) => {
+  const jobQueue = getJobQueue();
+  // [!code highlight:9]
+  const jobIds = await jobQueue.addJobs(
+    recipients.map((r) => ({
+      jobType: 'send_email' as const,
+      payload: {
+        to: r.email,
+        subject: 'Newsletter',
+        body: `Hi ${r.name}, here's your update!`,
+      },
+      tags: ['newsletter'],
+    })),
+  );
+  // jobIds[i] corresponds to recipients[i]
+  return { jobIds };
+};
+```
+
+`addJobs` returns an array of job IDs in the **same order** as the input array. Each job can independently have its own `priority`, `runAt`, `tags`, `idempotencyKey`, and other options.
+
+- **Empty array**: `addJobs([])` returns `[]` immediately without touching the database.
+- **Idempotency**: Each job's `idempotencyKey` is handled independently. Duplicate keys resolve to the existing job's ID.
+- **Transactional**: The `{ db }` option works with `addJobs` the same way as `addJob` (PostgreSQL only).
+
 ## Idempotency
 
 You can provide an `idempotencyKey` when adding a job to prevent duplicate jobs. If a job with the same key already exists in the queue, `addJob` returns the existing job's ID instead of creating a new one.

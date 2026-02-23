@@ -38,6 +38,12 @@ export const addJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   options?: AddJobOptions,
 ): Promise<number> => new PostgresBackend(pool).addJob(job, options);
 
+export const addJobs = async <PayloadMap, T extends keyof PayloadMap & string>(
+  pool: Pool,
+  jobs: JobOptions<PayloadMap, T>[],
+  options?: AddJobOptions,
+): Promise<number[]> => new PostgresBackend(pool).addJobs(jobs, options);
+
 export const getJob = async <PayloadMap, T extends keyof PayloadMap & string>(
   pool: Pool,
   id: number,
