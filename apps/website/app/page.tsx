@@ -80,6 +80,7 @@ const BenefitCard = ({
 type ComparisonRow = {
   feature: string;
   dataqueue: string | boolean;
+  pgboss: string | boolean;
   bullmq: string | boolean;
   trigger: string | boolean;
 };
@@ -88,88 +89,126 @@ const comparisonRows: ComparisonRow[] = [
   {
     feature: 'Backend',
     dataqueue: 'PostgreSQL or Redis',
+    pgboss: 'PostgreSQL only',
     bullmq: 'Redis only',
     trigger: 'Cloud or self-hosted',
   },
   {
     feature: 'Type Safety',
     dataqueue: 'Generic PayloadMap',
+    pgboss: 'TypeScript support',
     bullmq: 'Basic types',
     trigger: 'Full TypeScript',
   },
   {
     feature: 'Scheduling',
     dataqueue: 'Cron, runAt, waitFor, waitUntil',
+    pgboss: 'Cron, delayed jobs',
     bullmq: 'Cron, delayed, recurring',
     trigger: 'Cron, delayed',
   },
   {
     feature: 'Retries',
     dataqueue: 'Exponential backoff',
+    pgboss: 'Retries with backoff',
     bullmq: 'Custom strategies + DLQ',
     trigger: 'Auto retries + DLQ',
   },
-  { feature: 'Priority', dataqueue: true, bullmq: true, trigger: true },
   {
-    feature: 'Concurrency Control',
+    feature: 'Priority',
     dataqueue: true,
+    pgboss: true,
     bullmq: true,
     trigger: true,
   },
-  { feature: 'Rate Limiting', dataqueue: false, bullmq: true, trigger: false },
+  {
+    feature: 'Concurrency Control',
+    dataqueue: true,
+    pgboss: true,
+    bullmq: true,
+    trigger: true,
+  },
+  {
+    feature: 'Rate Limiting',
+    dataqueue: false,
+    pgboss: false,
+    bullmq: true,
+    trigger: false,
+  },
   {
     feature: 'Job Flows / DAGs',
     dataqueue: false,
+    pgboss: false,
     bullmq: 'Parent-child flows',
     trigger: 'Workflows',
   },
   {
     feature: 'Dashboard',
     dataqueue: 'Built-in (Next.js)',
+    pgboss: false,
     bullmq: 'Third-party',
     trigger: 'Built-in',
   },
   {
     feature: 'Wait / Pause Jobs',
     dataqueue: 'waitFor, waitUntil, tokens',
+    pgboss: 'Delayed/scheduled jobs',
     bullmq: false,
     trigger: 'Durable execution',
   },
   {
     feature: 'Human-in-the-Loop',
     dataqueue: 'Token system',
+    pgboss: false,
     bullmq: false,
     trigger: true,
   },
   {
     feature: 'Progress Tracking',
     dataqueue: true,
+    pgboss: false,
     bullmq: true,
     trigger: true,
   },
   {
     feature: 'Serverless-First',
     dataqueue: true,
+    pgboss: true,
     bullmq: false,
     trigger: true,
   },
-  { feature: 'Self-Hosted', dataqueue: true, bullmq: true, trigger: true },
-  { feature: 'Cloud Option', dataqueue: false, bullmq: false, trigger: true },
+  {
+    feature: 'Self-Hosted',
+    dataqueue: true,
+    pgboss: true,
+    bullmq: true,
+    trigger: true,
+  },
+  {
+    feature: 'Cloud Option',
+    dataqueue: false,
+    pgboss: false,
+    bullmq: false,
+    trigger: true,
+  },
   {
     feature: 'License',
     dataqueue: 'MIT',
+    pgboss: 'MIT',
     bullmq: 'MIT',
     trigger: 'Apache-2.0',
   },
   {
     feature: 'Pricing',
     dataqueue: 'Free (OSS)',
+    pgboss: 'Free (OSS)',
     bullmq: 'Free (OSS)',
     trigger: 'Free tier + paid',
   },
   {
     feature: 'Infrastructure',
     dataqueue: 'Your Postgres or Redis',
+    pgboss: 'Your Postgres',
     bullmq: 'Your Redis',
     trigger: 'Their cloud or yours',
   },
@@ -490,6 +529,9 @@ queue.process<EmailJob>('email', async (job) => {
                     DataQueue
                   </TableHead>
                   <TableHead className="text-center text-muted-foreground">
+                    pg-boss
+                  </TableHead>
+                  <TableHead className="text-center text-muted-foreground">
                     BullMQ
                   </TableHead>
                   <TableHead className="text-center text-muted-foreground">
@@ -508,6 +550,9 @@ queue.process<EmailJob>('email', async (job) => {
                     </TableCell>
                     <TableCell className="bg-gradient-to-b from-purple-500/5 to-orange-500/5 text-center text-foreground">
                       <ComparisonCell value={row.dataqueue} />
+                    </TableCell>
+                    <TableCell className="text-center text-muted-foreground">
+                      <ComparisonCell value={row.pgboss} />
                     </TableCell>
                     <TableCell className="text-center text-muted-foreground">
                       <ComparisonCell value={row.bullmq} />
