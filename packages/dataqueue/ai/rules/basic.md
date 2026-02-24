@@ -86,7 +86,7 @@ const ids = await queue.addJobs([
 // ids[i] corresponds to the i-th input job
 ```
 
-Both support `idempotencyKey`, `priority`, `runAt`, `tags`, and `{ db }` for transactional inserts (PostgreSQL only).
+Both support `idempotencyKey`, `priority`, `runAt`, `tags`, optional `group: { id, tier? }`, and `{ db }` for transactional inserts (PostgreSQL only).
 
 ## Handlers
 
@@ -113,6 +113,7 @@ Handler signature: `(payload: T, signal: AbortSignal, ctx: JobContext) => Promis
 const processor = queue.createProcessor(handlers, {
   batchSize: 10,
   concurrency: 3,
+  groupConcurrency: 2, // optional global cap per group.id
 });
 await processor.start();
 ```

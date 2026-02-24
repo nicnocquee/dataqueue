@@ -476,6 +476,24 @@ describe('concurrency option', () => {
     await processor.start();
     expect(maxParallel).toBe(1);
   });
+
+  it('should throw when groupConcurrency is not a positive integer', async () => {
+    const handlers = { test: vi.fn(async () => {}) };
+    expect(() =>
+      createProcessor(backend, handlers, {
+        groupConcurrency: 0,
+      }),
+    ).toThrow(
+      'Processor option "groupConcurrency" must be a positive integer when provided.',
+    );
+    expect(() =>
+      createProcessor(backend, handlers, {
+        groupConcurrency: 1.5,
+      }),
+    ).toThrow(
+      'Processor option "groupConcurrency" must be a positive integer when provided.',
+    );
+  });
 });
 
 describe('per-job timeout', () => {

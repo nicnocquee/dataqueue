@@ -152,6 +152,7 @@ Events: `job:added`, `job:processing`, `job:completed`, `job:failed` (with `will
 ## Scaling
 
 - Increase `batchSize` and `concurrency` for higher throughput.
+- Use `group: { id }` on jobs with `groupConcurrency` on processors when you need global per-tenant/per-account fairness.
 - Run multiple processor instances with unique `workerId` values — `FOR UPDATE SKIP LOCKED` (PostgreSQL) or Lua scripts (Redis) prevent double-claiming.
 - Use `jobType` filter for specialized workers.
 - Use `createSupervisor()` to automate maintenance (reclaim stuck jobs, cleanup, token expiry). Safe to run across multiple instances.

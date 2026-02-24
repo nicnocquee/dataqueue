@@ -46,6 +46,29 @@ For example, with `batchSize: 20`, `concurrency: 10`, `pollInterval: 2000ms`, an
 - **IO-bound jobs** (API calls, email sending): higher concurrency (5-20) works well since jobs spend most time waiting.
 - **Rate-limited APIs**: match concurrency to the API's rate limit to avoid throttling.
 
+### Group Concurrency
+
+`groupConcurrency` caps how many jobs with the same `group.id` can be in `processing` at the same time across all worker instances.
+
+- Use this for multi-tenant fairness and per-account rate protection.
+- It is global coordination (PostgreSQL + Redis), not per-process.
+- Ungrouped jobs are unaffected.
+
+```typescript
+await jobQueue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com' },
+  group: { id: 'tenant_abc' },
+});
+
+const processor = jobQueue.createProcessor(jobHandlers, {
+  batchSize: 30,
+  concurrency: 10,
+  groupConcurrency: 2,
+  pollInterval: 2000,
+});
+```
+
 ### Poll Interval
 
 `pollInterval` controls how often the processor checks for new jobs when idle.

@@ -239,6 +239,28 @@ await queue.cancelAllUpcomingJobs({
 
 Tag query modes: `'exact'`, `'all'`, `'any'`, `'none'`.
 
+## Group-Based Concurrency
+
+Use job `group.id` plus processor `groupConcurrency` to enforce a global cap per group across all workers/instances (PostgreSQL and Redis).
+
+```typescript
+await queue.addJob({
+  jobType: 'email',
+  payload: {
+    /* ... */
+  },
+  group: { id: 'tenant_abc', tier: 'gold' }, // tier is optional/reserved
+});
+
+const processor = queue.createProcessor(handlers, {
+  batchSize: 20,
+  concurrency: 10,
+  groupConcurrency: 2,
+});
+```
+
+Ungrouped jobs are unaffected by `groupConcurrency`.
+
 ## Idempotency
 
 ```typescript

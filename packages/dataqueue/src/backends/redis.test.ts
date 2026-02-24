@@ -2252,3 +2252,88 @@ describe('Redis event hooks', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Redis group-based concurrency limits', () => {
+  let prefix: string;
+  let jobQueue: ReturnType<typeof initJobQueue<TestPayloadMap>>;
+  let redisClient: any;
+
+  beforeEach(async () => {
+    prefix = createRedisTestPrefix();
+    const config: RedisJobQueueConfig = {
+      backend: 'redis',
+      redisConfig: {
+        url: REDIS_URL,
+        keyPrefix: prefix,
+      },
+    };
+    jobQueue = initJobQueue<TestPayloadMap>(config);
+    redisClient = jobQueue.getRedisClient();
+  });
+
+  afterEach(async () => {
+    await cleanupRedisPrefix(redisClient, prefix);
+    await redisClient.quit();
+  });
+
+  it('stores group metadata for Redis jobs', async () => {
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'grouped' },
+      group: { id: 'tenant-r1', tier: 'silver' },
+    });
+
+    const job = await jobQueue.getJob(jobId);
+    expect(job?.groupId).toBe('tenant-r1');
+    expect(job?.groupTier).toBe('silver');
+  });
+
+  it('enforces global grouped limits across processor instances', async () => {
+    await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'job-1' },
+      group: { id: 'tenant-r2' },
+    });
+    await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'job-2' },
+      group: { id: 'tenant-r2' },
+    });
+
+    let started = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const handler = vi.fn(async () => {
+      started += 1;
+      await gate;
+    });
+
+    const processorA = jobQueue.createProcessor(
+      { email: vi.fn(), sms: vi.fn(), test: handler },
+      { batchSize: 2, concurrency: 2, groupConcurrency: 1 },
+    );
+    const processorB = jobQueue.createProcessor(
+      { email: vi.fn(), sms: vi.fn(), test: handler },
+      { batchSize: 2, concurrency: 2, groupConcurrency: 1 },
+    );
+
+    const runA = processorA.start();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const processedByB = await processorB.start();
+
+    expect(processedByB).toBe(0);
+    expect(started).toBe(1);
+
+    release();
+    await runA;
+
+    const pendingAfterA = await jobQueue.getJobsByStatus('pending');
+    expect(pendingAfterA).toHaveLength(1);
+
+    const processedByBSecondRun = await processorB.start();
+    expect(processedByBSecondRun).toBe(1);
+  });
+});

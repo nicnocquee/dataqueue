@@ -116,6 +116,7 @@ interface JobOptions {
   retryBackoff?: boolean; // Use exponential backoff (default: true)
   retryDelayMax?: number; // Max delay cap in seconds (default: none)
   deadLetterJobType?: string; // Route exhausted failures to this job type
+  group?: { id: string; tier?: string }; // Optional group for global concurrency limits
 }
 ```
 
@@ -123,6 +124,7 @@ interface JobOptions {
 - `retryBackoff` - Whether to use exponential backoff. When true, delay doubles with each attempt and includes jitter. Default: `true`.
 - `retryDelayMax` - Maximum delay cap in seconds. Only meaningful when `retryBackoff` is true. No limit when omitted.
 - `deadLetterJobType` - Optional dead-letter destination. When retries are exhausted, a new pending job is created in this job type with an envelope payload (`originalJob`, `originalPayload`, `failure`).
+- `group` - Optional grouping metadata. Use `group.id` to enforce global per-group limits with `ProcessorOptions.groupConcurrency`. `group.tier` is reserved for future policies.
 
 #### AddJobOptions
 
@@ -534,12 +536,15 @@ interface ProcessorOptions {
   workerId?: string;
   batchSize?: number;
   concurrency?: number;
+  groupConcurrency?: number;
   pollInterval?: number;
   onError?: (error: Error) => void;
   verbose?: boolean;
   jobType?: string | string[];
 }
 ```
+
+- `groupConcurrency` - Optional global per-group concurrency limit (positive integer). Applies only to jobs with `group.id`; ungrouped jobs are unaffected.
 
 ---
 
