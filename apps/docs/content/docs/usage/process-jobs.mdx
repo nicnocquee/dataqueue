@@ -36,6 +36,7 @@ export async function GET(request: Request) {
       workerId: `cron-${Date.now()}`,
       batchSize: 10, // up to 10 jobs per batch
       concurrency: 3, // up to 3 jobs processed in parallel
+      groupConcurrency: 2, // optional: max 2 concurrent jobs per group.id globally
       verbose: true,
     });
 
@@ -70,6 +71,26 @@ For example, you can define two endpoints: one for low-resource jobs and another
 Some jobs are resource-intensive, like image processing, LLM calls, or calling a rate-limited external service. In these cases, set the `concurrency` option to control how many jobs run in parallel per batch.
 
 The default is `3`. Set it to `1` to process jobs one at a time. Use a lower value to avoid exhausting resources in constrained environments.
+
+### Group-Based Concurrency
+
+When jobs should be limited per tenant/customer/account across all workers, set `groupConcurrency` on the processor and provide `group.id` when enqueuing jobs:
+
+```typescript
+await jobQueue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com' },
+  group: { id: 'tenant_123' },
+});
+
+const processor = jobQueue.createProcessor(jobHandlers, {
+  batchSize: 20,
+  concurrency: 10,
+  groupConcurrency: 2,
+});
+```
+
+With this configuration, at most 2 jobs from the same `group.id` run at once globally, while ungrouped jobs continue to flow normally.
 
 ### Triggering the Processor via Cron
 

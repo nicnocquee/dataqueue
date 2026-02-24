@@ -146,6 +146,7 @@ export interface QueueBackend {
     workerId: string,
     batchSize?: number,
     jobType?: string | string[],
+    groupConcurrency?: number,
   ): Promise<JobRecord<PayloadMap, T>[]>;
 
   /** Mark a job as completed, optionally storing output data. */

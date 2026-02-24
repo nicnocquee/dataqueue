@@ -754,6 +754,7 @@ export async function processJobWithHandlers<
  * @param jobType - Optional job type filter.
  * @param jobHandlers - Map of job type to handler function.
  * @param concurrency - Max parallel jobs within the batch.
+ * @param groupConcurrency - Optional global per-group concurrency limit.
  * @param onError - Legacy error callback.
  * @param emit - Optional callback to emit lifecycle events.
  */
@@ -764,6 +765,7 @@ export async function processBatchWithHandlers<PayloadMap>(
   jobType: string | string[] | undefined,
   jobHandlers: JobHandlers<PayloadMap>,
   concurrency?: number,
+  groupConcurrency?: number,
   onError?: (error: Error) => void,
   emit?: QueueEmitFn,
 ): Promise<number> {
@@ -771,6 +773,7 @@ export async function processBatchWithHandlers<PayloadMap>(
     workerId,
     batchSize,
     jobType,
+    groupConcurrency,
   );
 
   // Emit job:processing for each claimed job
@@ -842,7 +845,17 @@ export const createProcessor = <PayloadMap = any>(
     onError = (error: Error) => console.error('Job processor error:', error),
     jobType,
     concurrency = 3,
+    groupConcurrency,
   } = options;
+
+  if (
+    groupConcurrency !== undefined &&
+    (!Number.isInteger(groupConcurrency) || groupConcurrency <= 0)
+  ) {
+    throw new Error(
+      'Processor option "groupConcurrency" must be a positive integer when provided.',
+    );
+  }
 
   let running = false;
   let intervalId: NodeJS.Timeout | null = null;
@@ -880,6 +893,7 @@ export const createProcessor = <PayloadMap = any>(
         jobType,
         handlers,
         concurrency,
+        groupConcurrency,
         onError,
         emit,
       );

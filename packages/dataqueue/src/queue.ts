@@ -73,11 +73,13 @@ export const getNextBatch = async <
   workerId: string,
   batchSize = 10,
   jobType?: string | string[],
+  groupConcurrency?: number,
 ): Promise<JobRecord<PayloadMap, T>[]> =>
   new PostgresBackend(pool).getNextBatch<PayloadMap, T>(
     workerId,
     batchSize,
     jobType,
+    groupConcurrency,
   );
 
 export const completeJob = async (

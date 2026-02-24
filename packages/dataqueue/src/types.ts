@@ -28,6 +28,20 @@ export interface AddJobOptions {
   db?: DatabaseClient;
 }
 
+/**
+ * Optional grouping metadata for a job.
+ * Use `id` to enforce global per-group concurrency limits when
+ * `ProcessorOptions.groupConcurrency` is set.
+ *
+ * `tier` is reserved for future tier-based policies.
+ */
+export interface JobGroup {
+  /** Stable group identifier (for example: tenant ID, user ID, organization ID). */
+  id: string;
+  /** Optional tier label reserved for future tier-based concurrency controls. */
+  tier?: string;
+}
+
 export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
   jobType: T;
   payload: PayloadMap[T];
@@ -120,6 +134,12 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    * `retryBackoff` is true. No limit when omitted.
    */
   retryDelayMax?: number;
+  /**
+   * Optional group metadata for this job.
+   * When `ProcessorOptions.groupConcurrency` is configured, grouped jobs are
+   * globally limited by `group.id` across all workers/instances.
+   */
+  group?: JobGroup;
 }
 
 /**
@@ -260,6 +280,14 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * Maximum delay cap for retries in seconds, or null if no cap.
    */
   retryDelayMax?: number | null;
+  /**
+   * Group identifier for this job, if provided at enqueue time.
+   */
+  groupId?: string | null;
+  /**
+   * Group tier for this job, if provided at enqueue time.
+   */
+  groupTier?: string | null;
 }
 
 /**
@@ -476,6 +504,13 @@ export interface ProcessorOptions {
    * - Set to a lower value to avoid resource exhaustion.
    */
   concurrency?: number;
+  /**
+   * Global per-group concurrency limit across all workers/instances.
+   * - Applies only to jobs with `group.id` set.
+   * - Jobs without a group are unaffected.
+   * - Disabled when omitted.
+   */
+  groupConcurrency?: number;
   /**
    * The interval in milliseconds to poll for new jobs.
    * - If not provided, the processor will process jobs every 5 seconds when startInBackground is called.
