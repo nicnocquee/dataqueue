@@ -32,7 +32,7 @@ const SCORE_RANGE = '1000000000000000'; // 1e15
  * KEYS: [prefix]
  * ARGV: [jobType, payloadJson, maxAttempts, priority, runAtMs, timeoutMs,
  *        forceKillOnTimeout, tagsJson, idempotencyKey, nowMs,
- *        retryDelay, retryBackoff, retryDelayMax]
+ *        retryDelay, retryBackoff, retryDelayMax, groupId, groupTier]
  * Returns: job ID (number)
  */
 export const ADD_JOB_SCRIPT = `
@@ -50,6 +50,8 @@ local nowMs = tonumber(ARGV[10])
 local retryDelay = ARGV[11]       -- "null" or seconds string
 local retryBackoff = ARGV[12]     -- "null" or "true"/"false"
 local retryDelayMax = ARGV[13]    -- "null" or seconds string
+local groupId = ARGV[14]          -- "null" or group ID
+local groupTier = ARGV[15]        -- "null" or group tier
 
 -- Idempotency check
 if idempotencyKey ~= "null" then
@@ -96,7 +98,9 @@ redis.call('HMSET', jobKey,
   'stepData', 'null',
   'retryDelay', retryDelay,
   'retryBackoff', retryBackoff,
-  'retryDelayMax', retryDelayMax
+  'retryDelayMax', retryDelayMax,
+  'groupId', groupId,
+  'groupTier', groupTier
 )
 
 -- Status index
@@ -169,6 +173,8 @@ for i, job in ipairs(jobs) do
   local retryDelay = tostring(job.retryDelay)
   local retryBackoff = tostring(job.retryBackoff)
   local retryDelayMax = tostring(job.retryDelayMax)
+  local groupId = tostring(job.groupId)
+  local groupTier = tostring(job.groupTier)
 
   -- Idempotency check
   local skip = false
@@ -218,7 +224,9 @@ for i, job in ipairs(jobs) do
       'stepData', 'null',
       'retryDelay', retryDelay,
       'retryBackoff', retryBackoff,
-      'retryDelayMax', retryDelayMax
+      'retryDelayMax', retryDelayMax,
+      'groupId', groupId,
+      'groupTier', groupTier
     )
 
     -- Status index
@@ -265,7 +273,7 @@ return results
  * GET NEXT BATCH
  * Atomically: move ready delayed/retry jobs into queue, then pop N jobs.
  * KEYS: [prefix]
- * ARGV: [workerId, batchSize, nowMs, jobTypeFilter]
+ * ARGV: [workerId, batchSize, nowMs, jobTypeFilter, groupConcurrency]
  * jobTypeFilter: "null" or a JSON array like ["email","sms"] or a string like "email"
  * Returns: array of job field arrays (flat: [field1, val1, field2, val2, ...] per job)
  */
@@ -275,6 +283,12 @@ local workerId = ARGV[1]
 local batchSize = tonumber(ARGV[2])
 local nowMs = tonumber(ARGV[3])
 local jobTypeFilter = ARGV[4] -- "null" or JSON array or single string
+local groupConcurrencyRaw = ARGV[5] -- "null" or positive integer
+local groupConcurrency = nil
+if groupConcurrencyRaw ~= "null" then
+  groupConcurrency = tonumber(groupConcurrencyRaw)
+end
+local groupActiveKey = prefix .. 'group:active'
 
 -- 1. Move ready delayed jobs into queue
 local delayed = redis.call('ZRANGEBYSCORE', prefix .. 'delayed', '-inf', nowMs, 'LIMIT', 0, 200)
@@ -375,36 +389,53 @@ for i = 1, #candidates, 2 do
         -- Not ready yet: move to delayed
         redis.call('ZADD', prefix .. 'delayed', runAt, jobId)
       else
-        -- Claim this job
-        local attempts = tonumber(redis.call('HGET', jk, 'attempts'))
-        local startedAt = redis.call('HGET', jk, 'startedAt')
-        local lastRetriedAt = redis.call('HGET', jk, 'lastRetriedAt')
-        if startedAt == 'null' then startedAt = nowMs end
-        if attempts > 0 then lastRetriedAt = nowMs end
-
-        redis.call('HMSET', jk,
-          'status', 'processing',
-          'lockedAt', nowMs,
-          'lockedBy', workerId,
-          'attempts', attempts + 1,
-          'updatedAt', nowMs,
-          'pendingReason', 'null',
-          'startedAt', startedAt,
-          'lastRetriedAt', lastRetriedAt
-        )
-
-        -- Update status sets
-        redis.call('SREM', prefix .. 'status:pending', jobId)
-        redis.call('SADD', prefix .. 'status:processing', jobId)
-
-        -- Return job data as flat array
-        local data = redis.call('HGETALL', jk)
-        for _, v in ipairs(data) do
-          table.insert(results, v)
+        local groupId = redis.call('HGET', jk, 'groupId')
+        local hasGroup = groupId and groupId ~= 'null'
+        local canClaim = true
+        if hasGroup and groupConcurrency then
+          local activeCount = tonumber(redis.call('HGET', groupActiveKey, groupId) or '0')
+          if activeCount >= groupConcurrency then
+            table.insert(putBack, score)
+            table.insert(putBack, jobId)
+            canClaim = false
+          end
         end
-        -- Separator
-        table.insert(results, '__JOB_SEP__')
-        jobsClaimed = jobsClaimed + 1
+
+        if canClaim then
+          -- Claim this job
+          local attempts = tonumber(redis.call('HGET', jk, 'attempts'))
+          local startedAt = redis.call('HGET', jk, 'startedAt')
+          local lastRetriedAt = redis.call('HGET', jk, 'lastRetriedAt')
+          if startedAt == 'null' then startedAt = nowMs end
+          if attempts > 0 then lastRetriedAt = nowMs end
+
+          redis.call('HMSET', jk,
+            'status', 'processing',
+            'lockedAt', nowMs,
+            'lockedBy', workerId,
+            'attempts', attempts + 1,
+            'updatedAt', nowMs,
+            'pendingReason', 'null',
+            'startedAt', startedAt,
+            'lastRetriedAt', lastRetriedAt
+          )
+
+          -- Update status sets
+          redis.call('SREM', prefix .. 'status:pending', jobId)
+          redis.call('SADD', prefix .. 'status:processing', jobId)
+          if hasGroup and groupConcurrency then
+            redis.call('HINCRBY', groupActiveKey, groupId, 1)
+          end
+
+          -- Return job data as flat array
+          local data = redis.call('HGETALL', jk)
+          for _, v in ipairs(data) do
+            table.insert(results, v)
+          end
+          -- Separator
+          table.insert(results, '__JOB_SEP__')
+          jobsClaimed = jobsClaimed + 1
+        end
       end
     end
   end
@@ -429,6 +460,7 @@ local jobId = ARGV[1]
 local nowMs = ARGV[2]
 local outputJson = ARGV[3]
 local jk = prefix .. 'job:' .. jobId
+local groupId = redis.call('HGET', jk, 'groupId')
 
 local fields = {
   'status', 'completed',
@@ -447,6 +479,13 @@ end
 redis.call('HMSET', jk, unpack(fields))
 redis.call('SREM', prefix .. 'status:processing', jobId)
 redis.call('SADD', prefix .. 'status:completed', jobId)
+if groupId and groupId ~= 'null' then
+  local activeKey = prefix .. 'group:active'
+  local remaining = redis.call('HINCRBY', activeKey, groupId, -1)
+  if tonumber(remaining) <= 0 then
+    redis.call('HDEL', activeKey, groupId)
+  end
+end
 
 return 1
 `;
@@ -464,6 +503,7 @@ local errorJson = ARGV[2]
 local failureReason = ARGV[3]
 local nowMs = tonumber(ARGV[4])
 local jk = prefix .. 'job:' .. jobId
+local groupId = redis.call('HGET', jk, 'groupId')
 
 local attempts = tonumber(redis.call('HGET', jk, 'attempts'))
 local maxAttempts = tonumber(redis.call('HGET', jk, 'maxAttempts'))
@@ -521,6 +561,13 @@ redis.call('HMSET', jk,
 )
 redis.call('SREM', prefix .. 'status:processing', jobId)
 redis.call('SADD', prefix .. 'status:failed', jobId)
+if groupId and groupId ~= 'null' then
+  local activeKey = prefix .. 'group:active'
+  local remaining = redis.call('HINCRBY', activeKey, groupId, -1)
+  if tonumber(remaining) <= 0 then
+    redis.call('HDEL', activeKey, groupId)
+  end
+end
 
 -- Schedule retry if applicable
 if nextAttemptAt ~= 'null' then
@@ -543,6 +590,7 @@ local jk = prefix .. 'job:' .. jobId
 
 local oldStatus = redis.call('HGET', jk, 'status')
 if oldStatus ~= 'failed' and oldStatus ~= 'processing' then return 0 end
+local groupId = redis.call('HGET', jk, 'groupId')
 
 redis.call('HMSET', jk,
   'status', 'pending',
@@ -556,6 +604,13 @@ redis.call('HMSET', jk,
 -- Remove from old status, add to pending
 redis.call('SREM', prefix .. 'status:' .. oldStatus, jobId)
 redis.call('SADD', prefix .. 'status:pending', jobId)
+if oldStatus == 'processing' and groupId and groupId ~= 'null' then
+  local activeKey = prefix .. 'group:active'
+  local remaining = redis.call('HINCRBY', activeKey, groupId, -1)
+  if tonumber(remaining) <= 0 then
+    redis.call('HDEL', activeKey, groupId)
+  end
+end
 
 -- Remove from retry sorted set if present
 redis.call('ZREM', prefix .. 'retry', jobId)
@@ -661,6 +716,14 @@ for _, jobId in ipairs(processing) do
         )
         redis.call('SREM', prefix .. 'status:processing', jobId)
         redis.call('SADD', prefix .. 'status:pending', jobId)
+        local groupId = redis.call('HGET', jk, 'groupId')
+        if groupId and groupId ~= 'null' then
+          local activeKey = prefix .. 'group:active'
+          local remaining = redis.call('HINCRBY', activeKey, groupId, -1)
+          if tonumber(remaining) <= 0 then
+            redis.call('HDEL', activeKey, groupId)
+          end
+        end
 
         -- Re-add to queue
         local priority = tonumber(redis.call('HGET', jk, 'priority') or '0')
@@ -749,6 +812,7 @@ local jk = prefix .. 'job:' .. jobId
 
 local status = redis.call('HGET', jk, 'status')
 if status ~= 'processing' then return 0 end
+local groupId = redis.call('HGET', jk, 'groupId')
 
 redis.call('HMSET', jk,
   'status', 'waiting',
@@ -761,6 +825,13 @@ redis.call('HMSET', jk,
 )
 redis.call('SREM', prefix .. 'status:processing', jobId)
 redis.call('SADD', prefix .. 'status:waiting', jobId)
+if groupId and groupId ~= 'null' then
+  local activeKey = prefix .. 'group:active'
+  local remaining = redis.call('HINCRBY', activeKey, groupId, -1)
+  if tonumber(remaining) <= 0 then
+    redis.call('HDEL', activeKey, groupId)
+  end
+end
 
 -- Add to waiting sorted set if time-based wait
 if waitUntilMs ~= 'null' then

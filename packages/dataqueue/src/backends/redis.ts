@@ -172,6 +172,8 @@ function deserializeJob<PayloadMap, T extends JobType<PayloadMap>>(
           ? false
           : null,
     retryDelayMax: numOrNull(h.retryDelayMax),
+    groupId: nullish(h.groupId) as string | null | undefined,
+    groupTier: nullish(h.groupTier) as string | null | undefined,
     output: parseJsonField(h.output),
   };
 }
@@ -317,6 +319,7 @@ export class RedisBackend implements QueueBackend {
       retryDelay = undefined,
       retryBackoff = undefined,
       retryDelayMax = undefined,
+      group = undefined,
     }: JobOptions<PayloadMap, T>,
     options?: AddJobOptions,
   ): Promise<number> {
@@ -346,6 +349,8 @@ export class RedisBackend implements QueueBackend {
       retryDelay !== undefined ? retryDelay.toString() : 'null',
       retryBackoff !== undefined ? retryBackoff.toString() : 'null',
       retryDelayMax !== undefined ? retryDelayMax.toString() : 'null',
+      group?.id ?? 'null',
+      group?.tier ?? 'null',
     )) as number;
 
     const jobId = Number(result);
@@ -397,6 +402,8 @@ export class RedisBackend implements QueueBackend {
         job.retryBackoff !== undefined ? job.retryBackoff.toString() : 'null',
       retryDelayMax:
         job.retryDelayMax !== undefined ? job.retryDelayMax.toString() : 'null',
+      groupId: job.group?.id ?? 'null',
+      groupTier: job.group?.tier ?? 'null',
     }));
 
     const result = (await this.client.eval(
@@ -555,6 +562,7 @@ export class RedisBackend implements QueueBackend {
     workerId: string,
     batchSize = 10,
     jobType?: string | string[],
+    groupConcurrency?: number,
   ): Promise<JobRecord<PayloadMap, T>[]> {
     const now = this.nowMs();
     const jobTypeFilter =
@@ -572,6 +580,7 @@ export class RedisBackend implements QueueBackend {
       batchSize,
       now,
       jobTypeFilter,
+      groupConcurrency !== undefined ? groupConcurrency : 'null',
     )) as string[];
 
     if (!result || result.length === 0) {

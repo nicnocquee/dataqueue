@@ -127,6 +127,7 @@ export class PostgresBackend implements QueueBackend {
       retryDelay = undefined,
       retryBackoff = undefined,
       retryDelayMax = undefined,
+      group = undefined,
     }: JobOptions<PayloadMap, T>,
     options?: AddJobOptions,
   ): Promise<number> {
@@ -142,8 +143,8 @@ export class PostgresBackend implements QueueBackend {
       if (runAt) {
         result = await client.query(
           `INSERT INTO job_queue 
-            (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+            (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max, group_id, group_tier) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
            ${onConflict}
            RETURNING id`,
           [
@@ -159,13 +160,15 @@ export class PostgresBackend implements QueueBackend {
             retryDelay ?? null,
             retryBackoff ?? null,
             retryDelayMax ?? null,
+            group?.id ?? null,
+            group?.tier ?? null,
           ],
         );
       } else {
         result = await client.query(
           `INSERT INTO job_queue 
-            (job_type, payload, max_attempts, priority, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
+            (job_type, payload, max_attempts, priority, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max, group_id, group_tier) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
            ${onConflict}
            RETURNING id`,
           [
@@ -180,6 +183,8 @@ export class PostgresBackend implements QueueBackend {
             retryDelay ?? null,
             retryBackoff ?? null,
             retryDelayMax ?? null,
+            group?.id ?? null,
+            group?.tier ?? null,
           ],
         );
       }
@@ -251,7 +256,7 @@ export class PostgresBackend implements QueueBackend {
     const client: DatabaseClient =
       externalClient ?? (await this.pool.connect());
     try {
-      const COLS_PER_JOB = 12;
+      const COLS_PER_JOB = 14;
       const valueClauses: string[] = [];
       const params: any[] = [];
 
@@ -271,6 +276,7 @@ export class PostgresBackend implements QueueBackend {
           retryDelay = undefined,
           retryBackoff = undefined,
           retryDelayMax = undefined,
+          group = undefined,
         } = jobs[i];
 
         const base = i * COLS_PER_JOB;
@@ -278,7 +284,7 @@ export class PostgresBackend implements QueueBackend {
           `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, ` +
             `COALESCE($${base + 5}::timestamptz, CURRENT_TIMESTAMP), ` +
             `$${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, ` +
-            `$${base + 10}, $${base + 11}, $${base + 12})`,
+            `$${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14})`,
         );
         params.push(
           jobType,
@@ -293,6 +299,8 @@ export class PostgresBackend implements QueueBackend {
           retryDelay ?? null,
           retryBackoff ?? null,
           retryDelayMax ?? null,
+          group?.id ?? null,
+          group?.tier ?? null,
         );
       }
 
@@ -302,7 +310,7 @@ export class PostgresBackend implements QueueBackend {
 
       const result = await client.query(
         `INSERT INTO job_queue
-          (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max)
+          (job_type, payload, max_attempts, priority, run_at, timeout_ms, force_kill_on_timeout, tags, idempotency_key, retry_delay, retry_backoff, retry_delay_max, group_id, group_tier)
          VALUES ${valueClauses.join(', ')}
          ${onConflict}
          RETURNING id, idempotency_key`,
@@ -424,7 +432,7 @@ export class PostgresBackend implements QueueBackend {
     const client = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", output FROM job_queue WHERE id = $1`,
+        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", group_id AS "groupId", group_tier AS "groupTier", output FROM job_queue WHERE id = $1`,
         [id],
       );
 
@@ -458,7 +466,7 @@ export class PostgresBackend implements QueueBackend {
     const client = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", output FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", group_id AS "groupId", group_tier AS "groupTier", output FROM job_queue WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
         [status, limit, offset],
       );
       log(`Found ${result.rows.length} jobs by status ${status}`);
@@ -484,7 +492,7 @@ export class PostgresBackend implements QueueBackend {
     const client = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", output FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+        `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", group_id AS "groupId", group_tier AS "groupTier", output FROM job_queue ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
         [limit, offset],
       );
       log(`Found ${result.rows.length} jobs (all)`);
@@ -509,7 +517,7 @@ export class PostgresBackend implements QueueBackend {
   ): Promise<JobRecord<PayloadMap, T>[]> {
     const client = await this.pool.connect();
     try {
-      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", output FROM job_queue`;
+      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", group_id AS "groupId", group_tier AS "groupTier", output FROM job_queue`;
       const params: any[] = [];
       const where: string[] = [];
       let paramIdx = 1;
@@ -636,7 +644,7 @@ export class PostgresBackend implements QueueBackend {
   ): Promise<JobRecord<PayloadMap, T>[]> {
     const client = await this.pool.connect();
     try {
-      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", output
+      let query = `SELECT id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_failed_at AS "lastFailedAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", tags, idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", group_id AS "groupId", group_tier AS "groupTier", output
          FROM job_queue`;
       let params: any[] = [];
       switch (mode) {
@@ -689,6 +697,7 @@ export class PostgresBackend implements QueueBackend {
     workerId: string,
     batchSize = 10,
     jobType?: string | string[],
+    groupConcurrency?: number,
   ): Promise<JobRecord<PayloadMap, T>[]> {
     const client = await this.pool.connect();
     try {
@@ -698,50 +707,121 @@ export class PostgresBackend implements QueueBackend {
       const params: any[] = [workerId, batchSize];
       if (jobType) {
         if (Array.isArray(jobType)) {
-          jobTypeFilter = ` AND job_type = ANY($3)`;
+          jobTypeFilter = ` AND candidate.job_type = ANY($3)`;
           params.push(jobType);
         } else {
-          jobTypeFilter = ` AND job_type = $3`;
+          jobTypeFilter = ` AND candidate.job_type = $3`;
           params.push(jobType);
         }
       }
 
-      const result = await client.query(
-        `
-        UPDATE job_queue
-        SET status = 'processing', 
-            locked_at = NOW(), 
-            locked_by = $1,
-            attempts = CASE WHEN status = 'waiting' THEN attempts ELSE attempts + 1 END,
-            updated_at = NOW(),
-            pending_reason = NULL,
-            started_at = COALESCE(started_at, NOW()),
-            last_retried_at = CASE WHEN status != 'waiting' AND attempts > 0 THEN NOW() ELSE last_retried_at END,
-            wait_until = NULL
-        WHERE id IN (
-          SELECT id FROM job_queue
-          WHERE (
-            (
-              (status = 'pending' OR (status = 'failed' AND next_attempt_at <= NOW()))
-              AND (attempts < max_attempts)
-              AND run_at <= NOW()
+      let result;
+      if (groupConcurrency === undefined) {
+        result = await client.query(
+          `
+          UPDATE job_queue
+          SET status = 'processing', 
+              locked_at = NOW(), 
+              locked_by = $1,
+              attempts = CASE WHEN status = 'waiting' THEN attempts ELSE attempts + 1 END,
+              updated_at = NOW(),
+              pending_reason = NULL,
+              started_at = COALESCE(started_at, NOW()),
+              last_retried_at = CASE WHEN status != 'waiting' AND attempts > 0 THEN NOW() ELSE last_retried_at END,
+              wait_until = NULL
+          WHERE id IN (
+            SELECT id FROM job_queue candidate
+            WHERE (
+              (
+                (candidate.status = 'pending' OR (candidate.status = 'failed' AND candidate.next_attempt_at <= NOW()))
+                AND (candidate.attempts < candidate.max_attempts)
+                AND candidate.run_at <= NOW()
+              )
+              OR (
+                candidate.status = 'waiting'
+                AND candidate.wait_until IS NOT NULL
+                AND candidate.wait_until <= NOW()
+                AND candidate.wait_token_id IS NULL
+              )
             )
-            OR (
-              status = 'waiting'
-              AND wait_until IS NOT NULL
-              AND wait_until <= NOW()
-              AND wait_token_id IS NULL
-            )
+            ${jobTypeFilter}
+            ORDER BY candidate.priority DESC, candidate.created_at ASC
+            LIMIT $2
+            FOR UPDATE SKIP LOCKED
           )
-          ${jobTypeFilter}
-          ORDER BY priority DESC, created_at ASC
-          LIMIT $2
-          FOR UPDATE SKIP LOCKED
-        )
-        RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", output
-      `,
-        params,
-      );
+          RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", group_id AS "groupId", group_tier AS "groupTier", output
+        `,
+          params,
+        );
+      } else {
+        const constrainedParams = [...params, groupConcurrency];
+        const groupConcurrencyParamIndex = constrainedParams.length;
+        result = await client.query(
+          `
+          WITH eligible AS (
+            SELECT candidate.id, candidate.group_id, candidate.priority, candidate.created_at
+            FROM job_queue candidate
+            WHERE (
+              (
+                (candidate.status = 'pending' OR (candidate.status = 'failed' AND candidate.next_attempt_at <= NOW()))
+                AND (candidate.attempts < candidate.max_attempts)
+                AND candidate.run_at <= NOW()
+              )
+              OR (
+                candidate.status = 'waiting'
+                AND candidate.wait_until IS NOT NULL
+                AND candidate.wait_until <= NOW()
+                AND candidate.wait_token_id IS NULL
+              )
+            )
+            ${jobTypeFilter}
+            FOR UPDATE SKIP LOCKED
+          ),
+          ranked AS (
+            SELECT
+              eligible.id,
+              eligible.group_id,
+              eligible.priority,
+              eligible.created_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY eligible.group_id
+                ORDER BY eligible.priority DESC, eligible.created_at ASC
+              ) AS group_rank,
+              COALESCE((
+                SELECT COUNT(*)
+                FROM job_queue processing_jobs
+                WHERE processing_jobs.status = 'processing'
+                  AND processing_jobs.group_id = eligible.group_id
+              ), 0) AS active_group_count
+            FROM eligible
+          ),
+          selected AS (
+            SELECT ranked.id
+            FROM ranked
+            WHERE ranked.group_id IS NULL
+              OR (
+                ranked.active_group_count < $${groupConcurrencyParamIndex}
+                AND ranked.group_rank <= ($${groupConcurrencyParamIndex} - ranked.active_group_count)
+              )
+            ORDER BY ranked.priority DESC, ranked.created_at ASC
+            LIMIT $2
+          )
+          UPDATE job_queue
+          SET status = 'processing', 
+              locked_at = NOW(), 
+              locked_by = $1,
+              attempts = CASE WHEN status = 'waiting' THEN attempts ELSE attempts + 1 END,
+              updated_at = NOW(),
+              pending_reason = NULL,
+              started_at = COALESCE(started_at, NOW()),
+              last_retried_at = CASE WHEN status != 'waiting' AND attempts > 0 THEN NOW() ELSE last_retried_at END,
+              wait_until = NULL
+          WHERE id IN (SELECT id FROM selected)
+          RETURNING id, job_type AS "jobType", payload, status, max_attempts AS "maxAttempts", attempts, priority, run_at AS "runAt", timeout_ms AS "timeoutMs", force_kill_on_timeout AS "forceKillOnTimeout", created_at AS "createdAt", updated_at AS "updatedAt", started_at AS "startedAt", completed_at AS "completedAt", last_failed_at AS "lastFailedAt", locked_at AS "lockedAt", locked_by AS "lockedBy", error_history AS "errorHistory", failure_reason AS "failureReason", next_attempt_at AS "nextAttemptAt", last_retried_at AS "lastRetriedAt", last_cancelled_at AS "lastCancelledAt", pending_reason AS "pendingReason", idempotency_key AS "idempotencyKey", wait_until AS "waitUntil", wait_token_id AS "waitTokenId", step_data AS "stepData", progress, retry_delay AS "retryDelay", retry_backoff AS "retryBackoff", retry_delay_max AS "retryDelayMax", group_id AS "groupId", group_tier AS "groupTier", output
+        `,
+          constrainedParams,
+        );
+      }
 
       log(`Found ${result.rows.length} jobs to process`);
       await client.query('COMMIT');

@@ -2436,3 +2436,110 @@ describe('addJobs batch insert', () => {
     expect(job1).toBeNull();
   });
 });
+
+describe('group-based concurrency limits (Postgres)', () => {
+  let pool: Pool;
+  let dbName: string;
+
+  beforeEach(async () => {
+    const setup = await createTestDbAndPool();
+    pool = setup.pool;
+    dbName = setup.dbName;
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await destroyTestDb(dbName);
+  });
+
+  it('stores and returns group metadata on jobs', async () => {
+    const id = await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'grouped@example.com' },
+      group: { id: 'tenant-a', tier: 'gold' },
+    });
+
+    const job = await queue.getJob(pool, id);
+    expect(job?.groupId).toBe('tenant-a');
+    expect(job?.groupTier).toBe('gold');
+  });
+
+  it('enforces global per-group limits across workers', async () => {
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'a-1@example.com' },
+      group: { id: 'tenant-a' },
+    });
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'a-2@example.com' },
+      group: { id: 'tenant-a' },
+    });
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'b-1@example.com' },
+      group: { id: 'tenant-b' },
+    });
+
+    const firstBatch = await queue.getNextBatch(
+      pool,
+      'worker-1',
+      10,
+      undefined,
+      1,
+    );
+    expect(firstBatch).toHaveLength(2);
+    expect(new Set(firstBatch.map((job) => job.groupId))).toEqual(
+      new Set(['tenant-a', 'tenant-b']),
+    );
+
+    const blockedBatch = await queue.getNextBatch(
+      pool,
+      'worker-2',
+      10,
+      undefined,
+      1,
+    );
+    expect(blockedBatch).toHaveLength(0);
+
+    const groupAJob = firstBatch.find((job) => job.groupId === 'tenant-a');
+    expect(groupAJob).toBeDefined();
+    await queue.completeJob(pool, groupAJob!.id);
+
+    const resumedBatch = await queue.getNextBatch(
+      pool,
+      'worker-3',
+      10,
+      undefined,
+      1,
+    );
+    expect(resumedBatch).toHaveLength(1);
+    expect(resumedBatch[0]?.groupId).toBe('tenant-a');
+  });
+
+  it('keeps ungrouped jobs unaffected by groupConcurrency', async () => {
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'ungrouped-1@example.com' },
+    });
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'ungrouped-2@example.com' },
+    });
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'grouped-1@example.com' },
+      group: { id: 'tenant-c' },
+    });
+    await queue.addJob<{ email: { to: string } }, 'email'>(pool, {
+      jobType: 'email',
+      payload: { to: 'grouped-2@example.com' },
+      group: { id: 'tenant-c' },
+    });
+
+    const batch = await queue.getNextBatch(pool, 'worker-u', 10, undefined, 1);
+    expect(batch).toHaveLength(3);
+    expect(batch.filter((job) => job.groupId === 'tenant-c')).toHaveLength(1);
+    expect(batch.filter((job) => !job.groupId)).toHaveLength(2);
+  });
+});

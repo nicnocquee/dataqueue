@@ -20,12 +20,17 @@ interface ProcessorOptions {
   workerId?: string;
   batchSize?: number;
   concurrency?: number;
+  groupConcurrency?: number;
   pollInterval?: number;
   onError?: (error: Error) => void;
   verbose?: boolean;
   jobType?: string | string[];
 }
 ```
+
+- `groupConcurrency` sets a global per-group concurrency cap across all workers/instances for jobs with `group.id`.
+- Must be a positive integer when provided.
+- Jobs without `group.id` are not affected.
 
 ## Methods
 

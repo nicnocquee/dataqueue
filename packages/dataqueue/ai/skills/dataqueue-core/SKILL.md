@@ -114,6 +114,7 @@ const jobId = await queue.addJob({
   runAt: new Date(Date.now() + 5000),
   tags: ['welcome'],
   idempotencyKey: 'welcome-user-123',
+  group: { id: 'tenant_123' }, // optional: for global per-group concurrency limits
 });
 ```
 
@@ -190,6 +191,7 @@ await queue.addJob({
 const processor = queue.createProcessor(handlers, {
   batchSize: 10,
   concurrency: 3,
+  groupConcurrency: 2, // optional global cap per group.id across all workers
 });
 const processed = await processor.start();
 ```

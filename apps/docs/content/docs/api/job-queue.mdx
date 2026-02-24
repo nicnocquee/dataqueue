@@ -115,12 +115,14 @@ interface JobOptions {
   retryDelay?: number; // Base delay between retries in seconds (default: 60)
   retryBackoff?: boolean; // Use exponential backoff (default: true)
   retryDelayMax?: number; // Max delay cap in seconds (default: none)
+  group?: { id: string; tier?: string }; // Optional group for global concurrency limits
 }
 ```
 
 - `retryDelay` - Base delay between retries in seconds. When `retryBackoff` is true, this is the base for exponential backoff (`retryDelay * 2^attempts`). When false, retries use this fixed delay. Default: `60`.
 - `retryBackoff` - Whether to use exponential backoff. When true, delay doubles with each attempt and includes jitter. Default: `true`.
 - `retryDelayMax` - Maximum delay cap in seconds. Only meaningful when `retryBackoff` is true. No limit when omitted.
+- `group` - Optional grouping metadata. Use `group.id` to enforce global per-group limits with `ProcessorOptions.groupConcurrency`. `group.tier` is reserved for future policies.
 
 #### AddJobOptions
 
@@ -531,12 +533,15 @@ interface ProcessorOptions {
   workerId?: string;
   batchSize?: number;
   concurrency?: number;
+  groupConcurrency?: number;
   pollInterval?: number;
   onError?: (error: Error) => void;
   verbose?: boolean;
   jobType?: string | string[];
 }
 ```
+
+- `groupConcurrency` - Optional global per-group concurrency limit (positive integer). Applies only to jobs with `group.id`; ungrouped jobs are unaffected.
 
 ---
 

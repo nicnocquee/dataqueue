@@ -335,12 +335,14 @@ interface JobOptions {
   retryDelay?: number; // Base delay between retries in seconds (default: 60)
   retryBackoff?: boolean; // Use exponential backoff (default: true)
   retryDelayMax?: number; // Max delay cap in seconds (default: none)
+  group?: { id: string; tier?: string }; // Optional group for global concurrency limits
 }
 ```
 
 - `retryDelay` - Base delay between retries in seconds. When `retryBackoff` is true, this is the base for exponential backoff (`retryDelay * 2^attempts`). When false, retries use this fixed delay. Default: `60`.
 - `retryBackoff` - Whether to use exponential backoff. When true, delay doubles with each attempt and includes jitter. Default: `true`.
 - `retryDelayMax` - Maximum delay cap in seconds. Only meaningful when `retryBackoff` is true. No limit when omitted.
+- `group` - Optional grouping metadata. Use `group.id` to enforce global per-group limits with `ProcessorOptions.groupConcurrency`. `group.tier` is reserved for future policies.
 
 #### AddJobOptions
 
@@ -751,12 +753,15 @@ interface ProcessorOptions {
   workerId?: string;
   batchSize?: number;
   concurrency?: number;
+  groupConcurrency?: number;
   pollInterval?: number;
   onError?: (error: Error) => void;
   verbose?: boolean;
   jobType?: string | string[];
 }
 ```
+
+- `groupConcurrency` - Optional global per-group concurrency limit (positive integer). Applies only to jobs with `group.id`; ungrouped jobs are unaffected.
 
 ---
 
@@ -926,12 +931,17 @@ interface ProcessorOptions {
   workerId?: string;
   batchSize?: number;
   concurrency?: number;
+  groupConcurrency?: number;
   pollInterval?: number;
   onError?: (error: Error) => void;
   verbose?: boolean;
   jobType?: string | string[];
 }
 ```
+
+- `groupConcurrency` sets a global per-group concurrency cap across all workers/instances for jobs with `group.id`.
+- Must be a positive integer when provided.
+- Jobs without `group.id` are not affected.
 
 ## Methods
 
@@ -1506,26 +1516,26 @@ Slug: intro/comparison
 
 Choosing a job queue depends on your stack, infrastructure preferences, and the features you need. Here is a side-by-side comparison of **DataQueue**, **BullMQ**, and **Trigger.dev**.
 
-| Feature                 | DataQueue                                       | BullMQ                                      | Trigger.dev                             |
-| ----------------------- | ----------------------------------------------- | ------------------------------------------- | --------------------------------------- |
-| **Backend**             | PostgreSQL or Redis                             | Redis only                                  | Cloud or self-hosted (Postgres + Redis) |
-| **Type Safety**         | Full generic `PayloadMap`                       | Basic types                                 | Full TypeScript tasks                   |
-| **Scheduling**          | `runAt`, Cron                                   | Cron, delayed, recurring                    | Cron, delayed                           |
-| **Retries**             | Exponential backoff, configurable `maxAttempts` | Exponential backoff, custom strategies, DLQ | Auto retries, bulk replay, DLQ          |
-| **Priority**            | Integer priority                                | Priority levels                             | Queue-based priority                    |
-| **Concurrency Control** | `batchSize` + `concurrency`                     | Built-in                                    | Per-task + shared limits                |
-| **Rate Limiting**       | -                                               | Yes                                         | Via concurrency limits                  |
-| **Job Flows / DAGs**    | -                                               | Parent-child flows                          | Workflows                               |
-| **Dashboard**           | Built-in Next.js package                        | Third-party (Bull Board, etc.)              | Built-in web dashboard                  |
-| **Wait / Pause Jobs**   | `waitFor`, `waitUntil`, token system            | -                                           | Durable execution                       |
-| **Human-in-the-Loop**   | Token system                                    | -                                           | Yes                                     |
-| **Progress Tracking**   | Yes (0-100%)                                    | Yes                                         | Yes (realtime)                          |
-| **Serverless-First**    | Yes                                             | No (needs long-running process)             | Yes (cloud)                             |
-| **Self-Hosted**         | Yes                                             | Yes (your Redis)                            | Yes (containers)                        |
-| **Cloud Option**        | -                                               | -                                           | Yes                                     |
-| **License**             | MIT                                             | MIT                                         | Apache-2.0                              |
-| **Pricing**             | Free (OSS)                                      | Free (OSS)                                  | Free tier + paid plans                  |
-| **Infrastructure**      | Your own Postgres or Redis                      | Your own Redis                              | Their cloud or your infra               |
+| Feature                 | DataQueue                                               | BullMQ                                      | Trigger.dev                             |
+| ----------------------- | ------------------------------------------------------- | ------------------------------------------- | --------------------------------------- |
+| **Backend**             | PostgreSQL or Redis                                     | Redis only                                  | Cloud or self-hosted (Postgres + Redis) |
+| **Type Safety**         | Full generic `PayloadMap`                               | Basic types                                 | Full TypeScript tasks                   |
+| **Scheduling**          | `runAt`, Cron                                           | Cron, delayed, recurring                    | Cron, delayed                           |
+| **Retries**             | Exponential backoff, configurable `maxAttempts`         | Exponential backoff, custom strategies, DLQ | Auto retries, bulk replay, DLQ          |
+| **Priority**            | Integer priority                                        | Priority levels                             | Queue-based priority                    |
+| **Concurrency Control** | `batchSize` + `concurrency` + global `groupConcurrency` | Built-in                                    | Per-task + shared limits                |
+| **Rate Limiting**       | -                                                       | Yes                                         | Via concurrency limits                  |
+| **Job Flows / DAGs**    | -                                                       | Parent-child flows                          | Workflows                               |
+| **Dashboard**           | Built-in Next.js package                                | Third-party (Bull Board, etc.)              | Built-in web dashboard                  |
+| **Wait / Pause Jobs**   | `waitFor`, `waitUntil`, token system                    | -                                           | Durable execution                       |
+| **Human-in-the-Loop**   | Token system                                            | -                                           | Yes                                     |
+| **Progress Tracking**   | Yes (0-100%)                                            | Yes                                         | Yes (realtime)                          |
+| **Serverless-First**    | Yes                                                     | No (needs long-running process)             | Yes (cloud)                             |
+| **Self-Hosted**         | Yes                                                     | Yes (your Redis)                            | Yes (containers)                        |
+| **Cloud Option**        | -                                                       | -                                           | Yes                                     |
+| **License**             | MIT                                                     | MIT                                         | Apache-2.0                              |
+| **Pricing**             | Free (OSS)                                              | Free (OSS)                                  | Free tier + paid plans                  |
+| **Infrastructure**      | Your own Postgres or Redis                              | Your own Redis                              | Their cloud or your infra               |
 
 ## Where DataQueue shines
 
@@ -4297,6 +4307,7 @@ export async function GET(request: Request) {
       workerId: `cron-${Date.now()}`,
       batchSize: 10, // up to 10 jobs per batch
       concurrency: 3, // up to 3 jobs processed in parallel
+      groupConcurrency: 2, // optional: max 2 concurrent jobs per group.id globally
       verbose: true,
     });
 
@@ -4331,6 +4342,26 @@ For example, you can define two endpoints: one for low-resource jobs and another
 Some jobs are resource-intensive, like image processing, LLM calls, or calling a rate-limited external service. In these cases, set the `concurrency` option to control how many jobs run in parallel per batch.
 
 The default is `3`. Set it to `1` to process jobs one at a time. Use a lower value to avoid exhausting resources in constrained environments.
+
+### Group-Based Concurrency
+
+When jobs should be limited per tenant/customer/account across all workers, set `groupConcurrency` on the processor and provide `group.id` when enqueuing jobs:
+
+```typescript
+await jobQueue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com' },
+  group: { id: 'tenant_123' },
+});
+
+const processor = jobQueue.createProcessor(jobHandlers, {
+  batchSize: 20,
+  concurrency: 10,
+  groupConcurrency: 2,
+});
+```
+
+With this configuration, at most 2 jobs from the same `group.id` run at once globally, while ungrouped jobs continue to flow normally.
 
 ### Triggering the Processor via Cron
 
@@ -4798,6 +4829,29 @@ For example, with `batchSize: 20`, `concurrency: 10`, `pollInterval: 2000ms`, an
 - **CPU-bound jobs** (image processing, compression): keep concurrency low (1-4) to avoid CPU saturation.
 - **IO-bound jobs** (API calls, email sending): higher concurrency (5-20) works well since jobs spend most time waiting.
 - **Rate-limited APIs**: match concurrency to the API's rate limit to avoid throttling.
+
+### Group Concurrency
+
+`groupConcurrency` caps how many jobs with the same `group.id` can be in `processing` at the same time across all worker instances.
+
+- Use this for multi-tenant fairness and per-account rate protection.
+- It is global coordination (PostgreSQL + Redis), not per-process.
+- Ungrouped jobs are unaffected.
+
+```typescript
+await jobQueue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com' },
+  group: { id: 'tenant_abc' },
+});
+
+const processor = jobQueue.createProcessor(jobHandlers, {
+  batchSize: 30,
+  concurrency: 10,
+  groupConcurrency: 2,
+  pollInterval: 2000,
+});
+```
 
 ### Poll Interval
 
