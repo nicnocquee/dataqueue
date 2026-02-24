@@ -71,9 +71,10 @@ jobs:
         timeout-minutes: 3
 
       - name: Upload unit coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: packages/dataqueue/coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
           flags: unit
           name: unit-coverage
           fail_ci_if_error: false
@@ -138,9 +139,10 @@ jobs:
           PG_DATAQUEUE_DATABASE: postgres://postgres:postgres@localhost:5432/e2e_test
 
       - name: Upload e2e coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: apps/e2e/coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
           flags: e2e
           name: e2e-coverage
           fail_ci_if_error: false
