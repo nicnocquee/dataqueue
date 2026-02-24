@@ -2000,6 +2000,47 @@ describe('getJobs', () => {
     expect(batch3.length).toBe(0);
   });
 
+  it('should route exhausted jobs to dead-letter job type when configured', async () => {
+    // Setup
+    const sourceJobId = await queue.addJob<
+      { email: { to: string }; email_dead_letter: any },
+      'email'
+    >(pool, {
+      jobType: 'email',
+      payload: { to: 'deadletter@example.com' },
+      maxAttempts: 1,
+      deadLetterJobType: 'email_dead_letter',
+    });
+
+    // Act
+    await queue.getNextBatch(pool, 'worker-dead-letter', 1);
+    await queue.failJob(pool, sourceJobId, new Error('permanent failure'));
+
+    // Assert
+    const sourceJob = await queue.getJob(pool, sourceJobId);
+    expect(sourceJob?.status).toBe('failed');
+    expect(sourceJob?.nextAttemptAt).toBeNull();
+    expect(sourceJob?.deadLetterJobType).toBe('email_dead_letter');
+    expect(sourceJob?.deadLetteredAt).not.toBeNull();
+    expect(sourceJob?.deadLetterJobId).not.toBeNull();
+
+    const deadLetterJob = await queue.getJob(
+      pool,
+      sourceJob!.deadLetterJobId as number,
+    );
+    expect(deadLetterJob).not.toBeNull();
+    expect(deadLetterJob?.jobType).toBe('email_dead_letter');
+    expect(deadLetterJob?.status).toBe('pending');
+    expect(deadLetterJob?.maxAttempts).toBe(1);
+
+    const envelope = deadLetterJob?.payload as any;
+    expect(envelope.originalJob.id).toBe(sourceJobId);
+    expect(envelope.originalJob.jobType).toBe('email');
+    expect(envelope.originalPayload).toEqual({ to: 'deadletter@example.com' });
+    expect(envelope.failure.message).toBe('permanent failure');
+    expect(envelope.failure.reason).toBeNull();
+  });
+
   // ── Configurable retry strategy tests ────────────────────────────────
 
   it('uses legacy backoff when no retry config is set', async () => {

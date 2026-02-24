@@ -10,7 +10,7 @@ The `JobRecord` interface represents a job stored in the queue, including its st
 - `jobType`: _string_ — The type of the job.
 - `payload`: _any_ — The job payload.
 - `status`:
-  _'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'_ —
+  _'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'waiting'_ —
   Current job status.
 - `createdAt`: _Date_ — When the job was created.
 - `updated_at`: _Date_ — When the job was last updated.
@@ -42,6 +42,9 @@ The `JobRecord` interface represents a job stored in the queue, including its st
 - `idempotencyKey?`: _string | null_ — The idempotency key for this job, if one was provided when the job was created.
 - `progress?`: _number | null_ — Progress percentage (0–100) reported by the handler via `ctx.setProgress()`. `null` if no progress has been reported. See [Progress Tracking](/usage/progress-tracking).
 - `output?`: _unknown_ — Handler output stored via `ctx.setOutput(data)` or by returning a value from the handler. `null` if no output has been stored. See [Job Output](/usage/job-output).
+- `deadLetterJobType?`: _string | null_ — Configured dead-letter destination job type for this job.
+- `deadLetteredAt?`: _Date | null_ — Timestamp when this job was routed to a dead-letter job.
+- `deadLetterJobId?`: _number | null_ — Linked dead-letter job ID created when retries were exhausted.
 
 ## Example
 

@@ -120,6 +120,7 @@ export const initJobQueue = <PayloadMap = any>(
         retryDelay: schedule.retryDelay ?? undefined,
         retryBackoff: schedule.retryBackoff ?? undefined,
         retryDelayMax: schedule.retryDelayMax ?? undefined,
+        deadLetterJobType: schedule.deadLetterJobType ?? undefined,
       });
 
       // Advance to next occurrence
@@ -327,6 +328,7 @@ export const initJobQueue = <PayloadMap = any>(
           retryDelay: options.retryDelay ?? null,
           retryBackoff: options.retryBackoff ?? null,
           retryDelayMax: options.retryDelayMax ?? null,
+          deadLetterJobType: options.deadLetterJobType ?? null,
         };
         return backend.addCronSchedule(input);
       },

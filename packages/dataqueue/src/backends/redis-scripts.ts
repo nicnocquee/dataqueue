@@ -32,7 +32,7 @@ const SCORE_RANGE = '1000000000000000'; // 1e15
  * KEYS: [prefix]
  * ARGV: [jobType, payloadJson, maxAttempts, priority, runAtMs, timeoutMs,
  *        forceKillOnTimeout, tagsJson, idempotencyKey, nowMs,
- *        retryDelay, retryBackoff, retryDelayMax]
+ *        retryDelay, retryBackoff, retryDelayMax, deadLetterJobType]
  * Returns: job ID (number)
  */
 export const ADD_JOB_SCRIPT = `
@@ -50,6 +50,7 @@ local nowMs = tonumber(ARGV[10])
 local retryDelay = ARGV[11]       -- "null" or seconds string
 local retryBackoff = ARGV[12]     -- "null" or "true"/"false"
 local retryDelayMax = ARGV[13]    -- "null" or seconds string
+local deadLetterJobType = ARGV[14] -- "null" or jobType string
 
 -- Idempotency check
 if idempotencyKey ~= "null" then
@@ -96,7 +97,10 @@ redis.call('HMSET', jobKey,
   'stepData', 'null',
   'retryDelay', retryDelay,
   'retryBackoff', retryBackoff,
-  'retryDelayMax', retryDelayMax
+  'retryDelayMax', retryDelayMax,
+  'deadLetterJobType', deadLetterJobType,
+  'deadLetteredAt', 'null',
+  'deadLetterJobId', 'null'
 )
 
 -- Status index
@@ -145,7 +149,7 @@ return id
  *   jobsJson is a JSON array of objects, each with:
  *     jobType, payload (already JSON string), maxAttempts, priority,
  *     runAtMs, timeoutMs, forceKillOnTimeout, tags (JSON or "null"),
- *     idempotencyKey
+ *     idempotencyKey, retryDelay, retryBackoff, retryDelayMax, deadLetterJobType
  * Returns: array of job IDs (one per input job, in order)
  */
 export const ADD_JOBS_SCRIPT = `
@@ -169,6 +173,7 @@ for i, job in ipairs(jobs) do
   local retryDelay = tostring(job.retryDelay)
   local retryBackoff = tostring(job.retryBackoff)
   local retryDelayMax = tostring(job.retryDelayMax)
+  local deadLetterJobType = tostring(job.deadLetterJobType)
 
   -- Idempotency check
   local skip = false
@@ -218,7 +223,10 @@ for i, job in ipairs(jobs) do
       'stepData', 'null',
       'retryDelay', retryDelay,
       'retryBackoff', retryBackoff,
-      'retryDelayMax', retryDelayMax
+      'retryDelayMax', retryDelayMax,
+      'deadLetterJobType', deadLetterJobType,
+      'deadLetteredAt', 'null',
+      'deadLetterJobId', 'null'
     )
 
     -- Status index
@@ -456,6 +464,7 @@ return 1
  * KEYS: [prefix]
  * ARGV: [jobId, errorJson, failureReason, nowMs]
  * errorJson: JSON array like [{"message":"...", "timestamp":"..."}]
+ * Returns: dead-letter job ID when routed, otherwise 0
  */
 export const FAIL_JOB_SCRIPT = `
 local prefix = KEYS[1]
@@ -472,6 +481,7 @@ local maxAttempts = tonumber(redis.call('HGET', jk, 'maxAttempts'))
 local rdRaw = redis.call('HGET', jk, 'retryDelay')
 local rbRaw = redis.call('HGET', jk, 'retryBackoff')
 local rmRaw = redis.call('HGET', jk, 'retryDelayMax')
+local deadLetterJobType = redis.call('HGET', jk, 'deadLetterJobType')
 
 local nextAttemptAt = 'null'
 if attempts < maxAttempts then
@@ -511,6 +521,8 @@ for _, e in ipairs(newErrors) do
   table.insert(arr, e)
 end
 
+local deadLetterJobId = 0
+
 redis.call('HMSET', jk,
   'status', 'failed',
   'updatedAt', nowMs,
@@ -527,7 +539,86 @@ if nextAttemptAt ~= 'null' then
   redis.call('ZADD', prefix .. 'retry', nextAttemptAt, jobId)
 end
 
-return 1
+-- Route exhausted jobs to a configured dead-letter job type.
+if nextAttemptAt == 'null' and deadLetterJobType and deadLetterJobType ~= 'null' then
+  local sourceJobType = redis.call('HGET', jk, 'jobType')
+  local payloadRaw = redis.call('HGET', jk, 'payload')
+  local originalPayload = payloadRaw
+  local payloadOk, payloadDecoded = pcall(cjson.decode, payloadRaw)
+  if payloadOk then originalPayload = payloadDecoded end
+
+  local failureMessage = 'Unknown error'
+  if #newErrors > 0 and newErrors[1].message then
+    failureMessage = newErrors[1].message
+  end
+
+  local envelope = cjson.encode({
+    originalJob = {
+      id = tonumber(jobId),
+      jobType = sourceJobType,
+      attempts = attempts,
+      maxAttempts = maxAttempts
+    },
+    originalPayload = originalPayload,
+    failure = {
+      message = failureMessage,
+      reason = failureReason ~= 'null' and failureReason or cjson.null,
+      failedAt = newErrors[1] and newErrors[1].timestamp or cjson.null
+    }
+  })
+
+  deadLetterJobId = redis.call('INCR', prefix .. 'id_seq')
+  local dlqKey = prefix .. 'job:' .. deadLetterJobId
+  redis.call('HMSET', dlqKey,
+    'id', deadLetterJobId,
+    'jobType', deadLetterJobType,
+    'payload', envelope,
+    'status', 'pending',
+    'maxAttempts', 1,
+    'attempts', 0,
+    'priority', 0,
+    'runAt', nowMs,
+    'timeoutMs', 'null',
+    'forceKillOnTimeout', 'false',
+    'createdAt', nowMs,
+    'updatedAt', nowMs,
+    'lockedAt', 'null',
+    'lockedBy', 'null',
+    'nextAttemptAt', 'null',
+    'pendingReason', 'null',
+    'errorHistory', '[]',
+    'failureReason', 'null',
+    'completedAt', 'null',
+    'startedAt', 'null',
+    'lastRetriedAt', 'null',
+    'lastFailedAt', 'null',
+    'lastCancelledAt', 'null',
+    'tags', 'null',
+    'idempotencyKey', 'null',
+    'waitUntil', 'null',
+    'waitTokenId', 'null',
+    'stepData', 'null',
+    'retryDelay', 'null',
+    'retryBackoff', 'null',
+    'retryDelayMax', 'null',
+    'deadLetterJobType', 'null',
+    'deadLetteredAt', 'null',
+    'deadLetterJobId', 'null'
+  )
+
+  redis.call('SADD', prefix .. 'status:pending', deadLetterJobId)
+  redis.call('SADD', prefix .. 'type:' .. deadLetterJobType, deadLetterJobId)
+  redis.call('ZADD', prefix .. 'all', nowMs, deadLetterJobId)
+  local dlqScore = 0 * ${SCORE_RANGE} + (${SCORE_RANGE} - nowMs)
+  redis.call('ZADD', prefix .. 'queue', dlqScore, deadLetterJobId)
+
+  redis.call('HMSET', jk,
+    'deadLetteredAt', nowMs,
+    'deadLetterJobId', deadLetterJobId
+  )
+end
+
+return deadLetterJobId
 `;
 
 /**

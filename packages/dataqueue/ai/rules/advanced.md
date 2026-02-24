@@ -116,6 +116,21 @@ await queue.addJob({
 - No config — legacy `2^attempts * 60s` formula (backward compatible).
 - Cron schedules propagate retry config to enqueued jobs.
 
+## Dead-Letter Routing
+
+Configure dead-letter capture with `deadLetterJobType`:
+
+```typescript
+await queue.addJob({
+  jobType: 'email',
+  payload,
+  maxAttempts: 3,
+  deadLetterJobType: 'email_dead_letter',
+});
+```
+
+When retries are exhausted, DataQueue creates a pending dead-letter job with envelope payload containing `originalJob`, `originalPayload`, and `failure`. Source jobs remain `failed` and store linkage metadata (`deadLetteredAt`, `deadLetterJobId`).
+
 ## Event Hooks
 
 Subscribe to real-time lifecycle events via `on`, `once`, `off`, `removeAllListeners`. Works with both Postgres and Redis.

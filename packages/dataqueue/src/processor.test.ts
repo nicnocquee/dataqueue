@@ -112,6 +112,46 @@ describe('processor integration', () => {
     expect(failed?.failureReason).toBe('handler_error');
   });
 
+  it('should create a dead-letter job when retries are exhausted and DLQ is configured', async () => {
+    const handler = vi.fn(async () => {
+      throw new Error('processor permanent failure');
+    });
+    const handlers = {
+      test: vi.fn(async () => {}),
+      fail: handler,
+      missing: vi.fn(async () => {}),
+      batch: vi.fn(async () => {}),
+      proc: vi.fn(async () => {}),
+      typeA: vi.fn(async () => {}),
+      typeB: vi.fn(async () => {}),
+      typeC: vi.fn(async () => {}),
+    };
+
+    const sourceJobId = await queue.addJob<TestPayloadMap, 'fail'>(pool, {
+      jobType: 'fail',
+      payload: {},
+      maxAttempts: 1,
+      deadLetterJobType: 'typeA',
+    });
+    const batch = await queue.getNextBatch(pool, 'test-worker', 1);
+    expect(batch).toHaveLength(1);
+    expect(batch[0].id).toBe(sourceJobId);
+    await processJobWithHandlers(backend, batch[0], handlers);
+
+    const sourceJob = await queue.getJob(pool, sourceJobId);
+    expect(sourceJob?.status).toBe('failed');
+    expect(sourceJob?.deadLetterJobType).toBe('typeA');
+    expect(sourceJob?.deadLetterJobId).not.toBeNull();
+
+    const deadLetterJob = await queue.getJob(pool, sourceJob!.deadLetterJobId!);
+    expect(deadLetterJob?.jobType).toBe('typeA');
+    expect(deadLetterJob?.status).toBe('pending');
+    const envelope = deadLetterJob?.payload as any;
+    expect(envelope.originalJob.id).toBe(sourceJobId);
+    expect(envelope.failure.message).toBe('processor permanent failure');
+    expect(envelope.failure.reason).toBe('handler_error');
+  });
+
   it('should mark job as failed if no handler registered', async () => {
     const handler = vi.fn(async () => {
       throw new Error('No handler registered');
