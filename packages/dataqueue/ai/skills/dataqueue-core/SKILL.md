@@ -183,6 +183,21 @@ await queue.addJob({
 - **Exponential backoff** (default): delay doubles each attempt with jitter.
 - **Default**: when no retry options are set, legacy `2^attempts * 60s` is used.
 
+### Dead-letter queues
+
+Route exhausted failures into a dedicated job type with `deadLetterJobType`:
+
+```typescript
+await queue.addJob({
+  jobType: 'send_email',
+  payload: { to: 'user@example.com', subject: 'Hi', body: 'Hello' },
+  maxAttempts: 3,
+  deadLetterJobType: 'email_dead_letter',
+});
+```
+
+When retries are exhausted, DataQueue keeps the source job as `failed` and creates a new pending dead-letter job with envelope payload: `{ originalJob, originalPayload, failure }`.
+
 ## Step 5: Process Jobs
 
 ### Serverless (one-shot)
@@ -235,3 +250,4 @@ process.on('SIGTERM', async () => {
 6. **Not calling `stopAndDrain` on shutdown** — use `stopAndDrain()` (not `stop()`) for graceful shutdown to avoid stuck jobs.
 7. **Forgetting to commit/rollback when using `db` option** — the `addJob` INSERT sits in an open transaction. If you never `COMMIT` or `ROLLBACK`, the connection leaks and the job is invisible to other sessions.
 8. **Using `db` option with Redis** — transactional job creation is PostgreSQL only. The Redis backend throws if `db` is provided.
+9. **Expecting dead-letter routing without configuration** — DLQ is opt-in. Set `deadLetterJobType` on jobs (or cron schedules) that require dead-letter capture.

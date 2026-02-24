@@ -135,6 +135,15 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    */
   retryDelayMax?: number;
   /**
+   * Optional job type used as a dead-letter destination when this job
+   * exhausts all retry attempts.
+   *
+   * When set, a new job is created in this destination with an envelope
+   * payload containing the original job metadata, original payload, and
+   * failure context.
+   */
+  deadLetterJobType?: string;
+  /**
    * Optional group metadata for this job.
    * When `ProcessorOptions.groupConcurrency` is configured, grouped jobs are
    * globally limited by `group.id` across all workers/instances.
@@ -281,6 +290,18 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    */
   retryDelayMax?: number | null;
   /**
+   * Optional dead-letter destination configured for this job.
+   */
+  deadLetterJobType?: string | null;
+  /**
+   * The time this job was routed to a dead-letter job, if it was routed.
+   */
+  deadLetteredAt?: Date | null;
+  /**
+   * The generated dead-letter job ID linked to this source job, if routed.
+   */
+  deadLetterJobId?: number | null;
+  /**
    * Group identifier for this job, if provided at enqueue time.
    */
   groupId?: string | null;
@@ -288,6 +309,24 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * Group tier for this job, if provided at enqueue time.
    */
   groupTier?: string | null;
+}
+
+/**
+ * Envelope payload stored in dead-letter jobs.
+ */
+export interface DeadLetterPayloadEnvelope {
+  originalJob: {
+    id: number;
+    jobType: string;
+    attempts: number;
+    maxAttempts: number;
+  };
+  originalPayload: unknown;
+  failure: {
+    message: string;
+    reason: FailureReason | null;
+    failedAt: string;
+  };
 }
 
 /**
@@ -815,6 +854,11 @@ export interface CronScheduleOptions<
   retryBackoff?: boolean;
   /** Maximum delay cap for retries in seconds. */
   retryDelayMax?: number;
+  /**
+   * Optional dead-letter destination job type inherited by jobs enqueued
+   * from this schedule.
+   */
+  deadLetterJobType?: string;
 }
 
 /**
@@ -842,6 +886,7 @@ export interface CronScheduleRecord {
   retryDelay: number | null;
   retryBackoff: boolean | null;
   retryDelayMax: number | null;
+  deadLetterJobType: string | null;
 }
 
 /**
@@ -861,6 +906,7 @@ export interface EditCronScheduleOptions {
   retryDelay?: number | null;
   retryBackoff?: boolean | null;
   retryDelayMax?: number | null;
+  deadLetterJobType?: string | null;
 }
 
 // ── Event hooks ──────────────────────────────────────────────────────

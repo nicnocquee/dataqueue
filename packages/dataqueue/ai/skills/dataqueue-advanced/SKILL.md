@@ -364,6 +364,29 @@ await queue.addCronJob({
 
 Every job enqueued by the schedule inherits the retry settings.
 
+### Dead-letter routing
+
+Set `deadLetterJobType` on jobs (or cron schedules) to route exhausted failures:
+
+```typescript
+await queue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com' },
+  maxAttempts: 3,
+  deadLetterJobType: 'email_dead_letter',
+});
+```
+
+Dead-letter jobs receive envelope payload:
+
+```typescript
+{
+  originalJob: { id, jobType, attempts, maxAttempts },
+  originalPayload: {...},
+  failure: { message, reason, failedAt }
+}
+```
+
 ### Default behavior
 
 When no retry options are set, the legacy formula `2^attempts * 60 seconds` is used. This is fully backward compatible.

@@ -118,6 +118,46 @@ describe('Redis backend integration', () => {
     expect(job?.status).toBe('pending');
   });
 
+  it('should route exhausted jobs to a dead-letter job type when configured', async () => {
+    // Setup
+    const sourceJobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'deadletter@example.com' },
+      maxAttempts: 1,
+      deadLetterJobType: 'email',
+    });
+
+    // Act
+    const processor = jobQueue.createProcessor({
+      email: async () => {
+        throw new Error('permanent redis failure');
+      },
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    // Assert
+    const sourceJob = await jobQueue.getJob(sourceJobId);
+    expect(sourceJob?.status).toBe('failed');
+    expect(sourceJob?.nextAttemptAt).toBeNull();
+    expect(sourceJob?.deadLetterJobType).toBe('email');
+    expect(sourceJob?.deadLetteredAt).not.toBeNull();
+    expect(sourceJob?.deadLetterJobId).not.toBeNull();
+
+    const deadLetterJob = await jobQueue.getJob(sourceJob!.deadLetterJobId!);
+    expect(deadLetterJob).not.toBeNull();
+    expect(deadLetterJob?.status).toBe('pending');
+    expect(deadLetterJob?.maxAttempts).toBe(1);
+
+    const envelope = deadLetterJob?.payload as any;
+    expect(envelope.originalJob.id).toBe(sourceJobId);
+    expect(envelope.originalJob.jobType).toBe('email');
+    expect(envelope.originalPayload).toEqual({ to: 'deadletter@example.com' });
+    expect(envelope.failure.message).toBe('permanent redis failure');
+    expect(envelope.failure.reason).toBe('handler_error');
+  });
+
   it('should cancel a pending job', async () => {
     const jobId = await jobQueue.addJob({
       jobType: 'email',
@@ -787,6 +827,38 @@ describe('Redis cron schedules integration', () => {
     expect(schedule!.allowOverlap).toBe(false);
     expect(schedule!.timezone).toBe('UTC');
     expect(schedule!.nextRunAt).toBeInstanceOf(Date);
+  });
+
+  it('stores deadLetterJobType on cron schedule and propagates it to enqueued jobs', async () => {
+    // Setup
+    const id = await jobQueue.addCronJob({
+      scheduleName: 'cron-dead-letter-redis',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'redis-cron-dlq@example.com' },
+      deadLetterJobType: 'email',
+    });
+
+    const pastMs = (Date.now() - 60_000).toString();
+    await redisClient.hset(`${prefix}cron:${id}`, 'nextRunAt', pastMs);
+    await redisClient.zadd(`${prefix}cron_due`, Number(pastMs), id.toString());
+
+    // Act
+    const count = await jobQueue.enqueueDueCronJobs();
+
+    // Assert
+    expect(count).toBe(1);
+    const schedule = await jobQueue.getCronJob(id);
+    expect(schedule?.deadLetterJobType).toBe('email');
+
+    const jobs = await jobQueue.getJobsByStatus('pending');
+    const cronJob = jobs.find(
+      (j) =>
+        j.jobType === 'email' &&
+        (j.payload as any).to === 'redis-cron-dlq@example.com',
+    );
+    expect(cronJob).toBeDefined();
+    expect(cronJob?.deadLetterJobType).toBe('email');
   });
 
   it('retrieves a cron schedule by name', async () => {

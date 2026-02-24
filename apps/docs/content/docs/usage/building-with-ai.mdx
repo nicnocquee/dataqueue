@@ -140,6 +140,7 @@ Type handlers as `JobHandlers<PayloadMap>` — TypeScript enforces a handler for
 1. Creating initJobQueue per request (creates a DB pool each time)
 2. Missing handler for a job type (fails with NoHandler)
 3. Not checking signal.aborted in long handlers
-4. Forgetting reclaimStuckJobs() — crashed workers leave jobs stuck
-5. Skipping migrations (PostgreSQL requires `dataqueue-cli migrate`)
+4. Forgetting dead-letter routing for critical jobs — set `deadLetterJobType` so exhausted failures are inspectable/replayable
+5. Forgetting reclaimStuckJobs() — crashed workers leave jobs stuck
+6. Skipping migrations (PostgreSQL requires `dataqueue-cli migrate`)
 ```

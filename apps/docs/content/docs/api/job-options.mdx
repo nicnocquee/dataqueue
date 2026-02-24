@@ -22,6 +22,7 @@ The `JobOptions` interface defines the options for creating a new job in the que
 
 - `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
 - `idempotencyKey?`: _string_ — Optional idempotency key. When provided, ensures that only one job exists for a given key. If a job with the same key already exists, `addJob` returns the existing job's ID instead of creating a duplicate. See [Idempotency](/usage/add-job#idempotency) for details.
+- `deadLetterJobType?`: _string_ — Optional dead-letter destination job type. When the job exhausts retries, DataQueue creates a new pending job in this job type with an envelope payload containing source metadata, original payload, and failure context.
 
 ## Example
 
@@ -36,5 +37,6 @@ const job = {
   forceKillOnTimeout: false, // Use graceful shutdown (default)
   tags: ['welcome', 'user'], // tags for grouping/searching
   idempotencyKey: 'welcome-email-user-123', // prevent duplicate jobs
+  deadLetterJobType: 'email_dead_letter', // route exhausted failures
 };
 ```

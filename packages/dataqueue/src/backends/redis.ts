@@ -172,6 +172,12 @@ function deserializeJob<PayloadMap, T extends JobType<PayloadMap>>(
           ? false
           : null,
     retryDelayMax: numOrNull(h.retryDelayMax),
+    deadLetterJobType: nullish(h.deadLetterJobType) as
+      | string
+      | null
+      | undefined,
+    deadLetteredAt: dateOrNull(h.deadLetteredAt),
+    deadLetterJobId: numOrNull(h.deadLetterJobId),
     groupId: nullish(h.groupId) as string | null | undefined,
     groupTier: nullish(h.groupTier) as string | null | undefined,
     output: parseJsonField(h.output),
@@ -319,6 +325,7 @@ export class RedisBackend implements QueueBackend {
       retryDelay = undefined,
       retryBackoff = undefined,
       retryDelayMax = undefined,
+      deadLetterJobType = undefined,
       group = undefined,
     }: JobOptions<PayloadMap, T>,
     options?: AddJobOptions,
@@ -349,6 +356,7 @@ export class RedisBackend implements QueueBackend {
       retryDelay !== undefined ? retryDelay.toString() : 'null',
       retryBackoff !== undefined ? retryBackoff.toString() : 'null',
       retryDelayMax !== undefined ? retryDelayMax.toString() : 'null',
+      deadLetterJobType ?? 'null',
       group?.id ?? 'null',
       group?.tier ?? 'null',
     )) as number;
@@ -402,6 +410,7 @@ export class RedisBackend implements QueueBackend {
         job.retryBackoff !== undefined ? job.retryBackoff.toString() : 'null',
       retryDelayMax:
         job.retryDelayMax !== undefined ? job.retryDelayMax.toString() : 'null',
+      deadLetterJobType: job.deadLetterJobType ?? 'null',
       groupId: job.group?.id ?? 'null',
       groupTier: job.group?.tier ?? 'null',
     }));
@@ -641,7 +650,7 @@ export class RedisBackend implements QueueBackend {
         timestamp: new Date(now).toISOString(),
       },
     ]);
-    await this.client.eval(
+    const result = (await this.client.eval(
       FAIL_JOB_SCRIPT,
       1,
       this.prefix,
@@ -649,11 +658,28 @@ export class RedisBackend implements QueueBackend {
       errorJson,
       failureReason ?? 'null',
       now,
-    );
+    )) as number;
+    const deadLetterJobId = Number(result) || null;
     await this.recordJobEvent(jobId, JobEventType.Failed, {
       message: error.message || String(error),
       failureReason,
+      deadLetterJobId,
     });
+    if (deadLetterJobId) {
+      const sourceJob = await this.client.hget(
+        `${this.prefix}job:${jobId}`,
+        'jobType',
+      );
+      const deadLetterJobType = await this.client.hget(
+        `${this.prefix}job:${deadLetterJobId}`,
+        'jobType',
+      );
+      await this.recordJobEvent(deadLetterJobId, JobEventType.Added, {
+        jobType: deadLetterJobType,
+        sourceJobId: jobId,
+        sourceJobType: sourceJob,
+      });
+    }
     log(`Failed job ${jobId}`);
   }
 
@@ -852,6 +878,10 @@ export class RedisBackend implements QueueBackend {
           : 'null',
       );
       metadata.retryDelayMax = updates.retryDelayMax;
+    }
+    if (updates.deadLetterJobType !== undefined) {
+      fields.push('deadLetterJobType', updates.deadLetterJobType ?? 'null');
+      metadata.deadLetterJobType = updates.deadLetterJobType;
     }
 
     if (fields.length === 0) {
@@ -1444,6 +1474,10 @@ export class RedisBackend implements QueueBackend {
       input.retryDelayMax !== null && input.retryDelayMax !== undefined
         ? input.retryDelayMax.toString()
         : 'null',
+      'deadLetterJobType',
+      input.deadLetterJobType !== null && input.deadLetterJobType !== undefined
+        ? input.deadLetterJobType
+        : 'null',
     ];
 
     await (this.client as any).hmset(key, ...fields);
@@ -1647,6 +1681,12 @@ export class RedisBackend implements QueueBackend {
           : 'null',
       );
     }
+    if (updates.deadLetterJobType !== undefined) {
+      fields.push(
+        'deadLetterJobType',
+        updates.deadLetterJobType !== null ? updates.deadLetterJobType : 'null',
+      );
+    }
     if (nextRunAt !== undefined) {
       const val = nextRunAt !== null ? nextRunAt.getTime().toString() : 'null';
       fields.push('nextRunAt', val);
@@ -1795,6 +1835,7 @@ export class RedisBackend implements QueueBackend {
             ? false
             : null,
       retryDelayMax: numOrNull(h.retryDelayMax),
+      deadLetterJobType: nullish(h.deadLetterJobType),
     };
   }
 

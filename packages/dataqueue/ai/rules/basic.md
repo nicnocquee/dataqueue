@@ -150,6 +150,21 @@ Control retry behavior per-job with optional fields on `addJob`:
 
 When none are set, the legacy `2^attempts * 60s` formula is used.
 
+## Dead-Letter Queue
+
+Use `deadLetterJobType` for jobs that must be captured after exhausting retries:
+
+```typescript
+await queue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com', subject: 'Hi', body: '...' },
+  maxAttempts: 3,
+  deadLetterJobType: 'email_dead_letter',
+});
+```
+
+On exhaustion, the source job stays `failed` and a new pending dead-letter job is created with envelope payload: `{ originalJob, originalPayload, failure }`.
+
 ## Common Mistakes
 
 1. Creating `initJobQueue` per request — use a singleton.
@@ -158,3 +173,4 @@ When none are set, the legacy `2^attempts * 60s` formula is used.
 4. Skipping maintenance — use `createSupervisor()` to automate reclaim, cleanup, and token expiry. Without it, stuck jobs and old data accumulate.
 5. Skipping migrations (PostgreSQL) — run `dataqueue-cli migrate` first. Redis needs none.
 6. Using `stop()` instead of `stopAndDrain()` — leaves in-flight jobs stuck.
+7. Expecting dead-letter routing without setting `deadLetterJobType` — DLQ is opt-in.

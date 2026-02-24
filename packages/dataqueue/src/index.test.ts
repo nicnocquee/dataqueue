@@ -571,6 +571,35 @@ describe('index integration', () => {
     expect(delaySec).toBeGreaterThanOrEqual(9);
     expect(delaySec).toBeLessThanOrEqual(11);
   });
+
+  it('should route exhausted jobs to dead-letter job type through public API', async () => {
+    const sourceJobId = await jobQueue.addJob({
+      jobType: 'email',
+      payload: { to: 'public-dlq@example.com' },
+      maxAttempts: 1,
+      deadLetterJobType: 'email',
+    });
+
+    const processor = jobQueue.createProcessor({
+      email: async () => {
+        throw new Error('public api permanent failure');
+      },
+      sms: vi.fn(async () => {}),
+      test: vi.fn(async () => {}),
+    });
+    await processor.start();
+
+    const sourceJob = await jobQueue.getJob(sourceJobId);
+    expect(sourceJob?.status).toBe('failed');
+    expect(sourceJob?.deadLetterJobId).not.toBeNull();
+    expect(sourceJob?.deadLetteredAt).not.toBeNull();
+
+    const deadLetterJob = await jobQueue.getJob(sourceJob!.deadLetterJobId!);
+    expect(deadLetterJob?.status).toBe('pending');
+    const envelope = deadLetterJob?.payload as any;
+    expect(envelope.originalJob.id).toBe(sourceJobId);
+    expect(envelope.failure.message).toBe('public api permanent failure');
+  });
 });
 
 describe('cron schedules integration', () => {
@@ -977,6 +1006,31 @@ describe('cron schedules integration', () => {
     expect(schedule?.retryDelay).toBe(30);
     expect(schedule?.retryBackoff).toBe(true);
     expect(schedule?.retryDelayMax).toBe(600);
+  });
+
+  it('should propagate deadLetterJobType from cron schedule to enqueued jobs', async () => {
+    const cronId = await jobQueue.addCronJob({
+      scheduleName: 'cron-dead-letter-propagation',
+      cronExpression: '* * * * *',
+      jobType: 'email',
+      payload: { to: 'cron-dlq@example.com' },
+      deadLetterJobType: 'email',
+    });
+
+    await pool.query(
+      `UPDATE cron_schedules SET next_run_at = NOW() - interval '1 second' WHERE id = $1`,
+      [cronId],
+    );
+
+    const count = await jobQueue.enqueueDueCronJobs();
+    expect(count).toBe(1);
+
+    const pendingJobs = await jobQueue.getJobsByStatus('pending', 10, 0);
+    const created = pendingJobs.find(
+      (job) => (job.payload as any)?.to === 'cron-dlq@example.com',
+    );
+    expect(created).toBeDefined();
+    expect(created?.deadLetterJobType).toBe('email');
   });
 });
 

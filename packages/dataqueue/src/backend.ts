@@ -43,6 +43,7 @@ export interface JobUpdates {
   retryDelay?: number | null;
   retryBackoff?: boolean | null;
   retryDelayMax?: number | null;
+  deadLetterJobType?: string | null;
 }
 
 /**
@@ -65,6 +66,7 @@ export interface CronScheduleInput {
   retryDelay: number | null;
   retryBackoff: boolean | null;
   retryDelayMax: number | null;
+  deadLetterJobType: string | null;
 }
 
 /**

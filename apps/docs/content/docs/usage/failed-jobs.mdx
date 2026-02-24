@@ -6,6 +6,37 @@ A job handler can fail for many reasons, such as a bug in the code or running ou
 
 When a job fails, it is marked as `failed` and retried up to `maxAttempts` times (default: 3). You can view the error history for a job in its `errorHistory` field.
 
+## Dead-letter queues
+
+You can route permanently failed jobs to a dead-letter job type using `deadLetterJobType`.
+
+When a job exhausts retries (`attempts >= maxAttempts`), DataQueue:
+
+1. Keeps the source job as `failed`.
+2. Creates a new pending dead-letter job in `deadLetterJobType`.
+3. Stores linkage metadata on the source job (`deadLetteredAt`, `deadLetterJobId`).
+
+```ts
+await jobQueue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com' },
+  maxAttempts: 3,
+  deadLetterJobType: 'email_dead_letter',
+});
+```
+
+The dead-letter job payload is an envelope:
+
+```ts
+{
+  originalJob: { id, jobType, attempts, maxAttempts },
+  originalPayload: { ... }, // original job payload
+  failure: { message, reason, failedAt },
+}
+```
+
+If `deadLetterJobType` is not set, behavior is unchanged: exhausted jobs remain failed without creating a dead-letter job.
+
 ## Retry configuration
 
 You can control the retry behavior per-job using three options:
