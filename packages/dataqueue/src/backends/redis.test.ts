@@ -544,6 +544,71 @@ describe('Redis backend integration', () => {
     expect(job?.status).toBe('pending');
   });
 
+  it('reclaims an in-flight job via supervisor and allows reprocessing', async () => {
+    let firstAttempt = true;
+    const handler = vi.fn(async () => {
+      if (firstAttempt) {
+        firstAttempt = false;
+        await new Promise<void>(() => {});
+      }
+    });
+
+    const jobId = await jobQueue.addJob({
+      jobType: 'test',
+      payload: { foo: 'redis-reclaim-live-loop' },
+    });
+
+    const firstProcessor = jobQueue.createProcessor(
+      {
+        email: vi.fn(async () => {}),
+        sms: vi.fn(async () => {}),
+        test: handler,
+      },
+      { pollInterval: 25, batchSize: 1, concurrency: 1 },
+    );
+    firstProcessor.startInBackground();
+
+    let processingJob = await jobQueue.getJob(jobId);
+    for (let i = 0; i < 50; i++) {
+      if (processingJob?.status === 'processing') {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      processingJob = await jobQueue.getJob(jobId);
+    }
+    expect(processingJob?.status).toBe('processing');
+
+    await firstProcessor.stopAndDrain(25);
+
+    const supervisor = jobQueue.createSupervisor({
+      stuckJobsTimeoutMinutes: 0,
+      cleanupJobsDaysToKeep: 0,
+      cleanupEventsDaysToKeep: 0,
+      expireTimedOutTokens: false,
+    });
+    const maintenance = await supervisor.start();
+    expect(maintenance.reclaimedJobs).toBe(1);
+
+    const reclaimedJob = await jobQueue.getJob(jobId);
+    expect(reclaimedJob?.status).toBe('pending');
+    expect(reclaimedJob?.lockedAt).toBeNull();
+    expect(reclaimedJob?.lockedBy).toBeNull();
+
+    const secondProcessor = jobQueue.createProcessor(
+      {
+        email: vi.fn(async () => {}),
+        sms: vi.fn(async () => {}),
+        test: handler,
+      },
+      { batchSize: 1, concurrency: 1 },
+    );
+    await secondProcessor.start();
+
+    const completedJob = await jobQueue.getJob(jobId);
+    expect(completedJob?.status).toBe('completed');
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
   it('getPool should throw for Redis backend', () => {
     expect(() => jobQueue.getPool()).toThrow(
       'getPool() is only available with the PostgreSQL backend',
