@@ -2,6 +2,8 @@
 
 ![DataQueue](./apps/website/app/opengraph-image.png)
 
+[![codecov](https://codecov.io/gh/nicnocquee/dataqueue/graph/badge.svg?token=RXECBHHO1Y)](https://codecov.io/gh/nicnocquee/dataqueue)
+
 A lightweight, Redis or PostgreSQL job queue for Node.js/TypeScript projects. Schedule, process, and manage background jobs with ease. Perfect for web apps (Next.js, etc.) deployed to serverless platforms like Vercel, AWS Lambda, etc.
 
 ## Installation
