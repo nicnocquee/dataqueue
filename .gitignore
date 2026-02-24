@@ -3,6 +3,8 @@ dist
 data
 .turbo
 redis-data
+coverage
+**/coverage
 
 # Generated from MDX docs by prebuild
 packages/dataqueue/ai/docs-content.json

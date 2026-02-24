@@ -6,7 +6,7 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "lint": {
       "dependsOn": ["^lint"]
@@ -18,8 +18,16 @@
       "dependsOn": ["^build", "^test"],
       "cache": false
     },
+    "test:coverage": {
+      "dependsOn": ["^build", "^test:coverage"],
+      "cache": false
+    },
     "test:e2e": {
       "dependsOn": ["^build", "^test:e2e"],
+      "cache": false
+    },
+    "test:e2e:coverage": {
+      "dependsOn": ["^build", "^test:e2e:coverage"],
       "cache": false
     },
     "dev": {

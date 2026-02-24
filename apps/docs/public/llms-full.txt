@@ -199,6 +199,7 @@ The `JobOptions` interface defines the options for creating a new job in the que
 
 - `tags?`: _string[]_ — Tags for this job. Used for grouping, searching, or batch operations.
 - `idempotencyKey?`: _string_ — Optional idempotency key. When provided, ensures that only one job exists for a given key. If a job with the same key already exists, `addJob` returns the existing job's ID instead of creating a duplicate. See [Idempotency](/usage/add-job#idempotency) for details.
+- `deadLetterJobType?`: _string_ — Optional dead-letter destination job type. When the job exhausts retries, DataQueue creates a new pending job in this job type with an envelope payload containing source metadata, original payload, and failure context.
 
 ## Example
 
@@ -213,6 +214,7 @@ const job = {
   forceKillOnTimeout: false, // Use graceful shutdown (default)
   tags: ['welcome', 'user'], // tags for grouping/searching
   idempotencyKey: 'welcome-email-user-123', // prevent duplicate jobs
+  deadLetterJobType: 'email_dead_letter', // route exhausted failures
 };
 ```
 
@@ -335,6 +337,7 @@ interface JobOptions {
   retryDelay?: number; // Base delay between retries in seconds (default: 60)
   retryBackoff?: boolean; // Use exponential backoff (default: true)
   retryDelayMax?: number; // Max delay cap in seconds (default: none)
+  deadLetterJobType?: string; // Route exhausted failures to this job type
   group?: { id: string; tier?: string }; // Optional group for global concurrency limits
 }
 ```
@@ -342,6 +345,7 @@ interface JobOptions {
 - `retryDelay` - Base delay between retries in seconds. When `retryBackoff` is true, this is the base for exponential backoff (`retryDelay * 2^attempts`). When false, retries use this fixed delay. Default: `60`.
 - `retryBackoff` - Whether to use exponential backoff. When true, delay doubles with each attempt and includes jitter. Default: `true`.
 - `retryDelayMax` - Maximum delay cap in seconds. Only meaningful when `retryBackoff` is true. No limit when omitted.
+- `deadLetterJobType` - Optional dead-letter destination. When retries are exhausted, a new pending job is created in this job type with an envelope payload (`originalJob`, `originalPayload`, `failure`).
 - `group` - Optional grouping metadata. Use `group.id` to enforce global per-group limits with `ProcessorOptions.groupConcurrency`. `group.tier` is reserved for future policies.
 
 #### AddJobOptions
@@ -497,10 +501,11 @@ interface EditJobOptions {
   retryDelay?: number | null;
   retryBackoff?: boolean | null;
   retryDelayMax?: number | null;
+  deadLetterJobType?: string | null;
 }
 ```
 
-All fields are optional - only provided fields will be updated. Note that `jobType` cannot be changed. Set retry fields to `null` to revert to legacy default behavior.
+All fields are optional - only provided fields will be updated. Note that `jobType` cannot be changed. Set retry fields to `null` to revert to legacy default behavior. Set `deadLetterJobType` to `null` to clear dead-letter routing for pending jobs.
 
 #### Example
 
@@ -858,7 +863,7 @@ The `JobRecord` interface represents a job stored in the queue, including its st
 - `jobType`: _string_ — The type of the job.
 - `payload`: _any_ — The job payload.
 - `status`:
-  _'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'_ —
+  _'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'waiting'_ —
   Current job status.
 - `createdAt`: _Date_ — When the job was created.
 - `updated_at`: _Date_ — When the job was last updated.
@@ -890,6 +895,9 @@ The `JobRecord` interface represents a job stored in the queue, including its st
 - `idempotencyKey?`: _string | null_ — The idempotency key for this job, if one was provided when the job was created.
 - `progress?`: _number | null_ — Progress percentage (0–100) reported by the handler via `ctx.setProgress()`. `null` if no progress has been reported. See [Progress Tracking](/usage/progress-tracking).
 - `output?`: _unknown_ — Handler output stored via `ctx.setOutput(data)` or by returning a value from the handler. `null` if no output has been stored. See [Job Output](/usage/job-output).
+- `deadLetterJobType?`: _string | null_ — Configured dead-letter destination job type for this job.
+- `deadLetteredAt?`: _Date | null_ — Timestamp when this job was routed to a dead-letter job.
+- `deadLetterJobId?`: _number | null_ — Linked dead-letter job ID created when retries were exhausted.
 
 ## Example
 
@@ -1994,8 +2002,9 @@ Type handlers as `JobHandlers<PayloadMap>` — TypeScript enforces a handler for
 1. Creating initJobQueue per request (creates a DB pool each time)
 2. Missing handler for a job type (fails with NoHandler)
 3. Not checking signal.aborted in long handlers
-4. Forgetting reclaimStuckJobs() — crashed workers leave jobs stuck
-5. Skipping migrations (PostgreSQL requires `dataqueue-cli migrate`)
+4. Forgetting dead-letter routing for critical jobs — set `deadLetterJobType` so exhausted failures are inspectable/replayable
+5. Forgetting reclaimStuckJobs() — crashed workers leave jobs stuck
+6. Skipping migrations (PostgreSQL requires `dataqueue-cli migrate`)
 ```
 
 ---
@@ -3058,6 +3067,37 @@ Slug: usage/failed-jobs
 A job handler can fail for many reasons, such as a bug in the code or running out of resources.
 
 When a job fails, it is marked as `failed` and retried up to `maxAttempts` times (default: 3). You can view the error history for a job in its `errorHistory` field.
+
+## Dead-letter queues
+
+You can route permanently failed jobs to a dead-letter job type using `deadLetterJobType`.
+
+When a job exhausts retries (`attempts >= maxAttempts`), DataQueue:
+
+1. Keeps the source job as `failed`.
+2. Creates a new pending dead-letter job in `deadLetterJobType`.
+3. Stores linkage metadata on the source job (`deadLetteredAt`, `deadLetterJobId`).
+
+```ts
+await jobQueue.addJob({
+  jobType: 'email',
+  payload: { to: 'user@example.com' },
+  maxAttempts: 3,
+  deadLetterJobType: 'email_dead_letter',
+});
+```
+
+The dead-letter job payload is an envelope:
+
+```ts
+{
+  originalJob: { id, jobType, attempts, maxAttempts },
+  originalPayload: { ... }, // original job payload
+  failure: { message, reason, failedAt },
+}
+```
+
+If `deadLetterJobType` is not set, behavior is unchanged: exhausted jobs remain failed without creating a dead-letter job.
 
 ## Retry configuration
 

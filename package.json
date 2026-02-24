@@ -15,7 +15,9 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage --filter \"@nicnocquee/dataqueue\"",
     "test:e2e": "turbo run test:e2e --filter e2e",
+    "test:e2e:coverage": "turbo run test:e2e:coverage --filter e2e",
     "format": "prettier --write .",
     "check-format": "prettier --check ."
   },

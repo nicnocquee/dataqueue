@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start --port 3099",
     "test:e2e": "PG_DATAQUEUE_DATABASE=${PG_DATAQUEUE_DATABASE:-postgres://postgres:postgres@localhost:5432/e2e_test} dataqueue-cli migrate && playwright test",
+    "test:e2e:coverage": "rm -rf coverage && mkdir -p coverage/e2e-v8 && NODE_V8_COVERAGE=coverage/e2e-v8 PG_DATAQUEUE_DATABASE=${PG_DATAQUEUE_DATABASE:-postgres://postgres:postgres@localhost:5432/e2e_test} dataqueue-cli migrate && NODE_V8_COVERAGE=coverage/e2e-v8 playwright test && c8 report --temp-directory coverage/e2e-v8 --reporter=text --reporter=html --reporter=lcov --report-dir coverage",
     "test:e2e:ui": "playwright test --ui",
     "migrate-dataqueue": "dataqueue-cli migrate"
   },
@@ -24,6 +25,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "c8": "^10.1.3",
     "typescript": "^5"
   }
 }
