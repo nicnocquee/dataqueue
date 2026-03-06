@@ -2,6 +2,7 @@
 import { spawnSync, SpawnSyncReturns } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { config as loadDotenv } from 'dotenv';
 import { InitDeps, runInit } from './init-command.js';
 import {
   runInstallSkills,
@@ -19,7 +20,10 @@ export interface CliDeps {
   error?: (...args: any[]) => void;
   exit?: (code: number) => void;
   spawnSyncImpl?: (...args: any[]) => SpawnSyncReturns<any>;
+  /** Load env vars from a file path (default: dotenv). Path is resolved from cwd. */
+  loadEnvFromPath?: (filePath: string) => void;
   migrationsDir?: string;
+  cwd?: string;
   initDeps?: InitDeps;
   runInitImpl?: (deps?: InitDeps) => void;
   installSkillsDeps?: InstallSkillsDeps;
@@ -38,6 +42,10 @@ export function runCli(
     error = console.error,
     exit = (code: number) => process.exit(code),
     spawnSyncImpl = spawnSync,
+    cwd = process.cwd(),
+    loadEnvFromPath = (filePath: string) => {
+      loadDotenv({ path: path.resolve(cwd, filePath) });
+    },
     migrationsDir = path.join(__dirname, '../migrations'),
     initDeps,
     runInitImpl = runInit,
@@ -94,11 +102,15 @@ export function runCli(
       restArgs.splice(schemaIndex, 2);
     }
 
-    // Support for --envPath argument
+    // Support for --envPath argument: load env file so PG_DATAQUEUE_DATABASE is set
+    // before spawning node-pg-migrate (node-pg-migrate only loads .env if dotenv is
+    // installed in its context, so we preload here for reliable behavior).
     let envPathArg: string[] = [];
     const envPathIndex = restArgs.indexOf('--envPath');
     if (envPathIndex !== -1 && restArgs[envPathIndex + 1]) {
-      envPathArg = ['--envPath', restArgs[envPathIndex + 1]];
+      const envPath = restArgs[envPathIndex + 1];
+      loadEnvFromPath(envPath);
+      envPathArg = ['--envPath', envPath];
     }
 
     const result: SpawnSyncReturns<any> = spawnSyncImpl(

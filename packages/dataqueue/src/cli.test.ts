@@ -21,7 +21,9 @@ function makeDeps() {
     error: vi.fn(),
     exit: vi.fn(),
     spawnSyncImpl: vi.fn(() => makeSpawnSyncReturns(0)),
+    loadEnvFromPath: vi.fn(),
     migrationsDir: '/migrations',
+    cwd: '/project',
     runInitImpl: vi.fn(),
     runInstallSkillsImpl: vi.fn(),
     runInstallRulesImpl: vi.fn(async () => {}),
@@ -110,6 +112,11 @@ describe('runCli', () => {
       expect.anything(),
     );
     expect(deps.exit).toHaveBeenCalledWith(0);
+  });
+
+  it('calls loadEnvFromPath with env path when --envPath is given', () => {
+    runCli(['node', 'cli.js', 'migrate', '--envPath', '.env.local'], deps);
+    expect(deps.loadEnvFromPath).toHaveBeenCalledWith('.env.local');
   });
 
   it('passes extra args to spawnSyncImpl', () => {
