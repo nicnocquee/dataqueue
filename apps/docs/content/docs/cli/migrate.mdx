@@ -46,6 +46,10 @@ Combine both options:
 npx dataqueue-cli migrate --envPath .env.local --schema my_schema
 ```
 
+When using a custom schema, use the same schema name in your app's connection
+string so the queue finds the tables: `?search_path=my_schema` or
+`?schema=my_schema`. DataQueue supports both parameters.
+
 ## How It Works
 
 Under the hood, `dataqueue-cli migrate` runs:

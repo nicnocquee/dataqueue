@@ -69,9 +69,12 @@ npm run migrate-dataqueue -- --envPath .env.local --schema dataqueue
   [Prisma](https://www.prisma.io), the prisma migration will fail because of the
   additional tables added by DataQueue.
 </Callout>
-<Callout type="warn">
-  You have to use the `--schema` option even when `PG_DATAQUEUE_DATABASE`
-  contains the schema name in `search_path`.
+<Callout>
+  **Matching schema at runtime:** If you run migrations with `--schema
+  dataqueue`, your app must use the same schema when connecting. Include it in
+  the connection string with `?search_path=dataqueue` or `?schema=dataqueue`.
+  DataQueue supports both parameters; use the same value you passed to
+  `--schema` so the queue finds the tables.
 </Callout>
 
 ### Other options

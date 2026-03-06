@@ -29,10 +29,16 @@ export const getJobQueue = () => {
 <Callout>
   The value of `connectionString` must be a [valid Postgres connection
   string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS).
-  For example:
+  To use a custom schema, add either `?search_path=my_schema` (Postgres convention)
+  or `?schema=my_schema` (e.g. Prisma-style). If both are present, `search_path`
+  takes precedence.
 
 ```dotenv
+# Using search_path (Postgres convention)
 PG_DATAQUEUE_DATABASE=postgresql://postgres:password@localhost:5432/my_database?search_path=my_schema
+
+# Or using schema (e.g. Prisma-style)
+PG_DATAQUEUE_DATABASE=postgresql://postgres:password@localhost:5432/my_database?schema=my_schema
 ```
 
 </Callout>

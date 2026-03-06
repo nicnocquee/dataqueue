@@ -172,5 +172,6 @@ On exhaustion, the source job stays `failed` and a new pending dead-letter job i
 3. Not checking `signal.aborted` in long handlers — timed-out jobs keep running.
 4. Skipping maintenance — use `createSupervisor()` to automate reclaim, cleanup, and token expiry. Without it, stuck jobs and old data accumulate.
 5. Skipping migrations (PostgreSQL) — run `dataqueue-cli migrate` first. Redis needs none.
-6. Using `stop()` instead of `stopAndDrain()` — leaves in-flight jobs stuck.
-7. Expecting dead-letter routing without setting `deadLetterJobType` — DLQ is opt-in.
+6. Custom schema mismatch — if you run migrations with `--schema X`, use `?search_path=X` or `?schema=X` in the connection string so the app finds the tables (both params supported).
+7. Using `stop()` instead of `stopAndDrain()` — leaves in-flight jobs stuck.
+8. Expecting dead-letter routing without setting `deadLetterJobType` — DLQ is opt-in.

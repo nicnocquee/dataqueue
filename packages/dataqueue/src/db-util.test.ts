@@ -5,6 +5,7 @@ import fs from 'fs';
 // Use a test schema name that is unlikely to exist
 const TEST_SCHEMA = 'testschema';
 const TEST_CONN = `postgres://postgres:postgres@localhost:5432/postgres?search_path=${TEST_SCHEMA}`;
+const TEST_CONN_SCHEMA_PARAM = `postgres://postgres:postgres@localhost:5432/postgres?schema=${TEST_SCHEMA}`;
 
 // Dummy PEM string for testing
 const DUMMY_PEM =
@@ -30,6 +31,43 @@ describe('createPool', () => {
       expect(res.rows[0].search_path.replace(/"/g, '')).toContain(TEST_SCHEMA);
     } finally {
       client.release();
+    }
+  });
+
+  it('should set search_path when using ?schema= (Prisma-style) in connection string', async () => {
+    const poolWithSchema = createPool({
+      connectionString: TEST_CONN_SCHEMA_PARAM,
+    });
+    try {
+      const client = await poolWithSchema.connect();
+      try {
+        const res = await client.query('SHOW search_path');
+        expect(res.rows[0].search_path.replace(/"/g, '')).toContain(
+          TEST_SCHEMA,
+        );
+      } finally {
+        client.release();
+      }
+    } finally {
+      await poolWithSchema.end();
+    }
+  });
+
+  it('should prefer search_path over schema when both are in connection string', async () => {
+    const connBoth = `postgres://postgres:postgres@localhost:5432/postgres?search_path=${TEST_SCHEMA}&schema=other`;
+    const poolBoth = createPool({ connectionString: connBoth });
+    try {
+      const client = await poolBoth.connect();
+      try {
+        const res = await client.query('SHOW search_path');
+        expect(res.rows[0].search_path.replace(/"/g, '')).toContain(
+          TEST_SCHEMA,
+        );
+      } finally {
+        client.release();
+      }
+    } finally {
+      await poolBoth.end();
     }
   });
 

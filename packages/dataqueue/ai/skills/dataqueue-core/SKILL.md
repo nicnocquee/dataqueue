@@ -247,7 +247,8 @@ process.on('SIGTERM', async () => {
 3. **Not checking `signal.aborted`** — timed-out jobs keep running in the background. Always check the signal in long-running handlers.
 4. **Skipping maintenance** — use `createSupervisor()` to automate reclaiming stuck jobs, cleaning up old data, and expiring tokens. Without it, crashed workers leave jobs stuck in `processing` and tables grow unbounded.
 5. **Forgetting to run migrations** — PostgreSQL requires `dataqueue-cli migrate` before use. Redis needs no migrations.
-6. **Not calling `stopAndDrain` on shutdown** — use `stopAndDrain()` (not `stop()`) for graceful shutdown to avoid stuck jobs.
-7. **Forgetting to commit/rollback when using `db` option** — the `addJob` INSERT sits in an open transaction. If you never `COMMIT` or `ROLLBACK`, the connection leaks and the job is invisible to other sessions.
-8. **Using `db` option with Redis** — transactional job creation is PostgreSQL only. The Redis backend throws if `db` is provided.
-9. **Expecting dead-letter routing without configuration** — DLQ is opt-in. Set `deadLetterJobType` on jobs (or cron schedules) that require dead-letter capture.
+6. **Custom schema** — Connection string supports `?search_path=myschema` or `?schema=myschema`; use the same schema as `--schema` when migrating.
+7. **Not calling `stopAndDrain` on shutdown** — use `stopAndDrain()` (not `stop()`) for graceful shutdown to avoid stuck jobs.
+8. **Forgetting to commit/rollback when using `db` option** — the `addJob` INSERT sits in an open transaction. If you never `COMMIT` or `ROLLBACK`, the connection leaks and the job is invisible to other sessions.
+9. **Using `db` option with Redis** — transactional job creation is PostgreSQL only. The Redis backend throws if `db` is provided.
+10. **Expecting dead-letter routing without configuration** — DLQ is opt-in. Set `deadLetterJobType` on jobs (or cron schedules) that require dead-letter capture.

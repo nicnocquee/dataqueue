@@ -18,6 +18,11 @@ createPool(config: PostgresJobQueueConfig['databaseConfig']): Pool
 - `config`: The database connection configuration (connection string, host, port, database, user, password, ssl).
 - Returns a `Pool` instance from `pg`.
 
+When using a connection string, you can set the PostgreSQL schema for the session
+via `?search_path=myschema` (Postgres convention) or `?schema=myschema` (e.g.
+Prisma-style). If both are present, `search_path` takes precedence. The pool will
+run `SET search_path TO ...` on each connection.
+
 ## Example
 
 ```ts

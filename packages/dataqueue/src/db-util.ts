@@ -18,6 +18,10 @@ function loadPemOrFile(value?: string): string | undefined {
 /**
  * Create a database connection pool with flexible SSL certificate loading.
  *
+ * Schema: the connection string may include a schema for table resolution via
+ * either ?search_path=myschema (Postgres convention) or ?schema=myschema
+ * (e.g. Prisma-style). If both are present, search_path takes precedence.
+ *
  * SSL config example (for local file paths):
  *   ssl: {
  *     ca: process.env.PGSSLROOTCERT, // PEM string or 'file://...'
@@ -37,7 +41,11 @@ export const createPool = (
   if (config.connectionString) {
     try {
       const url = new URL(config.connectionString);
-      searchPath = url.searchParams.get('search_path') || undefined;
+      // Support both search_path (Postgres convention) and schema (e.g. Prisma-style)
+      searchPath =
+        url.searchParams.get('search_path') ||
+        url.searchParams.get('schema') ||
+        undefined;
       sslmode = url.searchParams.get('sslmode') || undefined;
       if (sslmode === 'no-verify') {
         ssl = { rejectUnauthorized: false };
@@ -45,9 +53,12 @@ export const createPool = (
     } catch (e) {
       const parsed = parse(config.connectionString);
       if (parsed.options) {
-        const match = parsed.options.match(/search_path=([^\s]+)/);
-        if (match) {
-          searchPath = match[1];
+        const searchPathMatch = parsed.options.match(/search_path=([^\s&]+)/);
+        const schemaMatch = parsed.options.match(/schema=([^\s&]+)/);
+        if (searchPathMatch) {
+          searchPath = searchPathMatch[1];
+        } else if (schemaMatch) {
+          searchPath = schemaMatch[1];
         }
       }
       sslmode = typeof parsed.sslmode === 'string' ? parsed.sslmode : undefined;
