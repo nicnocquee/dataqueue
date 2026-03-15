@@ -154,7 +154,7 @@ const byName = await jobQueue.getCronJobByName('daily-report');
 The cron feature requires the `cron_schedules` table. Run the DataQueue migrations to create it:
 
 ```bash
-npx dataqueue-cli migrate up
+npx @nicnocquee/dataqueue migrate up
 ```
 
 If you're already using DataQueue, just run migrations again — the new table will be added alongside existing ones.

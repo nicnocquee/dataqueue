@@ -210,7 +210,7 @@ describe('runInstallMcp', () => {
 
     // Assert
     expect(deps.log).toHaveBeenCalledWith(
-      expect.stringContaining('npx dataqueue-cli mcp'),
+      expect.stringContaining('npx @nicnocquee/dataqueue mcp'),
     );
   });
 });

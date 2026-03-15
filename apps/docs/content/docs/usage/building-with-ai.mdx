@@ -12,7 +12,7 @@ We provide multiple tools to help AI coding assistants write correct DataQueue c
 Portable instruction sets that teach any AI coding assistant DataQueue best practices.
 
 ```bash
-npx dataqueue-cli install-skills
+npx @nicnocquee/dataqueue install-skills
 ```
 
 Skills are installed as `SKILL.md` files into your AI tool's skills directory (`.cursor/skills/`, `.claude/skills/`, etc.). They cover core patterns, advanced features (waits, cron, tokens), and React/Dashboard integration.
@@ -22,7 +22,7 @@ Skills are installed as `SKILL.md` files into your AI tool's skills directory (`
 Comprehensive rule sets installed directly into your AI client's config files.
 
 ```bash
-npx dataqueue-cli install-rules
+npx @nicnocquee/dataqueue install-rules
 ```
 
 The installer prompts you to choose your AI client and writes rules to the appropriate location:
@@ -40,7 +40,7 @@ The installer prompts you to choose your AI client and writes rules to the appro
 Give your AI assistant direct access to DataQueue documentation — search docs, fetch specific pages, and list all available topics.
 
 ```bash
-npx dataqueue-cli install-mcp
+npx @nicnocquee/dataqueue install-mcp
 ```
 
 The installer prompts you to choose your AI client and writes the MCP config to the appropriate location. Currently supported clients:
@@ -52,7 +52,7 @@ The installer prompts you to choose your AI client and writes the MCP config to 
 | VS Code (Copilot) | `.vscode/mcp.json`                    |
 | Windsurf          | `~/.codeium/windsurf/mcp_config.json` |
 
-The MCP server runs via `npx dataqueue-cli mcp` and communicates over stdio. It exposes three tools:
+The MCP server runs via `npx @nicnocquee/dataqueue mcp` and communicates over stdio. It exposes three tools:
 
 | Tool             | Description                              |
 | ---------------- | ---------------------------------------- |

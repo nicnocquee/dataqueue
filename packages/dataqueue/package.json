@@ -15,7 +15,8 @@
     "dist/",
     "src/",
     "migrations/",
-    "ai/"
+    "ai/",
+    "cli.cjs"
   ],
   "scripts": {
     "prebuild": "npx tsx ai/build-docs-content.ts && npx tsx ai/build-llms-full.ts",
@@ -84,6 +85,7 @@
     }
   },
   "bin": {
+    "dataqueue": "./cli.cjs",
     "dataqueue-cli": "./cli.cjs",
     "dataqueue-mcp": "./dist/mcp-server.js"
   }
