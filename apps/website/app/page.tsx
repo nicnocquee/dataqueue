@@ -20,6 +20,7 @@ import {
   X,
   Minus,
   CalendarClock,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -148,6 +149,13 @@ const comparisonRows: ComparisonRow[] = [
     pgboss: false,
     bullmq: 'Third-party',
     trigger: 'Built-in',
+  },
+  {
+    feature: 'AI / LLM Ready',
+    dataqueue: 'MCP, rules, skills',
+    pgboss: false,
+    bullmq: false,
+    trigger: 'MCP, rules, skills',
   },
   {
     feature: 'Wait / Pause Jobs',
@@ -336,6 +344,12 @@ queue.process<EmailJob>('email', async (job) => {
       description:
         'Add a complete admin dashboard to your Next.js app with a single route file. View, inspect, and manage jobs without building custom UI.',
     },
+    {
+      icon: Sparkles,
+      title: 'LLM Ready',
+      description:
+        'Built for AI-assisted development: MCP tools, Cursor rules, and skills so assistants can reason about your queue, run migrations, and use the API correctly.',
+    },
   ];
 
   const benefits = [
@@ -366,6 +380,11 @@ queue.process<EmailJob>('email', async (job) => {
       title: 'Simple Migration',
       description:
         'Easy to integrate into existing Node.js and TypeScript projects',
+    },
+    {
+      title: 'AI & LLM Ready',
+      description:
+        'MCP, rules, and skills included so Cursor and other AI tools can work with DataQueue out of the box',
     },
   ];
 
@@ -445,12 +464,21 @@ queue.process<EmailJob>('email', async (job) => {
               </span>{' '}
               with ease
             </h1>
-            <p className="mb-8 text-xl text-muted-foreground sm:text-2xl">
+            <p className="mb-4 text-xl text-muted-foreground sm:text-2xl">
               A lightweight job queue backed by{' '}
               <span className="font-semibold text-foreground">PostgreSQL</span>{' '}
               or <span className="font-semibold text-foreground">Redis</span>.
               Use your existing database — no extra infra needed.{' '}
               <span className="highlight-marker">Open Source.</span>
+            </p>
+            <p className="mb-8 flex flex-wrap items-center justify-center gap-2 text-base text-muted-foreground sm:text-lg">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/50 px-3 py-1 font-medium text-foreground/90">
+                <Sparkles className="h-4 w-4 text-purple-500" />
+                LLM ready
+              </span>
+              <span className="text-muted-foreground/80">
+                — MCP, rules & skills for Cursor and AI-assisted workflows
+              </span>
             </p>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <a
