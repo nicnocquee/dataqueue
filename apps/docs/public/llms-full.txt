@@ -1081,7 +1081,7 @@ Slug: cli
 DataQueue ships a CLI tool called `dataqueue-cli` that you can run directly with `npx`:
 
 ```bash
-npx dataqueue-cli <command> [options]
+npx @nicnocquee/dataqueue <command> [options]
 ```
 
 ## Commands
@@ -1130,7 +1130,7 @@ Slug: cli/init
 Scaffolds your Next.js project with everything needed to start using DataQueue — API routes, a job queue singleton, a cron script, and all required dependencies.
 
 ```bash
-npx dataqueue-cli init
+npx @nicnocquee/dataqueue init
 ```
 
 ## What It Does
@@ -1214,7 +1214,7 @@ Slug: cli/install-mcp
 Configures the DataQueue [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server in your AI client's configuration. This gives your AI assistant direct access to DataQueue documentation.
 
 ```bash
-npx dataqueue-cli install-mcp
+npx @nicnocquee/dataqueue install-mcp
 ```
 
 ## Interactive Prompt
@@ -1275,7 +1275,7 @@ Slug: cli/install-rules
 Installs comprehensive DataQueue rule sets into your AI client's configuration. Rules give AI assistants detailed guidance for generating correct DataQueue code.
 
 ```bash
-npx dataqueue-cli install-rules
+npx @nicnocquee/dataqueue install-rules
 ```
 
 ## Interactive Prompt
@@ -1333,7 +1333,7 @@ Slug: cli/install-skills
 Copies DataQueue skill files (`SKILL.md`) into your AI coding assistant's skills directory. Skills teach AI assistants DataQueue patterns and best practices.
 
 ```bash
-npx dataqueue-cli install-skills
+npx @nicnocquee/dataqueue install-skills
 ```
 
 ## Skills Installed
@@ -1378,7 +1378,7 @@ Slug: cli/mcp
 Starts the DataQueue MCP (Model Context Protocol) server over stdio. This server gives AI coding assistants live access to the full DataQueue documentation.
 
 ```bash
-npx dataqueue-cli mcp
+npx @nicnocquee/dataqueue mcp
 ```
 
 > **Note:** You typically don't run this command directly. Use
@@ -1420,7 +1420,7 @@ Slug: cli/migrate
 Runs the DataQueue database migrations against your PostgreSQL database using [node-pg-migrate](https://github.com/salsita/node-pg-migrate).
 
 ```bash
-npx dataqueue-cli migrate [options]
+npx @nicnocquee/dataqueue migrate [options]
 ```
 
 ## Options
@@ -1439,25 +1439,25 @@ The migration reads the connection string from the `PG_DATAQUEUE_DATABASE` envir
 Run migrations using environment variables already set in your shell:
 
 ```bash
-npx dataqueue-cli migrate
+npx @nicnocquee/dataqueue migrate
 ```
 
 Load environment variables from a specific `.env` file:
 
 ```bash
-npx dataqueue-cli migrate --envPath .env.local
+npx @nicnocquee/dataqueue migrate --envPath .env.local
 ```
 
 Run migrations in a custom PostgreSQL schema:
 
 ```bash
-npx dataqueue-cli migrate --schema my_schema
+npx @nicnocquee/dataqueue migrate --schema my_schema
 ```
 
 Combine both options:
 
 ```bash
-npx dataqueue-cli migrate --envPath .env.local --schema my_schema
+npx @nicnocquee/dataqueue migrate --envPath .env.local --schema my_schema
 ```
 
 ## How It Works
@@ -1518,32 +1518,32 @@ A demo Next.js app that showcases all features of DataQueue is available [here](
 
 # Comparison
 
-> How DataQueue compares to BullMQ and Trigger.dev
+> How DataQueue compares to pg-boss, BullMQ, and Trigger.dev
 
 Slug: intro/comparison
 
-Choosing a job queue depends on your stack, infrastructure preferences, and the features you need. Here is a side-by-side comparison of **DataQueue**, **BullMQ**, and **Trigger.dev**.
+Choosing a job queue depends on your stack, infrastructure preferences, and the features you need. Here is a side-by-side comparison of **DataQueue**, **pg-boss**, **BullMQ**, and **Trigger.dev**.
 
-| Feature                 | DataQueue                                               | BullMQ                                      | Trigger.dev                             |
-| ----------------------- | ------------------------------------------------------- | ------------------------------------------- | --------------------------------------- |
-| **Backend**             | PostgreSQL or Redis                                     | Redis only                                  | Cloud or self-hosted (Postgres + Redis) |
-| **Type Safety**         | Full generic `PayloadMap`                               | Basic types                                 | Full TypeScript tasks                   |
-| **Scheduling**          | `runAt`, Cron                                           | Cron, delayed, recurring                    | Cron, delayed                           |
-| **Retries**             | Exponential backoff, configurable `maxAttempts`         | Exponential backoff, custom strategies, DLQ | Auto retries, bulk replay, DLQ          |
-| **Priority**            | Integer priority                                        | Priority levels                             | Queue-based priority                    |
-| **Concurrency Control** | `batchSize` + `concurrency` + global `groupConcurrency` | Built-in                                    | Per-task + shared limits                |
-| **Rate Limiting**       | -                                                       | Yes                                         | Via concurrency limits                  |
-| **Job Flows / DAGs**    | -                                                       | Parent-child flows                          | Workflows                               |
-| **Dashboard**           | Built-in Next.js package                                | Third-party (Bull Board, etc.)              | Built-in web dashboard                  |
-| **Wait / Pause Jobs**   | `waitFor`, `waitUntil`, token system                    | -                                           | Durable execution                       |
-| **Human-in-the-Loop**   | Token system                                            | -                                           | Yes                                     |
-| **Progress Tracking**   | Yes (0-100%)                                            | Yes                                         | Yes (realtime)                          |
-| **Serverless-First**    | Yes                                                     | No (needs long-running process)             | Yes (cloud)                             |
-| **Self-Hosted**         | Yes                                                     | Yes (your Redis)                            | Yes (containers)                        |
-| **Cloud Option**        | -                                                       | -                                           | Yes                                     |
-| **License**             | MIT                                                     | MIT                                         | Apache-2.0                              |
-| **Pricing**             | Free (OSS)                                              | Free (OSS)                                  | Free tier + paid plans                  |
-| **Infrastructure**      | Your own Postgres or Redis                              | Your own Redis                              | Their cloud or your infra               |
+| Feature                 | DataQueue                                               | pg-boss                  | BullMQ                                      | Trigger.dev                             |
+| ----------------------- | ------------------------------------------------------- | ------------------------ | ------------------------------------------- | --------------------------------------- |
+| **Backend**             | PostgreSQL or Redis                                     | PostgreSQL only          | Redis only                                  | Cloud or self-hosted (Postgres + Redis) |
+| **Type Safety**         | Full generic `PayloadMap`                               | TypeScript support       | Basic types                                 | Full TypeScript tasks                   |
+| **Scheduling**          | `runAt`, Cron                                           | Cron, delayed jobs       | Cron, delayed, recurring                    | Cron, delayed                           |
+| **Retries**             | Exponential backoff, configurable `maxAttempts`         | Retries with backoff     | Exponential backoff, custom strategies, DLQ | Auto retries, bulk replay, DLQ          |
+| **Priority**            | Integer priority                                        | Priority support         | Priority levels                             | Queue-based priority                    |
+| **Concurrency Control** | `batchSize` + `concurrency` + global `groupConcurrency` | Workers + queue policies | Built-in                                    | Per-task + shared limits                |
+| **Rate Limiting**       | -                                                       | -                        | Yes                                         | Via concurrency limits                  |
+| **Job Flows / DAGs**    | -                                                       | -                        | Parent-child flows                          | Workflows                               |
+| **Dashboard**           | Built-in Next.js package                                | -                        | Third-party (Bull Board, etc.)              | Built-in web dashboard                  |
+| **Wait / Pause Jobs**   | `waitFor`, `waitUntil`, token system                    | Delayed/scheduled jobs   | -                                           | Durable execution                       |
+| **Human-in-the-Loop**   | Token system                                            | -                        | -                                           | Yes                                     |
+| **Progress Tracking**   | Yes (0-100%)                                            | -                        | Yes                                         | Yes (realtime)                          |
+| **Serverless-First**    | Yes                                                     | Yes                      | No (needs long-running process)             | Yes (cloud)                             |
+| **Self-Hosted**         | Yes                                                     | Yes                      | Yes (your Redis)                            | Yes (containers)                        |
+| **Cloud Option**        | -                                                       | -                        | -                                           | Yes                                     |
+| **License**             | MIT                                                     | MIT                      | MIT                                         | Apache-2.0                              |
+| **Pricing**             | Free (OSS)                                              | Free (OSS)               | Free (OSS)                                  | Free tier + paid plans                  |
+| **Infrastructure**      | Your own Postgres or Redis                              | Your own Postgres        | Your own Redis                              | Their cloud or your infra               |
 
 ## Where DataQueue shines
 
@@ -1874,7 +1874,7 @@ We provide multiple tools to help AI coding assistants write correct DataQueue c
 Portable instruction sets that teach any AI coding assistant DataQueue best practices.
 
 ```bash
-npx dataqueue-cli install-skills
+npx @nicnocquee/dataqueue install-skills
 ```
 
 Skills are installed as `SKILL.md` files into your AI tool's skills directory (`.cursor/skills/`, `.claude/skills/`, etc.). They cover core patterns, advanced features (waits, cron, tokens), and React/Dashboard integration.
@@ -1884,7 +1884,7 @@ Skills are installed as `SKILL.md` files into your AI tool's skills directory (`
 Comprehensive rule sets installed directly into your AI client's config files.
 
 ```bash
-npx dataqueue-cli install-rules
+npx @nicnocquee/dataqueue install-rules
 ```
 
 The installer prompts you to choose your AI client and writes rules to the appropriate location:
@@ -1902,7 +1902,7 @@ The installer prompts you to choose your AI client and writes rules to the appro
 Give your AI assistant direct access to DataQueue documentation — search docs, fetch specific pages, and list all available topics.
 
 ```bash
-npx dataqueue-cli install-mcp
+npx @nicnocquee/dataqueue install-mcp
 ```
 
 The installer prompts you to choose your AI client and writes the MCP config to the appropriate location. Currently supported clients:
@@ -1914,7 +1914,7 @@ The installer prompts you to choose your AI client and writes the MCP config to 
 | VS Code (Copilot) | `.vscode/mcp.json`                    |
 | Windsurf          | `~/.codeium/windsurf/mcp_config.json` |
 
-The MCP server runs via `npx dataqueue-cli mcp` and communicates over stdio. It exposes three tools:
+The MCP server runs via `npx @nicnocquee/dataqueue mcp` and communicates over stdio. It exposes three tools:
 
 | Tool             | Description                              |
 | ---------------- | ---------------------------------------- |
@@ -2360,7 +2360,7 @@ const byName = await jobQueue.getCronJobByName('daily-report');
 The cron feature requires the `cron_schedules` table. Run the DataQueue migrations to create it:
 
 ```bash
-npx dataqueue-cli migrate up
+npx @nicnocquee/dataqueue migrate up
 ```
 
 If you're already using DataQueue, just run migrations again — the new table will be added alongside existing ones.
@@ -4540,7 +4540,7 @@ In this docs, we'll use a Next.js with App Router project which is deployed to V
 If you're using Next.js, you can scaffold everything — API routes, a job queue singleton, a cron script, and all dependencies — with a single command:
 
 ```bash
-npx dataqueue-cli init
+npx @nicnocquee/dataqueue init
 ```
 
 The command auto-detects your project structure (App Router vs Pages Router, `src/` directory vs root) and creates all the files you need. See the [`init` CLI reference](/cli/init) for full details.

@@ -177,7 +177,7 @@ export async function runInstallMcp({
       existsSync,
       log,
     });
-    log('\nDone! The MCP server will run via: npx dataqueue-cli mcp');
+    log('\nDone! The MCP server will run via: npx @nicnocquee/dataqueue mcp');
   } catch (err) {
     error('Failed to install MCP config:', err);
     exit(1);
