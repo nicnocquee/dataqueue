@@ -22,7 +22,7 @@ describe('upsertMcpConfig', () => {
     upsertMcpConfig(
       '/path/mcp.json',
       'dataqueue',
-      { command: 'npx', args: ['dataqueue-cli', 'mcp'] },
+      { command: 'npx', args: ['@nicnocquee/dataqueue', 'mcp'] },
       deps,
     );
 
@@ -30,7 +30,7 @@ describe('upsertMcpConfig', () => {
     const written = JSON.parse(deps.writeFileSync.mock.calls[0][1] as string);
     expect(written.mcpServers.dataqueue).toEqual({
       command: 'npx',
-      args: ['dataqueue-cli', 'mcp'],
+      args: ['@nicnocquee/dataqueue', 'mcp'],
     });
   });
 
@@ -49,7 +49,7 @@ describe('upsertMcpConfig', () => {
     upsertMcpConfig(
       '/path/mcp.json',
       'dataqueue',
-      { command: 'npx', args: ['dataqueue-cli', 'mcp'] },
+      { command: 'npx', args: ['@nicnocquee/dataqueue', 'mcp'] },
       deps,
     );
 
@@ -58,7 +58,7 @@ describe('upsertMcpConfig', () => {
     expect(written.mcpServers.other).toEqual({ command: 'other' });
     expect(written.mcpServers.dataqueue).toEqual({
       command: 'npx',
-      args: ['dataqueue-cli', 'mcp'],
+      args: ['@nicnocquee/dataqueue', 'mcp'],
     });
   });
 
@@ -133,7 +133,10 @@ describe('runInstallMcp', () => {
         .calls[0][1] as string,
     );
     expect(written.mcpServers.dataqueue.command).toBe('npx');
-    expect(written.mcpServers.dataqueue.args).toEqual(['dataqueue-cli', 'mcp']);
+    expect(written.mcpServers.dataqueue.args).toEqual([
+      '@nicnocquee/dataqueue',
+      'mcp',
+    ]);
   });
 
   it('installs MCP config for Claude Code (option 2)', async () => {

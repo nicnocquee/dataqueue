@@ -70,7 +70,7 @@ export function upsertMcpConfig(
 
 const MCP_SERVER_CONFIG = {
   command: 'npx',
-  args: ['dataqueue-cli', 'mcp'],
+  args: ['@nicnocquee/dataqueue', 'mcp'],
 };
 
 const MCP_CLIENTS: Record<string, McpClientConfig> = {
