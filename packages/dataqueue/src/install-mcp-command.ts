@@ -70,7 +70,7 @@ export function upsertMcpConfig(
 
 const MCP_SERVER_CONFIG = {
   command: 'npx',
-  args: ['dataqueue-cli', 'mcp'],
+  args: ['@nicnocquee/dataqueue', 'mcp'],
 };
 
 const MCP_CLIENTS: Record<string, McpClientConfig> = {
@@ -177,7 +177,7 @@ export async function runInstallMcp({
       existsSync,
       log,
     });
-    log('\nDone! The MCP server will run via: npx dataqueue-cli mcp');
+    log('\nDone! The MCP server will run via: npx @nicnocquee/dataqueue mcp');
   } catch (err) {
     error('Failed to install MCP config:', err);
     exit(1);
