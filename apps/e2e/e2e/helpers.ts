@@ -2,6 +2,12 @@ import { APIRequestContext } from '@playwright/test';
 
 const BASE = 'http://localhost:3099';
 
+/**
+ * Enqueue a single job via the e2e API.
+ *
+ * @param request - Playwright API request context.
+ * @param options - Job fields; `dependsOn` uses real job ids (negative batch refs are not valid here).
+ */
 export async function addJob(
   request: APIRequestContext,
   options: {
@@ -14,10 +20,36 @@ export async function addJob(
     forceKillOnTimeout?: boolean;
     tags?: string[];
     idempotencyKey?: string;
+    dependsOn?: { jobIds?: number[]; tags?: string[] };
   },
 ) {
   const res = await request.post(`${BASE}/api/jobs`, { data: options });
   return res.json() as Promise<{ id: number }>;
+}
+
+/**
+ * Batch-insert jobs (supports `dependsOn.jobIds` batch placeholders: -1 = first job in the batch, etc.).
+ *
+ * @param request - Playwright API request context.
+ * @param jobs - Same shape as {@link addJob} per entry.
+ */
+export async function addJobsBatch(
+  request: APIRequestContext,
+  jobs: Array<{
+    jobType: string;
+    payload: Record<string, unknown>;
+    maxAttempts?: number;
+    priority?: number;
+    runAt?: string;
+    timeoutMs?: number;
+    forceKillOnTimeout?: boolean;
+    tags?: string[];
+    idempotencyKey?: string;
+    dependsOn?: { jobIds?: number[]; tags?: string[] };
+  }>,
+) {
+  const res = await request.post(`${BASE}/api/jobs/batch`, { data: { jobs } });
+  return res.json() as Promise<{ ids: number[] }>;
 }
 
 export async function getJob(request: APIRequestContext, id: number) {

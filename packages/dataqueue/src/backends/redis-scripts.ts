@@ -167,6 +167,9 @@ return id
  *     runAtMs, timeoutMs, forceKillOnTimeout, tags (JSON or "null"),
  *     idempotencyKey, retryDelay, retryBackoff, retryDelayMax, deadLetterJobType
  * Returns: array of job IDs (one per input job, in order)
+ *
+ * Note: JSON null decodes to cjson.null, which is truthy in Lua; optional fields must
+ * be normalized with explicit nil/cjson.null checks before tostring/cjson.decode.
  */
 export const ADD_JOBS_SCRIPT = `
 local prefix = KEYS[1]
@@ -192,8 +195,8 @@ for i, job in ipairs(jobs) do
   local deadLetterJobType = tostring(job.deadLetterJobType)
   local groupId = tostring(job.groupId)
   local groupTier = tostring(job.groupTier)
-  local dependsOnJobIdsJson = job.dependsOnJobIds and tostring(job.dependsOnJobIds) or "null"
-  local dependsOnTagsJson = job.dependsOnTags and tostring(job.dependsOnTags) or "null"
+  local dependsOnJobIdsJson = (job.dependsOnJobIds ~= nil and job.dependsOnJobIds ~= cjson.null) and tostring(job.dependsOnJobIds) or "null"
+  local dependsOnTagsJson = (job.dependsOnTags ~= nil and job.dependsOnTags ~= cjson.null) and tostring(job.dependsOnTags) or "null"
 
   -- Idempotency check
   local skip = false
