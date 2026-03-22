@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getJobQueue } from '@/lib/queue';
+import type { JobOptions, JobType } from '@nicnocquee/dataqueue';
+import { getJobQueue, type TestPayloadMap } from '@/lib/queue';
 
 /**
  * POST /api/jobs/batch — insert multiple jobs (supports batch-relative dependsOn.jobIds).
@@ -27,19 +28,20 @@ export async function POST(request: NextRequest) {
       );
     }
     const queue = getJobQueue();
+    const mapped = jobs.map((j) => ({
+      jobType: j.jobType,
+      payload: j.payload,
+      maxAttempts: j.maxAttempts,
+      priority: j.priority,
+      runAt: j.runAt ? new Date(j.runAt) : undefined,
+      timeoutMs: j.timeoutMs,
+      forceKillOnTimeout: j.forceKillOnTimeout,
+      tags: j.tags,
+      idempotencyKey: j.idempotencyKey,
+      dependsOn: j.dependsOn,
+    }));
     const ids = await queue.addJobs(
-      jobs.map((j) => ({
-        jobType: j.jobType,
-        payload: j.payload,
-        maxAttempts: j.maxAttempts,
-        priority: j.priority,
-        runAt: j.runAt ? new Date(j.runAt) : undefined,
-        timeoutMs: j.timeoutMs,
-        forceKillOnTimeout: j.forceKillOnTimeout,
-        tags: j.tags,
-        idempotencyKey: j.idempotencyKey,
-        dependsOn: j.dependsOn,
-      })),
+      mapped as JobOptions<TestPayloadMap, JobType<TestPayloadMap>>[],
     );
     return NextResponse.json({ ids });
   } catch (error) {
