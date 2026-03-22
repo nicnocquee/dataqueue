@@ -4,7 +4,7 @@ import { JobStatus } from '@nicnocquee/dataqueue';
 
 /**
  * POST /api/jobs - Add a new job
- * Body: { jobType, payload, maxAttempts?, priority?, runAt?, timeoutMs?, forceKillOnTimeout?, tags?, idempotencyKey? }
+ * Body: { jobType, payload, maxAttempts?, priority?, runAt?, timeoutMs?, forceKillOnTimeout?, tags?, idempotencyKey?, dependsOn? }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       forceKillOnTimeout: body.forceKillOnTimeout,
       tags: body.tags,
       idempotencyKey: body.idempotencyKey,
+      dependsOn: body.dependsOn,
     });
     return NextResponse.json({ id });
   } catch (error) {

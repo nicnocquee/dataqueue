@@ -1,9 +1,48 @@
 ---
 name: dataqueue-advanced
-description: Advanced DataQueue patterns — step memoization, waits, tokens, cron, timeouts, tags, idempotency.
+description: Advanced DataQueue patterns — job dependencies, step memoization, waits, tokens, cron, timeouts, tags, idempotency.
 ---
 
 # DataQueue Advanced Patterns
+
+## Job Dependencies
+
+Use `dependsOn` on `addJob` or `addJobs` so a job stays **pending** until prerequisites are satisfied (PostgreSQL and Redis). Combining `jobIds` and `tags` requires **both** to be clear (logical AND).
+
+### Prerequisites by job id (`dependsOn.jobIds`)
+
+The job runs only after **every** listed job has reached `completed`. DataQueue validates ids, rejects self-dependencies and cycles, and cancels dependents (transitively) if a prerequisite ends `failed` or `cancelled`.
+
+- **`addJob`**: use only **positive** existing job ids.
+- **`addJobs`**: import `batchDepRef` from `@nicnocquee/dataqueue` to point at another entry in the **same** batch — e.g. `dependsOn: { jobIds: [batchDepRef(0)] }` waits for the job at index `0`.
+
+```typescript
+import { batchDepRef } from '@nicnocquee/dataqueue';
+
+const [idA, idB] = await queue.addJobs([
+  { jobType: 'ingest', payload: { fileId: '1' } },
+  {
+    jobType: 'transform',
+    payload: { fileId: '1' },
+    dependsOn: { jobIds: [batchDepRef(0)] },
+  },
+]);
+```
+
+### Tag drain (`dependsOn.tags`)
+
+Wait until there is **no** other active job (`pending`, `processing`, or `waiting`) whose `tags` are a **superset** of every tag in `dependsOn.tags`. Use for “wave” or tenant barriers. If a matching job fails or is cancelled, dependent jobs waiting on those tags are cancelled (transitively).
+
+```typescript
+await queue.addJob({
+  jobType: 'finalize_wave',
+  payload: { wave: 2 },
+  tags: ['wave:2'],
+  dependsOn: { tags: ['wave:1'] },
+});
+```
+
+Persisted fields on `JobRecord`: `dependsOnJobIds`, `dependsOnTags`.
 
 ## Step Memoization with ctx.run()
 

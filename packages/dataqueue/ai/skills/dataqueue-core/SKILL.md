@@ -143,6 +143,15 @@ const jobIds = await queue.addJobs([
 
 Each job can independently have its own `idempotencyKey`, `priority`, `runAt`, `tags`, etc. The `{ db }` transactional option is also supported (PostgreSQL only).
 
+### Job dependencies
+
+Optional `dependsOn` defers a job until prerequisites are satisfied:
+
+- `dependsOn.jobIds` — wait until every listed job is `completed` (ids must exist; cycles and self-deps are rejected).
+- `dependsOn.tags` — tag-drain: wait while another active job’s tags are a superset of every listed tag.
+
+For multiple jobs in one `addJobs` call, import `batchDepRef` and pass `batchDepRef(0)`, `batchDepRef(1)`, etc., to depend on earlier entries in the same array. See the **dataqueue-advanced** skill for failure/cancellation propagation and full semantics.
+
 ### Transactional Job Creation (PostgreSQL only)
 
 Pass an external `pg.PoolClient` inside a transaction via `{ db: client }`:

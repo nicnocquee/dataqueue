@@ -85,6 +85,10 @@ export const sendBulkEmails = async (
 - **Idempotency**: Each job's `idempotencyKey` is handled independently. Duplicate keys resolve to the existing job's ID.
 - **Transactional**: The `{ db }` option works with `addJobs` the same way as `addJob` (PostgreSQL only).
 
+## Job dependencies
+
+Use `dependsOn` to wait for other jobs to finish (`jobIds`) and/or for a [tag drain](/usage/job-dependencies#dependsontags-tag-drain) (`tags`). In `addJobs`, use `batchDepRef` to point at other jobs in the same batch. See [Job dependencies](/usage/job-dependencies).
+
 ## Idempotency
 
 You can provide an `idempotencyKey` when adding a job to prevent duplicate jobs. If a job with the same key already exists in the queue, `addJob` returns the existing job's ID instead of creating a new one.

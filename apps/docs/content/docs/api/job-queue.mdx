@@ -117,6 +117,7 @@ interface JobOptions {
   retryDelayMax?: number; // Max delay cap in seconds (default: none)
   deadLetterJobType?: string; // Route exhausted failures to this job type
   group?: { id: string; tier?: string }; // Optional group for global concurrency limits
+  dependsOn?: { jobIds?: number[]; tags?: string[] }; // Prerequisites — see Job dependencies
 }
 ```
 
@@ -125,6 +126,7 @@ interface JobOptions {
 - `retryDelayMax` - Maximum delay cap in seconds. Only meaningful when `retryBackoff` is true. No limit when omitted.
 - `deadLetterJobType` - Optional dead-letter destination. When retries are exhausted, a new pending job is created in this job type with an envelope payload (`originalJob`, `originalPayload`, `failure`).
 - `group` - Optional grouping metadata. Use `group.id` to enforce global per-group limits with `ProcessorOptions.groupConcurrency`. `group.tier` is reserved for future policies.
+- `dependsOn` - Optional prerequisites (`jobIds` and/or `tags`). See [Job dependencies](/usage/job-dependencies).
 
 #### AddJobOptions
 
@@ -146,7 +148,7 @@ Adds multiple jobs to the queue in a single operation. More efficient than calli
 
 Returns an array of job IDs in the same order as the input array.
 
-Each job can independently have its own `priority`, `runAt`, `tags`, `idempotencyKey`, and other options. Idempotency keys are handled per-job — duplicates resolve to the existing job's ID without creating a new row.
+Each job can independently have its own `priority`, `runAt`, `tags`, `idempotencyKey`, `dependsOn`, and other options. Idempotency keys are handled per-job — duplicates resolve to the existing job's ID without creating a new row.
 
 Passing an empty array returns `[]` immediately without touching the database.
 

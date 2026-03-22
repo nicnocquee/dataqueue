@@ -442,6 +442,14 @@ const withLogContext =
   };
 
 export * from './types.js';
+export {
+  batchDepRef,
+  normalizeDependsOn,
+  resolveDependsOnJobIdsForBatch,
+  tagsAreSuperset,
+  validatePrerequisiteJobIdsExist,
+  assertNoDependencyCycle,
+} from './job-dependencies.js';
 export { QueueBackend, CronScheduleInput } from './backend.js';
 export { PostgresBackend } from './backends/postgres.js';
 export {

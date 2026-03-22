@@ -27,6 +27,10 @@ export interface JobData {
   status: JobStatus;
   progress?: number | null;
   output?: unknown;
+  /** Prerequisite job ids when returned from the server `JobRecord`. */
+  dependsOnJobIds?: number[] | null;
+  /** Tag-drain prerequisites when returned from the server `JobRecord`. */
+  dependsOnTags?: string[] | null;
   [key: string]: unknown;
 }
 

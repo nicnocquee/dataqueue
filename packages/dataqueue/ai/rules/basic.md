@@ -86,7 +86,7 @@ const ids = await queue.addJobs([
 // ids[i] corresponds to the i-th input job
 ```
 
-Both support `idempotencyKey`, `priority`, `runAt`, `tags`, optional `group: { id, tier? }`, and `{ db }` for transactional inserts (PostgreSQL only).
+Both support `idempotencyKey`, `priority`, `runAt`, `tags`, optional `group: { id, tier? }`, optional `dependsOn` for prerequisite jobs or tag-drain barriers, and `{ db }` for transactional inserts (PostgreSQL only).
 
 ## Handlers
 

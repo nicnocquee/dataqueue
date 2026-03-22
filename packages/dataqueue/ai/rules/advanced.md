@@ -56,6 +56,33 @@ The processor auto-enqueues due cron jobs before each batch. Manage with `pauseC
 - `ctx.onTimeout(() => ms)` — reactive; return ms to extend, or nothing to let timeout proceed.
 - `forceKillOnTimeout: true` — terminates handler via Worker Thread. Requires Node.js, serializable handler, and disables `ctx.run`/waits/`prolong`/`onTimeout`.
 
+## Job Dependencies
+
+Defer enqueue eligibility with `dependsOn` on `addJob` / `addJobs`. PostgreSQL and Redis both support this. If both `jobIds` and `tags` are set, **all** conditions must pass (logical AND).
+
+### `dependsOn.jobIds`
+
+The job stays **pending** until **every** listed prerequisite has status `completed`. Enqueue fails if any id is missing, if a job depends on itself, or if the graph would contain a cycle. If a prerequisite ends `failed` or `cancelled`, dependent pending jobs are **cancelled** (transitively).
+
+Single `addJob` calls must use **positive** database ids only.
+
+### `dependsOn.tags` (tag drain)
+
+The job stays **pending** while **another** job (not itself) is **active** (`pending`, `processing`, or `waiting`) and that job’s `tags` are a **superset** of every tag in `dependsOn.tags`. When no such blocker exists, the job becomes eligible. Matching jobs that fail or cancel also cancel dependents waiting on those tags.
+
+### Same-batch `addJobs` — `batchDepRef`
+
+Use `batchDepRef(batchIndex)` from `@nicnocquee/dataqueue` to reference the job at `batchIndex` in the **same** `addJobs` array (negative placeholders resolved after insert). Hard-coding negative ids is discouraged.
+
+```typescript
+import { batchDepRef } from '@nicnocquee/dataqueue';
+
+await queue.addJobs([
+  { jobType: 'a', payload: {} },
+  { jobType: 'b', payload: {}, dependsOn: { jobIds: [batchDepRef(0)] } },
+]);
+```
+
 ## Tags and Filtering
 
 ```typescript

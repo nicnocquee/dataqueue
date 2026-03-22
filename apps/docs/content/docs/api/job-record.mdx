@@ -45,6 +45,8 @@ The `JobRecord` interface represents a job stored in the queue, including its st
 - `deadLetterJobType?`: _string | null_ — Configured dead-letter destination job type for this job.
 - `deadLetteredAt?`: _Date | null_ — Timestamp when this job was routed to a dead-letter job.
 - `deadLetterJobId?`: _number | null_ — Linked dead-letter job ID created when retries were exhausted.
+- `dependsOnJobIds?`: _number[] | null_ — Prerequisite job ids set at enqueue time, if any. See [Job dependencies](/usage/job-dependencies).
+- `dependsOnTags?`: _string[] | null_ — Tag-drain prerequisite tags set at enqueue time, if any. See [Job dependencies](/usage/job-dependencies).
 
 ## Example
 

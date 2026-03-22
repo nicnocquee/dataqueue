@@ -25,6 +25,7 @@ import {
   Monitor,
   ExternalLink,
   CalendarClock,
+  GitBranch,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -42,6 +43,14 @@ const features = [
     href: '/features/tags',
     icon: Tags,
     docsUrl: 'https://docs.dataqueue.dev/usage/get-jobs',
+  },
+  {
+    title: 'Job dependencies',
+    description:
+      'dependsOn job ids and tag-drain barriers; cascade on fail or cancel',
+    href: '/features/dependencies',
+    icon: GitBranch,
+    docsUrl: 'https://docs.dataqueue.dev/usage/add-job',
   },
   {
     title: 'Job Management',
