@@ -2,7 +2,14 @@
 
 import { getJobQueue, type JobPayloadMap } from '@/lib/queue';
 import { revalidatePath } from 'next/cache';
+import type { JobDependsOn } from '@nicnocquee/dataqueue';
 
+/**
+ * Enqueues a typed job. Optionally attaches prerequisites via {@link JobDependsOn}.
+ *
+ * @param params - Job type, payload, and optional scheduling / dependency fields.
+ * @returns The new job id (numeric) as `job`.
+ */
 export const addGenericJob = async ({
   jobType,
   payload,
@@ -13,6 +20,7 @@ export const addGenericJob = async ({
   timeoutMs,
   forceKillOnTimeout,
   maxAttempts,
+  dependsOn,
 }: {
   jobType: keyof JobPayloadMap;
   payload: JobPayloadMap[keyof JobPayloadMap];
@@ -23,11 +31,21 @@ export const addGenericJob = async ({
   timeoutMs?: number;
   forceKillOnTimeout?: boolean;
   maxAttempts?: number;
+  dependsOn?: JobDependsOn;
 }) => {
   const jobQueue = getJobQueue();
   const runAt = runAtDelay
     ? new Date(Date.now() + runAtDelay * 1000)
     : undefined;
+
+  const normalizedDependsOn: JobDependsOn | undefined =
+    dependsOn &&
+    ((dependsOn.jobIds?.length ?? 0) > 0 || (dependsOn.tags?.length ?? 0) > 0)
+      ? {
+          ...(dependsOn.jobIds?.length ? { jobIds: dependsOn.jobIds } : {}),
+          ...(dependsOn.tags?.length ? { tags: dependsOn.tags } : {}),
+        }
+      : undefined;
 
   const job = await jobQueue.addJob({
     jobType,
@@ -39,8 +57,10 @@ export const addGenericJob = async ({
     timeoutMs: timeoutMs ?? undefined,
     forceKillOnTimeout: forceKillOnTimeout ?? undefined,
     maxAttempts: maxAttempts ?? undefined,
+    dependsOn: normalizedDependsOn,
   });
 
   revalidatePath('/');
+  revalidatePath('/features/dependencies');
   return { job };
 };

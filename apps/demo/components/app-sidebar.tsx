@@ -25,6 +25,7 @@ import {
   Monitor,
   LayoutDashboard,
   CalendarClock,
+  GitBranch,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -33,6 +34,11 @@ const featurePages = [
   { title: 'Overview', href: '/', icon: Home },
   { title: 'Add & Process Jobs', href: '/features/add-jobs', icon: Plus },
   { title: 'Tags & Filtering', href: '/features/tags', icon: Tags },
+  {
+    title: 'Job dependencies',
+    href: '/features/dependencies',
+    icon: GitBranch,
+  },
   { title: 'Job Management', href: '/features/management', icon: Settings },
   { title: 'Idempotency', href: '/features/idempotency', icon: Key },
   { title: 'Timeouts', href: '/features/timeouts', icon: Timer },

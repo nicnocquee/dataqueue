@@ -28,6 +28,12 @@ export type JobPayloadMap = {
     requestType: string;
     description: string;
   };
+  /** Lightweight jobs for the Job dependencies demo (chains, tag drain, failure cascade). */
+  dep_demo: {
+    label: string;
+    /** When true, the handler throws so dependents can be cancelled by the queue. */
+    fail?: boolean;
+  };
 };
 
 let jobQueue: ReturnType<typeof initJobQueue<JobPayloadMap>> | null = null;
@@ -107,6 +113,13 @@ export const jobHandlers: JobHandlers<JobPayloadMap> = {
       );
     } else {
       console.log(`[approval_request] Token failed:`, result.error);
+    }
+  },
+  dep_demo: async (payload) => {
+    const { label, fail } = payload;
+    console.log(`[dep_demo] ${label}`);
+    if (fail) {
+      throw new Error('Intentional failure (dependency demo)');
     }
   },
 };

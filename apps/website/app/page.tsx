@@ -21,6 +21,7 @@ import {
   Minus,
   CalendarClock,
   Sparkles,
+  GitBranch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -137,8 +138,8 @@ const comparisonRows: ComparisonRow[] = [
     trigger: false,
   },
   {
-    feature: 'Job Flows / DAGs',
-    dataqueue: false,
+    feature: 'Job dependencies / DAGs',
+    dataqueue: 'dependsOn (job ids, tags, batch)',
     pgboss: false,
     bullmq: 'Parent-child flows',
     trigger: 'Workflows',
@@ -333,6 +334,12 @@ queue.process<EmailJob>('email', async (job) => {
         'Pause and resume job execution with time-based delays or external signals. Build multi-step workflows like onboarding sequences and approval flows as a single handler.',
     },
     {
+      icon: GitBranch,
+      title: 'Job dependencies',
+      description:
+        'Defer jobs with dependsOn: prerequisite job ids, tag-drain barriers, or batch references via batchDepRef in addJobs. Invalid ids, self-deps, and cycles are rejected at enqueue time.',
+    },
+    {
       icon: Atom,
       title: 'React Hooks',
       description:
@@ -409,6 +416,12 @@ queue.process<EmailJob>('email', async (job) => {
               className="text-muted-foreground transition-colors hover:text-foreground"
             >
               Features
+            </a>
+            <a
+              href="#dependencies"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Dependencies
             </a>
 
             <a

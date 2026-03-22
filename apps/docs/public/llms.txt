@@ -18,6 +18,7 @@
 - [Job Handlers](https://docs.dataqueue.dev/usage/job-handlers): Define typed handlers with PayloadMap
 - [Initialize Queue](https://docs.dataqueue.dev/usage/init-queue): PostgreSQL and Redis configuration
 - [Add Job](https://docs.dataqueue.dev/usage/add-job): Enqueue jobs with priority, scheduling, tags, idempotency
+- [Job Dependencies](https://docs.dataqueue.dev/usage/job-dependencies): Prerequisites via `dependsOn.jobIds` or tag drain (`dependsOn.tags`); `batchDepRef` for same-batch `addJobs`
 - [Process Jobs](https://docs.dataqueue.dev/usage/process-jobs): Serverless batch processing with cron
 - [Long-Running Server](https://docs.dataqueue.dev/usage/long-running-server): Background processor, supervisor (auto-reclaim, auto-cleanup), and graceful shutdown
 - [Failed Jobs](https://docs.dataqueue.dev/usage/failed-jobs): Retry behavior and error history

@@ -49,6 +49,7 @@ const defaultPayloads: Record<string, string> = {
     null,
     2,
   ),
+  dep_demo: JSON.stringify({ label: 'Example dependency demo step' }, null, 2),
 };
 
 export function AddJobForm() {
@@ -124,6 +125,7 @@ export function AddJobForm() {
                 <SelectItem value="approval_request">
                   approval_request
                 </SelectItem>
+                <SelectItem value="dep_demo">dep_demo</SelectItem>
               </SelectContent>
             </Select>
           </div>
