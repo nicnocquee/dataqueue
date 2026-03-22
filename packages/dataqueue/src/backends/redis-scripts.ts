@@ -32,7 +32,8 @@ const SCORE_RANGE = '1000000000000000'; // 1e15
  * KEYS: [prefix]
  * ARGV: [jobType, payloadJson, maxAttempts, priority, runAtMs, timeoutMs,
  *        forceKillOnTimeout, tagsJson, idempotencyKey, nowMs,
- *        retryDelay, retryBackoff, retryDelayMax, deadLetterJobType, groupId, groupTier]
+ *        retryDelay, retryBackoff, retryDelayMax, deadLetterJobType, groupId, groupTier,
+ *        dependsOnJobIdsJson, dependsOnTagsJson]
  * Returns: job ID (number)
  */
 export const ADD_JOB_SCRIPT = `
@@ -53,6 +54,8 @@ local retryDelayMax = ARGV[13]    -- "null" or seconds string
 local deadLetterJobType = ARGV[14] -- "null" or jobType string
 local groupId = ARGV[15]          -- "null" or group ID
 local groupTier = ARGV[16]        -- "null" or group tier
+local dependsOnJobIdsJson = ARGV[17] -- "null" or JSON array of job ids
+local dependsOnTagsJson = ARGV[18]   -- "null" or JSON array of tags
 
 -- Idempotency check
 if idempotencyKey ~= "null" then
@@ -104,8 +107,17 @@ redis.call('HMSET', jobKey,
   'deadLetteredAt', 'null',
   'deadLetterJobId', 'null',
   'groupId', groupId,
-  'groupTier', groupTier
+  'groupTier', groupTier,
+  'dependsOnJobIds', dependsOnJobIdsJson,
+  'dependsOnTags', dependsOnTagsJson
 )
+
+if dependsOnJobIdsJson ~= "null" then
+  local depIds = cjson.decode(dependsOnJobIdsJson)
+  for _, parentId in ipairs(depIds) do
+    redis.call('SADD', prefix .. 'dep:' .. tostring(parentId), tostring(id))
+  end
+end
 
 -- Status index
 redis.call('SADD', prefix .. 'status:pending', id)
@@ -180,6 +192,8 @@ for i, job in ipairs(jobs) do
   local deadLetterJobType = tostring(job.deadLetterJobType)
   local groupId = tostring(job.groupId)
   local groupTier = tostring(job.groupTier)
+  local dependsOnJobIdsJson = job.dependsOnJobIds and tostring(job.dependsOnJobIds) or "null"
+  local dependsOnTagsJson = job.dependsOnTags and tostring(job.dependsOnTags) or "null"
 
   -- Idempotency check
   local skip = false
@@ -234,8 +248,17 @@ for i, job in ipairs(jobs) do
       'deadLetteredAt', 'null',
       'deadLetterJobId', 'null',
       'groupId', groupId,
-      'groupTier', groupTier
+      'groupTier', groupTier,
+      'dependsOnJobIds', dependsOnJobIdsJson,
+      'dependsOnTags', dependsOnTagsJson
     )
+
+    if dependsOnJobIdsJson ~= "null" then
+      local depIds = cjson.decode(dependsOnJobIdsJson)
+      for _, parentId in ipairs(depIds) do
+        redis.call('SADD', prefix .. 'dep:' .. tostring(parentId), tostring(id))
+      end
+    end
 
     -- Status index
     redis.call('SADD', prefix .. 'status:pending', id)
@@ -410,6 +433,48 @@ for i = 1, #candidates, 2 do
         end
 
         if canClaim then
+          local depIdsJson = redis.call('HGET', jk, 'dependsOnJobIds')
+          local depTagsJson = redis.call('HGET', jk, 'dependsOnTags')
+          local depsOk = true
+          if depIdsJson and depIdsJson ~= 'null' then
+            local dids = cjson.decode(depIdsJson)
+            for _, pid in ipairs(dids) do
+              local pst = redis.call('HGET', prefix .. 'job:' .. pid, 'status')
+              if pst ~= 'completed' then depsOk = false break end
+            end
+          end
+          if depsOk and depTagsJson and depTagsJson ~= 'null' then
+            local req = cjson.decode(depTagsJson)
+            if #req > 0 then
+              for _, stname in ipairs({'pending','processing','waiting'}) do
+                local members = redis.call('SMEMBERS', prefix .. 'status:' .. stname)
+                for _, oid in ipairs(members) do
+                  if oid ~= jobId then
+                    local otags = redis.call('HGET', prefix .. 'job:' .. oid, 'tags')
+                    if otags and otags ~= 'null' then
+                      local oarr = cjson.decode(otags)
+                      local tagset = {}
+                      for _, t in ipairs(oarr) do tagset[t] = true end
+                      local all = true
+                      for _, rt in ipairs(req) do
+                        if not tagset[rt] then all = false break end
+                      end
+                      if all then depsOk = false break end
+                    end
+                  end
+                end
+                if not depsOk then break end
+              end
+            end
+          end
+          if not depsOk then
+            table.insert(putBack, score)
+            table.insert(putBack, jobId)
+            canClaim = false
+          end
+        end
+
+        if canClaim then
           -- Claim this job
           local attempts = tonumber(redis.call('HGET', jk, 'attempts'))
           local startedAt = redis.call('HGET', jk, 'startedAt')
@@ -492,6 +557,14 @@ if groupId and groupId ~= 'null' then
   local remaining = redis.call('HINCRBY', activeKey, groupId, -1)
   if tonumber(remaining) <= 0 then
     redis.call('HDEL', activeKey, groupId)
+  end
+end
+
+local depIdsJson = redis.call('HGET', jk, 'dependsOnJobIds')
+if depIdsJson and depIdsJson ~= 'null' then
+  local dids = cjson.decode(depIdsJson)
+  for _, pid in ipairs(dids) do
+    redis.call('SREM', prefix .. 'dep:' .. tostring(pid), jobId)
   end
 end
 
@@ -650,7 +723,11 @@ if nextAttemptAt == 'null' and deadLetterJobType and deadLetterJobType ~= 'null'
     'retryDelayMax', 'null',
     'deadLetterJobType', 'null',
     'deadLetteredAt', 'null',
-    'deadLetterJobId', 'null'
+    'deadLetterJobId', 'null',
+    'dependsOnJobIds', 'null',
+    'dependsOnTags', 'null',
+    'groupId', 'null',
+    'groupTier', 'null'
   )
 
   redis.call('SADD', prefix .. 'status:pending', deadLetterJobId)
@@ -663,6 +740,14 @@ if nextAttemptAt == 'null' and deadLetterJobType and deadLetterJobType ~= 'null'
     'deadLetteredAt', nowMs,
     'deadLetterJobId', deadLetterJobId
   )
+end
+
+local depIdsJsonFail = redis.call('HGET', jk, 'dependsOnJobIds')
+if depIdsJsonFail and depIdsJsonFail ~= 'null' then
+  local dids = cjson.decode(depIdsJsonFail)
+  for _, pid in ipairs(dids) do
+    redis.call('SREM', prefix .. 'dep:' .. tostring(pid), jobId)
+  end
 end
 
 return deadLetterJobId
@@ -742,6 +827,14 @@ redis.call('SADD', prefix .. 'status:cancelled', jobId)
 redis.call('ZREM', prefix .. 'queue', jobId)
 redis.call('ZREM', prefix .. 'delayed', jobId)
 redis.call('ZREM', prefix .. 'waiting', jobId)
+
+local depIdsJsonCan = redis.call('HGET', jk, 'dependsOnJobIds')
+if depIdsJsonCan and depIdsJsonCan ~= 'null' then
+  local dids = cjson.decode(depIdsJsonCan)
+  for _, pid in ipairs(dids) do
+    redis.call('SREM', prefix .. 'dep:' .. tostring(pid), jobId)
+  end
+end
 
 return 1
 `;

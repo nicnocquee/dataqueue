@@ -23,6 +23,11 @@ import {
   CronScheduleInput,
 } from '../backend.js';
 import { log } from '../log-context.js';
+import {
+  normalizeDependsOn,
+  resolveDependsOnJobIdsForBatch,
+  tagsAreSuperset,
+} from '../job-dependencies.js';
 
 const MAX_TIMEOUT_MS = 365 * 24 * 60 * 60 * 1000;
 
@@ -181,7 +186,29 @@ function deserializeJob<PayloadMap, T extends JobType<PayloadMap>>(
     groupId: nullish(h.groupId) as string | null | undefined,
     groupTier: nullish(h.groupTier) as string | null | undefined,
     output: parseJsonField(h.output),
+    dependsOnJobIds: parseOptionalIntArray(h.dependsOnJobIds),
+    dependsOnTags: parseOptionalStringArray(h.dependsOnTags),
   };
+}
+
+function parseOptionalIntArray(raw: string | undefined): number[] | null {
+  if (!raw || raw === 'null') return null;
+  try {
+    const arr = JSON.parse(raw) as number[];
+    return Array.isArray(arr) && arr.length > 0 ? arr : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseOptionalStringArray(raw: string | undefined): string[] | null {
+  if (!raw || raw === 'null') return null;
+  try {
+    const arr = JSON.parse(raw) as string[];
+    return Array.isArray(arr) && arr.length > 0 ? arr : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Parse a JSON field from a Redis hash, returning null for missing/null values. */
@@ -271,6 +298,76 @@ export class RedisBackend implements QueueBackend {
     return Date.now();
   }
 
+  /**
+   * Cancel pending/waiting jobs that depend on seed jobs (job id or tag), transitively.
+   *
+   * @param initialSeeds - Job ids that failed or were cancelled.
+   * @param rootJobId - Root id for event metadata.
+   */
+  private async propagateDependencyCancellationsRedis(
+    initialSeeds: number[],
+    rootJobId: number,
+  ): Promise<void> {
+    const cancelled = new Set<number>();
+    let frontier = [...new Set(initialSeeds.filter((id) => id > 0))];
+
+    while (frontier.length > 0) {
+      const pendingRaw = await this.client.sunion(
+        `${this.prefix}status:pending`,
+        `${this.prefix}status:waiting`,
+      );
+      const toCancel: number[] = [];
+
+      for (const pidStr of pendingRaw) {
+        const pid = Number(pidStr);
+        if (cancelled.has(pid)) continue;
+        const job = await this.getJob<any, any>(pid);
+        if (!job || (job.status !== 'pending' && job.status !== 'waiting')) {
+          continue;
+        }
+
+        for (const seedId of frontier) {
+          if (pid === seedId) continue;
+          const seedJob = await this.getJob<any, any>(seedId);
+          if (!seedJob) continue;
+
+          const byJobId = job.dependsOnJobIds?.includes(seedId) ?? false;
+          const byTag =
+            job.dependsOnTags &&
+            job.dependsOnTags.length > 0 &&
+            tagsAreSuperset(seedJob.tags, job.dependsOnTags);
+
+          if (byJobId || byTag) {
+            toCancel.push(pid);
+            break;
+          }
+        }
+      }
+
+      if (toCancel.length === 0) break;
+
+      const now = this.nowMs();
+      for (const jid of toCancel) {
+        const ok = await this.client.eval(
+          CANCEL_JOB_SCRIPT,
+          1,
+          this.prefix,
+          jid,
+          now,
+        );
+        if (Number(ok) === 1) {
+          cancelled.add(jid);
+          await this.recordJobEvent(jid, JobEventType.Cancelled, {
+            rootJobId,
+            dependencyCascade: true,
+          });
+        }
+      }
+
+      frontier = toCancel;
+    }
+  }
+
   // ── Events ──────────────────────────────────────────────────────────
 
   async recordJobEvent(
@@ -327,6 +424,7 @@ export class RedisBackend implements QueueBackend {
       retryDelayMax = undefined,
       deadLetterJobType = undefined,
       group = undefined,
+      dependsOn,
     }: JobOptions<PayloadMap, T>,
     options?: AddJobOptions,
   ): Promise<number> {
@@ -336,6 +434,20 @@ export class RedisBackend implements QueueBackend {
           'Transactional job creation is only available with PostgreSQL.',
       );
     }
+    const { jobIds: depJobIdsRaw, tags: depTags } =
+      normalizeDependsOn(dependsOn);
+    if (depJobIdsRaw?.some((id) => id < 0)) {
+      throw new Error(
+        'dependsOn.jobIds: batch-relative (negative) ids are only supported in addJobs()',
+      );
+    }
+    const dependsOnJobIdsJson =
+      depJobIdsRaw && depJobIdsRaw.length > 0
+        ? JSON.stringify(depJobIdsRaw)
+        : 'null';
+    const dependsOnTagsJson =
+      depTags && depTags.length > 0 ? JSON.stringify(depTags) : 'null';
+
     const now = this.nowMs();
     const runAtMs = runAt ? runAt.getTime() : 0;
 
@@ -359,6 +471,8 @@ export class RedisBackend implements QueueBackend {
       deadLetterJobType ?? 'null',
       group?.id ?? 'null',
       group?.tier ?? 'null',
+      dependsOnJobIdsJson,
+      dependsOnTagsJson,
     )) as number;
 
     const jobId = Number(result);
@@ -370,6 +484,10 @@ export class RedisBackend implements QueueBackend {
       payload,
       tags,
       idempotencyKey,
+      dependsOn:
+        dependsOnJobIdsJson !== 'null' || dependsOnTagsJson !== 'null'
+          ? dependsOn
+          : undefined,
     });
     return jobId;
   }
@@ -391,29 +509,67 @@ export class RedisBackend implements QueueBackend {
       );
     }
 
+    const needsSequential = jobs.some((j) => {
+      const n = normalizeDependsOn(j.dependsOn);
+      return Boolean(n.jobIds?.length || n.tags?.length);
+    });
+
+    if (needsSequential) {
+      const ids: number[] = [];
+      for (let i = 0; i < jobs.length; i++) {
+        let job = jobs[i]!;
+        const nd = normalizeDependsOn(job.dependsOn);
+        if (nd.jobIds?.some((id) => id < 0)) {
+          const resolvedJobIds = resolveDependsOnJobIdsForBatch(
+            nd.jobIds!,
+            ids,
+          );
+          job = {
+            ...job,
+            dependsOn: {
+              jobIds: resolvedJobIds,
+              tags: job.dependsOn?.tags,
+            },
+          };
+        }
+        ids.push(await this.addJob(job));
+      }
+      log(
+        `Batch-inserted ${jobs.length} jobs (sequential), IDs: [${ids.join(', ')}]`,
+      );
+      return ids;
+    }
+
     const now = this.nowMs();
 
-    const jobsPayload = jobs.map((job) => ({
-      jobType: job.jobType,
-      payload: JSON.stringify(job.payload),
-      maxAttempts: job.maxAttempts ?? 3,
-      priority: job.priority ?? 0,
-      runAtMs: job.runAt ? job.runAt.getTime() : 0,
-      timeoutMs:
-        job.timeoutMs !== undefined ? job.timeoutMs.toString() : 'null',
-      forceKillOnTimeout: job.forceKillOnTimeout ? 'true' : 'false',
-      tags: job.tags ? JSON.stringify(job.tags) : 'null',
-      idempotencyKey: job.idempotencyKey ?? 'null',
-      retryDelay:
-        job.retryDelay !== undefined ? job.retryDelay.toString() : 'null',
-      retryBackoff:
-        job.retryBackoff !== undefined ? job.retryBackoff.toString() : 'null',
-      retryDelayMax:
-        job.retryDelayMax !== undefined ? job.retryDelayMax.toString() : 'null',
-      deadLetterJobType: job.deadLetterJobType ?? 'null',
-      groupId: job.group?.id ?? 'null',
-      groupTier: job.group?.tier ?? 'null',
-    }));
+    const jobsPayload = jobs.map((job) => {
+      const nd = normalizeDependsOn(job.dependsOn);
+      return {
+        jobType: job.jobType,
+        payload: JSON.stringify(job.payload),
+        maxAttempts: job.maxAttempts ?? 3,
+        priority: job.priority ?? 0,
+        runAtMs: job.runAt ? job.runAt.getTime() : 0,
+        timeoutMs:
+          job.timeoutMs !== undefined ? job.timeoutMs.toString() : 'null',
+        forceKillOnTimeout: job.forceKillOnTimeout ? 'true' : 'false',
+        tags: job.tags ? JSON.stringify(job.tags) : 'null',
+        idempotencyKey: job.idempotencyKey ?? 'null',
+        retryDelay:
+          job.retryDelay !== undefined ? job.retryDelay.toString() : 'null',
+        retryBackoff:
+          job.retryBackoff !== undefined ? job.retryBackoff.toString() : 'null',
+        retryDelayMax:
+          job.retryDelayMax !== undefined
+            ? job.retryDelayMax.toString()
+            : 'null',
+        deadLetterJobType: job.deadLetterJobType ?? 'null',
+        groupId: job.group?.id ?? 'null',
+        groupTier: job.group?.tier ?? 'null',
+        dependsOnJobIds: nd.jobIds?.length ? JSON.stringify(nd.jobIds) : null,
+        dependsOnTags: nd.tags?.length ? JSON.stringify(nd.tags) : null,
+      };
+    });
 
     const result = (await this.client.eval(
       ADD_JOBS_SCRIPT,
@@ -665,6 +821,7 @@ export class RedisBackend implements QueueBackend {
       failureReason,
       deadLetterJobId,
     });
+    await this.propagateDependencyCancellationsRedis([jobId], jobId);
     if (deadLetterJobId) {
       const sourceJob = await this.client.hget(
         `${this.prefix}job:${jobId}`,
@@ -743,9 +900,22 @@ export class RedisBackend implements QueueBackend {
 
   async cancelJob(jobId: number): Promise<void> {
     const now = this.nowMs();
-    await this.client.eval(CANCEL_JOB_SCRIPT, 1, this.prefix, jobId, now);
-    await this.recordJobEvent(jobId, JobEventType.Cancelled);
-    log(`Cancelled job ${jobId}`);
+    const ok = await this.client.eval(
+      CANCEL_JOB_SCRIPT,
+      1,
+      this.prefix,
+      jobId,
+      now,
+    );
+    if (Number(ok) === 1) {
+      await this.recordJobEvent(jobId, JobEventType.Cancelled);
+      await this.propagateDependencyCancellationsRedis([jobId], jobId);
+      log(`Cancelled job ${jobId}`);
+    } else {
+      log(
+        `Job ${jobId} could not be cancelled (not in pending/waiting state or does not exist)`,
+      );
+    }
   }
 
   async cancelAllUpcomingJobs(filters?: JobFilters): Promise<number> {

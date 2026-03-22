@@ -42,6 +42,30 @@ export interface JobGroup {
   tier?: string;
 }
 
+/**
+ * Declares prerequisites for a job. Both dimensions use logical AND.
+ *
+ * - `jobIds`: The job will not run until every listed job is `completed`. If any
+ *   prerequisite becomes `failed` or `cancelled`, pending dependents are cancelled (transitively).
+ * - `tags`: Active barrier — the job will not run while another job (not self) is
+ *   `pending`, `processing`, or `waiting` whose `tags` are a superset of every tag listed here
+ *   (Postgres `tags @> depends_on_tags`). If any such job becomes `failed` or `cancelled`,
+ *   pending jobs that list these tags are cancelled (transitively).
+ *
+ * **`addJobs` batch references:** In a batch insert, a negative job id means a 0-based index
+ * into the same batch array: use {@link batchDepRef} (e.g. `batchDepRef(0)` for the first job).
+ * Single `addJob` calls must use positive database ids only.
+ */
+export interface JobDependsOn {
+  /** Prerequisite job ids (must all reach `completed`). */
+  jobIds?: number[];
+  /**
+   * Tag drain: wait until no active job (pending/processing/waiting) has all of these tags.
+   * Requires matching jobs to succeed (dependents are cancelled if a matching job fails or is cancelled).
+   */
+  tags?: string[];
+}
+
 export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
   jobType: T;
   payload: PayloadMap[T];
@@ -149,6 +173,10 @@ export interface JobOptions<PayloadMap, T extends JobType<PayloadMap>> {
    * globally limited by `group.id` across all workers/instances.
    */
   group?: JobGroup;
+  /**
+   * Optional prerequisites (job ids and/or tag drain). See {@link JobDependsOn}.
+   */
+  dependsOn?: JobDependsOn;
 }
 
 /**
@@ -309,6 +337,14 @@ export interface JobRecord<PayloadMap, T extends JobType<PayloadMap>> {
    * Group tier for this job, if provided at enqueue time.
    */
   groupTier?: string | null;
+  /**
+   * Prerequisite job ids persisted at enqueue time, if any.
+   */
+  dependsOnJobIds?: number[] | null;
+  /**
+   * Tag drain prerequisites persisted at enqueue time, if any.
+   */
+  dependsOnTags?: string[] | null;
 }
 
 /**
