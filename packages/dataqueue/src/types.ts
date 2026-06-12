@@ -567,14 +567,20 @@ export type JobHandlers<PayloadMap> = {
 export interface ProcessorOptions {
   workerId?: string;
   /**
-   * The number of jobs to process at a time.
-   * - If not provided, the processor will process 10 jobs at a time.
-   * - In serverless functions, it's better to process less jobs at a time since serverless functions are charged by the second and have a timeout.
+   * The maximum number of jobs to claim from the queue per poll.
+   * - If not provided, up to 10 jobs are claimed per poll.
+   * - With `startInBackground`, claims are capped to the number of free
+   *   concurrency slots, so this only matters when it is below `concurrency`.
+   * - In serverless functions, it's better to claim fewer jobs at a time since serverless functions are charged by the second and have a timeout.
    */
   batchSize?: number;
   /**
-   * The maximum number of jobs to process in parallel per batch.
-   * - If not provided, all jobs in the batch are processed in parallel.
+   * The maximum number of jobs to process in parallel.
+   * - With `startInBackground`, this is the steady number of jobs kept in
+   *   flight: each slot is refilled as soon as it frees, so a slow job never
+   *   blocks the other slots.
+   * - With the one-shot `start`, this caps parallelism within the single batch.
+   * - If not provided, defaults to 3.
    * - Set to 1 to process jobs sequentially.
    * - Set to a lower value to avoid resource exhaustion.
    */
@@ -604,7 +610,8 @@ export interface ProcessorOptions {
 export interface Processor {
   /**
    * Start the job processor in the background.
-   * - This will run periodically (every pollInterval milliseconds or 5 seconds if not provided) and process jobs (as many as batchSize) as they become available.
+   * - Keeps up to `concurrency` jobs in flight, refilling each slot as soon as it frees instead of waiting for a whole batch to settle.
+   * - Polls every pollInterval milliseconds (5 seconds if not provided) for new work as it becomes available.
    * - **You have to call the stop method to stop the processor.**
    * - Handlers are provided per-processor when calling createProcessor.
    * - In serverless functions, it's recommended to call start instead and await it to finish.

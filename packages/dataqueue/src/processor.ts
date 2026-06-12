@@ -858,8 +858,16 @@ export const createProcessor = <PayloadMap = any>(
   }
 
   let running = false;
-  let intervalId: NodeJS.Timeout | null = null;
-  let currentBatchPromise: Promise<number> | null = null;
+  // Periodic timer that drives cron enqueueing and idle polling.
+  let pollTimer: NodeJS.Timeout | null = null;
+  // True while a getNextBatch claim is in progress, so claims stay serialized.
+  let claimInProgress = false;
+  // Set when a refill was requested while a claim was already running.
+  let pumpRequested = false;
+  // Number of jobs this processor currently has in flight.
+  let inFlight = 0;
+  // Promises for the in-flight jobs, awaited during graceful drain.
+  const inFlightJobs = new Set<Promise<void>>();
 
   setLogContext(options.verbose ?? false);
 
@@ -909,7 +917,10 @@ export const createProcessor = <PayloadMap = any>(
   return {
     /**
      * Start the job processor in the background.
-     * - This will run periodically (every pollInterval milliseconds or 5 seconds if not provided) and process jobs as they become available.
+     * - Keeps up to `concurrency` jobs in flight, refilling each slot as soon as
+     *   it frees instead of waiting for a whole batch to settle.
+     * - Polls every `pollInterval` milliseconds (5 seconds if not provided) for
+     *   new work and to enqueue due cron jobs.
      * - You have to call the stop method to stop the processor.
      */
     startInBackground: () => {
@@ -918,28 +929,97 @@ export const createProcessor = <PayloadMap = any>(
       log(`Starting job processor with workerId: ${workerId}`);
       running = true;
 
-      // Single serialized loop: process a batch, then either immediately
-      // continue (if full batch was returned) or wait pollInterval.
-      const scheduleNext = (immediate: boolean) => {
+      // Continuous worker pool: keep up to `concurrency` jobs in flight and
+      // refill each slot the instant it frees, rather than waiting for a whole
+      // batch to settle. This removes the head-of-line blocking where one slow
+      // job stalls the other slots (and, with groupConcurrency, the whole
+      // group) until it finishes.
+      const pump = async (): Promise<void> => {
         if (!running) return;
-        if (immediate) {
-          intervalId = setTimeout(loop, 0);
-        } else {
-          intervalId = setTimeout(loop, pollInterval);
+        // Serialize claims; remember the request so we refill afterwards.
+        if (claimInProgress) {
+          pumpRequested = true;
+          return;
+        }
+        // Pool is full; a finishing job will call pump() again.
+        if (inFlight >= concurrency) return;
+
+        claimInProgress = true;
+        pumpRequested = false;
+        let claimLimit = 0;
+        let claimed = 0;
+        try {
+          claimLimit = Math.min(concurrency - inFlight, batchSize);
+          const jobs = await backend.getNextBatch<
+            PayloadMap,
+            JobType<PayloadMap>
+          >(workerId, claimLimit, jobType, groupConcurrency);
+          claimed = jobs.length;
+
+          for (const job of jobs) {
+            emit?.('job:processing', { jobId: job.id, jobType: job.jobType });
+            inFlight++;
+            const jobPromise: Promise<void> = processJobWithHandlers(
+              backend,
+              job,
+              handlers,
+              emit,
+            )
+              .catch((err) => {
+                onError(err instanceof Error ? err : new Error(String(err)));
+              })
+              .finally(() => {
+                inFlight--;
+                inFlightJobs.delete(jobPromise);
+                // A slot just freed — try to claim more work immediately.
+                void pump();
+              });
+            inFlightJobs.add(jobPromise);
+          }
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          onError(err);
+          emit?.('error', err);
+        } finally {
+          claimInProgress = false;
+        }
+
+        // Claim again right away when the queue likely still has ready work
+        // (we filled the whole request) or when a slot freed mid-claim.
+        const moreLikely = claimed === claimLimit || pumpRequested;
+        if (running && moreLikely && inFlight < concurrency) {
+          void pump();
         }
       };
 
-      const loop = async () => {
+      // Periodic tick: enqueue due cron jobs (onBeforeBatch) on a steady cadence
+      // regardless of pool saturation, then top up the pool. Also the idle poll
+      // so newly added jobs are picked up within pollInterval.
+      const tick = async (): Promise<void> => {
         if (!running) return;
-        currentBatchPromise = processJobs();
-        const processed = await currentBatchPromise;
-        currentBatchPromise = null;
-        // If we got a full batch, there may be more work — process immediately
-        scheduleNext(processed === batchSize);
+        if (onBeforeBatch) {
+          try {
+            await onBeforeBatch();
+          } catch (hookError) {
+            log(`onBeforeBatch hook error: ${hookError}`);
+            const err =
+              hookError instanceof Error
+                ? hookError
+                : new Error(String(hookError));
+            onError(err);
+            emit?.('error', err);
+          }
+        }
+        await pump();
+        if (running) {
+          pollTimer = setTimeout(() => {
+            void tick();
+          }, pollInterval);
+        }
       };
 
-      // Start the first iteration immediately
-      loop();
+      // Start the first iteration immediately.
+      void tick();
     },
     /**
      * Stop the job processor that runs in the background.
@@ -948,9 +1028,9 @@ export const createProcessor = <PayloadMap = any>(
     stop: () => {
       log(`Stopping job processor with workerId: ${workerId}`);
       running = false;
-      if (intervalId) {
-        clearTimeout(intervalId);
-        intervalId = null;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
       }
     },
     /**
@@ -960,17 +1040,16 @@ export const createProcessor = <PayloadMap = any>(
     stopAndDrain: async (drainTimeoutMs = 30000) => {
       log(`Stopping and draining job processor with workerId: ${workerId}`);
       running = false;
-      if (intervalId) {
-        clearTimeout(intervalId);
-        intervalId = null;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
       }
-      // Wait for current batch to finish, with a timeout
-      if (currentBatchPromise) {
+      // Wait for all in-flight jobs to finish, with a timeout.
+      if (inFlightJobs.size > 0) {
         await Promise.race([
-          currentBatchPromise.catch(() => {}),
+          Promise.allSettled(Array.from(inFlightJobs)),
           new Promise<void>((resolve) => setTimeout(resolve, drainTimeoutMs)),
         ]);
-        currentBatchPromise = null;
       }
       log(`Job processor ${workerId} drained`);
     },
