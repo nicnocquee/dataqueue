@@ -33,6 +33,25 @@ async function claimJob(p: Pool, jobId: number) {
   );
 }
 
+/**
+ * Polls `predicate` until it is truthy or the timeout elapses.
+ * Throws if the condition is never met, so a hung pool fails fast instead of
+ * timing out the whole test.
+ */
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs: number,
+  pollMs = 20,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await predicate())) {
+    if (Date.now() > deadline) {
+      throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
 // Integration tests for processor
 
 describe('processor integration', () => {
@@ -493,6 +512,116 @@ describe('concurrency option', () => {
     ).toThrow(
       'Processor option "groupConcurrency" must be a positive integer when provided.',
     );
+  });
+
+  it('should refill freed group slots while a slow job runs, honoring groupConcurrency (continuous pool)', async () => {
+    // Regression guard for the batch-barrier stall on grouped pipelines.
+    // groupConcurrency caps each claim below the number of ready jobs, so the
+    // rest land in later claims. With the old loop those later claims never
+    // happened until the whole in-flight batch drained, so one slow job stalled
+    // the entire group. The continuous pool must keep refilling the freed group
+    // slot — without ever exceeding groupConcurrency — so every fast job
+    // completes while the slow job is still in flight.
+    const GROUP = 'pipeline-1';
+    const FAST_JOBS = 5;
+
+    let releaseSlow!: () => void;
+    const slowReleased = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    let markSlowStarted!: () => void;
+    const slowStarted = new Promise<void>((resolve) => {
+      markSlowStarted = resolve;
+    });
+    let fastCompleted = 0;
+    let inHandler = 0;
+    let maxInHandler = 0;
+
+    const handler = async (payload: { slow?: boolean }) => {
+      inHandler++;
+      maxInHandler = Math.max(maxInHandler, inHandler);
+      try {
+        if (payload.slow) {
+          markSlowStarted();
+          await slowReleased;
+
+          return;
+        }
+        fastCompleted++;
+      } finally {
+        inHandler--;
+      }
+    };
+    const handlers = { test: handler };
+
+    // High priority so the slow job is always claimed into the first group slot.
+    const slowId = await queue.addJob<{ test: { slow?: boolean } }, 'test'>(
+      pool,
+      {
+        jobType: 'test',
+        payload: { slow: true },
+        priority: 10,
+        group: { id: GROUP },
+      },
+    );
+    for (let i = 0; i < FAST_JOBS; i++) {
+      await queue.addJob<{ test: { slow?: boolean } }, 'test'>(pool, {
+        jobType: 'test',
+        payload: {},
+        group: { id: GROUP },
+      });
+    }
+
+    const processor = createProcessor(backend, handlers, {
+      batchSize: 10,
+      concurrency: 2,
+      groupConcurrency: 2,
+      pollInterval: 50,
+    });
+    processor.startInBackground();
+    try {
+      // Wait until the slow job actually occupies a group slot.
+      await slowStarted;
+
+      // Every fast job must finish while the slow job is still in flight. Under
+      // the old barrier this never happens (the loop waits on the slow job
+      // before claiming the rest of the group), so waitFor throws instead of
+      // the whole test hanging.
+      await waitFor(() => fastCompleted === FAST_JOBS, 5000);
+
+      expect(fastCompleted).toBe(FAST_JOBS);
+      // groupConcurrency was honored throughout (slow + at most one fast).
+      expect(maxInHandler).toBeLessThanOrEqual(2);
+
+      // The slow job never blocked the group — it is still processing.
+      const slowJob = await queue.getJob<{ test: { slow?: boolean } }, 'test'>(
+        pool,
+        slowId,
+      );
+
+      expect(slowJob?.status).toBe('processing');
+
+      // Release the slow job and let everything drain cleanly.
+      releaseSlow();
+      await waitFor(async () => {
+        const job = await queue.getJob<{ test: { slow?: boolean } }, 'test'>(
+          pool,
+          slowId,
+        );
+
+        return job?.status === 'completed';
+      }, 5000);
+    } finally {
+      releaseSlow();
+      await processor.stopAndDrain(5000);
+    }
+
+    const completed = await queue.getJobsByStatus<
+      { test: { slow?: boolean } },
+      'test'
+    >(pool, 'completed');
+
+    expect(completed.length).toBe(FAST_JOBS + 1);
   });
 });
 
